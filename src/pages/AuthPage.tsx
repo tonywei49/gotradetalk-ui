@@ -106,25 +106,36 @@ export function AuthPage() {
                 if (!clientUsername.trim() || !clientPassword.trim()) {
                     throw new Error(t("auth.errors.missingLoginFields"));
                 }
-                const supabase = getSupabaseClient();
-                const { data, error } = await supabase.auth.signInWithPassword({
-                    email: clientUsername.trim(),
-                    password: clientPassword.trim(),
-                });
-                if (error) {
-                    throw new Error(error.message);
+                const account = clientUsername.trim();
+                const password = clientPassword.trim();
+                const isEmail = account.includes("@");
+                let hubSession: HubSupabaseSession | null = null;
+                let response: HubClientLoginResponse;
+
+                if (isEmail) {
+                    const supabase = getSupabaseClient();
+                    const { data, error } = await supabase.auth.signInWithPassword({
+                        email: account,
+                        password,
+                    });
+                    if (error) {
+                        throw new Error(error.message);
+                    }
+                    const session = data.session;
+                    if (!session?.access_token) {
+                        throw new Error(t("auth.errors.missingSupabaseSession"));
+                    }
+                    response = await hubClientLogin(account, password, session.access_token);
+                    hubSession = response.supabase ?? {
+                        access_token: session.access_token,
+                        refresh_token: session.refresh_token,
+                        expires_at: session.expires_at ?? undefined,
+                    };
+                } else {
+                    response = await hubClientLogin(account, password);
+                    hubSession = response.supabase ?? null;
                 }
-                const session = data.session;
-                if (!session?.access_token) {
-                    throw new Error(t("auth.errors.missingSupabaseSession"));
-                }
-                const response = await hubClientLogin(clientUsername.trim(), clientPassword.trim(), session.access_token);
                 setClientSuccess(response);
-                const hubSession = response.supabase ?? {
-                    access_token: session.access_token,
-                    refresh_token: session.refresh_token,
-                    expires_at: session.expires_at ?? undefined,
-                };
                 if (!hubSession) {
                     throw new Error(t("auth.errors.missingSupabaseSession"));
                 }
