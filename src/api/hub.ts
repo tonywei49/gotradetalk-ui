@@ -84,6 +84,29 @@ export async function hubStaffActivatePasswordState(accessToken: string, hsUrl: 
     );
 }
 
+export async function hubStaffLocaleSelf(
+    accessToken: string,
+    hsUrl: string,
+): Promise<{ locale: string | null }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = new URL(`${hubBaseUrl}/staff/locale/self`);
+    url.searchParams.set("hs_url", hsUrl);
+    return getJson<{ locale: string | null }>(url.toString(), accessToken);
+}
+
+export async function hubStaffUpdateLocaleSelf(
+    accessToken: string,
+    hsUrl: string,
+    locale: string,
+): Promise<void> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    await postJson<Record<string, unknown>>(
+        `${hubBaseUrl}/staff/locale/self`,
+        { hs_url: hsUrl, locale },
+        accessToken,
+    );
+}
+
 async function getJson<T>(url: string, accessToken?: string): Promise<T> {
     const response = await fetch(url, {
         method: "GET",

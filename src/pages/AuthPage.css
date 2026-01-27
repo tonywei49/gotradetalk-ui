@@ -140,9 +140,29 @@
     background: #ffffff;
 }
 
+.gt_field select {
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    padding: 12px 14px;
+    font-size: 14px;
+    background: #ffffff;
+}
+
 .gt_field input:focus {
     outline: 2px solid rgba(37, 99, 235, 0.25);
     border-color: #93c5fd;
+}
+
+.gt_inlineField {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.gt_inlineButton {
+    white-space: nowrap;
+    padding: 10px 14px;
 }
 
 .gt_hint {

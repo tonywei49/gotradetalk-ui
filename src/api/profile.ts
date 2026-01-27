@@ -1,7 +1,6 @@
 import type { HubSupabaseSession } from "./types";
+import { hubStaffLocaleSelf, hubStaffUpdateLocaleSelf } from "./hub";
 import { getSupabaseClient } from "./supabase";
-
-const STAFF_LOCALE_KEY_PREFIX = "gt_staff_locale_";
 
 async function ensureSupabaseSession(session: HubSupabaseSession): Promise<string> {
     const supabase = getSupabaseClient();
@@ -47,12 +46,11 @@ export async function updateClientLanguage(session: HubSupabaseSession, language
     }
 }
 
-export function fetchStaffLanguageLocal(matrixUserId: string): string | null {
-    if (!matrixUserId) return null;
-    return localStorage.getItem(`${STAFF_LOCALE_KEY_PREFIX}${matrixUserId}`);
+export async function fetchStaffLanguage(accessToken: string, hsUrl: string): Promise<string | null> {
+    const response = await hubStaffLocaleSelf(accessToken, hsUrl);
+    return response.locale ?? null;
 }
 
-export function updateStaffLanguageLocal(matrixUserId: string, language: string): void {
-    if (!matrixUserId) return;
-    localStorage.setItem(`${STAFF_LOCALE_KEY_PREFIX}${matrixUserId}`, language);
+export async function updateStaffLanguage(accessToken: string, hsUrl: string, language: string): Promise<void> {
+    await hubStaffUpdateLocaleSelf(accessToken, hsUrl, language);
 }

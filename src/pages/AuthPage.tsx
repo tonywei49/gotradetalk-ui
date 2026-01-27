@@ -11,9 +11,9 @@ import {
 import type { HubClientLoginResponse, HubSupabaseSession } from "../api/types";
 import {
     fetchClientLanguage,
-    fetchStaffLanguageLocal,
+    fetchStaffLanguage,
     updateClientLanguage,
-    updateStaffLanguageLocal,
+    updateStaffLanguage,
 } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
@@ -37,9 +37,12 @@ export function AuthPage() {
     const [registerPassword, setRegisterPassword] = useState("");
     const [registerUserLocalId, setRegisterUserLocalId] = useState("");
     const [registerCompanyName, setRegisterCompanyName] = useState("");
+    const [registerLanguage, setRegisterLanguage] = useState("en");
     const [registerBusy, setRegisterBusy] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(null);
     const [companySlug, setCompanySlug] = useState("");
+    const [companyTld, setCompanyTld] = useState("com");
+    const [companyTldEditable, setCompanyTldEditable] = useState(false);
     const [companyUsername, setCompanyUsername] = useState("");
     const [companyPassword, setCompanyPassword] = useState("");
     const [companyBusy, setCompanyBusy] = useState(false);
@@ -51,17 +54,26 @@ export function AuthPage() {
     const [forceResetUserId, setForceResetUserId] = useState("");
     const [forceResetInitialPassword, setForceResetInitialPassword] = useState("");
     const [showLanguageModal, setShowLanguageModal] = useState(false);
-    const [pendingLanguageContext, setPendingLanguageContext] = useState<{
-        session?: HubSupabaseSession;
-        matrixUserId?: string;
-        userType: "client" | "staff";
-    } | null>(null);
+    const [pendingLanguageContext, setPendingLanguageContext] = useState<
+        | {
+              userType: "client";
+              session: HubSupabaseSession;
+          }
+        | {
+              userType: "staff";
+              accessToken: string;
+              hsUrl: string;
+              matrixUserId: string;
+          }
+        | null
+    >(null);
 
     const hsPreview = useMemo(() => {
         const trimmed = companySlug.trim().toLowerCase();
+        const normalizedTld = normalizeCompanyTld(companyTld);
         if (!trimmed) return "https://matrix.{slug}.com";
-        return `https://matrix.${trimmed}.com`;
-    }, [companySlug]);
+        return `https://matrix.${trimmed}.${normalizedTld}`;
+    }, [companySlug, companyTld]);
 
     const onSwitchLanguage = (language: "en" | "zh-CN"): void => {
         setLanguage(language);
@@ -132,7 +144,11 @@ export function AuthPage() {
                 if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
                     throw new Error(t("auth.errors.invalidCompanySlug"));
                 }
-                const hsUrl = `https://matrix.${normalizedSlug}.com`;
+                const normalizedTld = normalizeCompanyTld(companyTld);
+                if (!normalizedTld || !/^[a-z0-9.-]+$/.test(normalizedTld)) {
+                    throw new Error(t("auth.errors.invalidCompanyTld"));
+                }
+                const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
                 const credentials = await loginWithPassword(hsUrl, companyUsername.trim(), companyPassword);
                 const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
                 if (passwordState.password_state === "RESET_REQUIRED") {
@@ -144,11 +160,13 @@ export function AuthPage() {
                     return;
                 }
                 setCompanySuccess(t("auth.company.loginSuccess"));
-                const language = fetchStaffLanguageLocal(credentials.userId);
+                const language = await fetchStaffLanguage(credentials.accessToken, credentials.homeserverUrl);
                 if (!language) {
                     setPendingLanguageContext({
-                        matrixUserId: credentials.userId,
                         userType: "staff",
+                        matrixUserId: credentials.userId,
+                        accessToken: credentials.accessToken,
+                        hsUrl: credentials.homeserverUrl,
                     });
                     setShowLanguageModal(true);
                     return;
@@ -172,6 +190,9 @@ export function AuthPage() {
                 if (!registerEmail.trim() || !registerPassword.trim()) {
                     throw new Error(t("auth.errors.missingRegisterFields"));
                 }
+                if (!registerLanguage) {
+                    throw new Error(t("auth.errors.missingRegisterLanguage"));
+                }
                 const supabase = getSupabaseClient();
                 const { data, error } = await supabase.auth.signUp({
                     email: registerEmail.trim(),
@@ -189,11 +210,20 @@ export function AuthPage() {
                     company_name: registerCompanyName.trim(),
                     password: registerPassword.trim(),
                 });
+                await updateClientLanguage(
+                    {
+                        access_token: session.access_token,
+                        refresh_token: session.refresh_token,
+                        expires_at: session.expires_at ?? undefined,
+                    },
+                    registerLanguage,
+                );
                 setShowClientRegister(false);
                 setRegisterEmail("");
                 setRegisterPassword("");
                 setRegisterUserLocalId("");
                 setRegisterCompanyName("");
+                setRegisterLanguage("en");
             } catch (error) {
                 setRegisterError(error instanceof Error ? error.message : t("auth.errors.generic"));
             } finally {
@@ -312,6 +342,27 @@ export function AuthPage() {
                             />
                         </label>
                         <label className="gt_field">
+                            <span>{t("auth.fields.companyTldLabel")}</span>
+                            <div className="gt_inlineField">
+                                <input
+                                    type="text"
+                                    value={companyTld}
+                                    onChange={(event) => setCompanyTld(event.target.value)}
+                                    placeholder={t("auth.fields.companyTldPlaceholder")}
+                                    disabled={!companyTldEditable}
+                                />
+                                <button
+                                    type="button"
+                                    className="gt_secondary gt_inlineButton"
+                                    onClick={() => setCompanyTldEditable((current) => !current)}
+                                >
+                                    {companyTldEditable
+                                        ? t("auth.fields.companyTldDone")
+                                        : t("auth.fields.companyTldEdit")}
+                                </button>
+                            </div>
+                        </label>
+                        <label className="gt_field">
                             <span>{t("auth.fields.usernameLabel")}</span>
                             <input
                                 type="text"
@@ -399,6 +450,16 @@ export function AuthPage() {
                                     onChange={(event) => setRegisterCompanyName(event.target.value)}
                                 />
                             </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.languageLabel")}</span>
+                                <select
+                                    value={registerLanguage}
+                                    onChange={(event) => setRegisterLanguage(event.target.value)}
+                                >
+                                    <option value="en">{t("language.english")}</option>
+                                    <option value="zh-CN">{t("language.chineseSimplified")}</option>
+                                </select>
+                            </label>
                             {registerError && <div className="gt_error">{registerError}</div>}
                             <div className="gt_actions">
                                 <button type="submit" className="gt_primary" disabled={registerBusy}>
@@ -445,6 +506,8 @@ export function AuthPage() {
                                     setPendingLanguageContext({
                                         matrixUserId: forceResetUserId,
                                         userType: "staff",
+                                        accessToken: forceResetAccessToken,
+                                        hsUrl: forceResetHsUrl,
                                     });
                                     setShowLanguageModal(true);
                                 } catch (error) {
@@ -463,12 +526,13 @@ export function AuthPage() {
                 onSave={async (language): Promise<void> => {
                     if (!pendingLanguageContext) return;
                     if (pendingLanguageContext.userType === "client") {
-                        if (!pendingLanguageContext.session) {
-                            throw new Error(t("auth.errors.missingSupabaseSession"));
-                        }
                         await updateClientLanguage(pendingLanguageContext.session, language);
                     } else {
-                        updateStaffLanguageLocal(pendingLanguageContext.matrixUserId ?? "", language);
+                        await updateStaffLanguage(
+                            pendingLanguageContext.accessToken,
+                            pendingLanguageContext.hsUrl,
+                            language,
+                        );
                     }
                     setLanguage(language);
                     setShowLanguageModal(false);
@@ -478,6 +542,12 @@ export function AuthPage() {
             />
         </div>
     );
+}
+
+function normalizeCompanyTld(value: string): string {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return "com";
+    return trimmed.startsWith(".") ? trimmed.slice(1) : trimmed;
 }
 
 type ForcePasswordResetProps = {

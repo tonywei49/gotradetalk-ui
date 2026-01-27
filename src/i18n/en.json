@@ -42,6 +42,10 @@
         "fields": {
             "companySlugLabel": "Company slug",
             "companySlugPlaceholder": "your-company",
+            "companyTldLabel": "Top-level domain",
+            "companyTldPlaceholder": "com",
+            "companyTldEdit": "Edit",
+            "companyTldDone": "Done",
             "usernameLabel": "Username",
             "usernamePlaceholder": "username",
             "passwordLabel": "Password",
@@ -52,6 +56,7 @@
             "userLocalIdPlaceholder": "yourname",
             "companyNameLabel": "Company name",
             "companyNamePlaceholder": "Company name",
+            "languageLabel": "Interface language",
             "currentPasswordLabel": "Current password",
             "newPasswordLabel": "New password",
             "confirmPasswordLabel": "Confirm new password"
@@ -63,16 +68,18 @@
             "generic": "Something went wrong. Please try again.",
             "missingLoginFields": "Please enter your username and password.",
             "missingRegisterFields": "Please enter email and password.",
+            "missingRegisterLanguage": "Please select a language.",
             "missingSupabaseSession": "Supabase session not available.",
             "invalidCompanySlug": "Company slug format is invalid.",
+            "invalidCompanyTld": "Top-level domain format is invalid.",
             "emptyPassword": "Please enter your current and new password.",
             "passwordMismatch": "Passwords do not match.",
             "passwordWeak": "Password must be at least 10 characters and include letters and numbers."
         }
     },
     "languageModal": {
-        "title": "Choose your communication language",
-        "subtitle": "This will be used for translations and display.",
+        "title": "Choose your interface language",
+        "subtitle": "This affects the UI text.",
         "save": "Save",
         "saving": "Saving...",
         "required": "Please select a language."

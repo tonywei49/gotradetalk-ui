@@ -42,6 +42,10 @@
         "fields": {
             "companySlugLabel": "公司标识",
             "companySlugPlaceholder": "your-company",
+            "companyTldLabel": "顶级域名",
+            "companyTldPlaceholder": "com",
+            "companyTldEdit": "编辑",
+            "companyTldDone": "完成",
             "usernameLabel": "账号",
             "usernamePlaceholder": "username",
             "passwordLabel": "密码",
@@ -52,6 +56,7 @@
             "userLocalIdPlaceholder": "yourname",
             "companyNameLabel": "公司名称",
             "companyNamePlaceholder": "公司名称",
+            "languageLabel": "界面语言",
             "currentPasswordLabel": "当前密码",
             "newPasswordLabel": "新密码",
             "confirmPasswordLabel": "确认新密码"
@@ -63,16 +68,18 @@
             "generic": "发生错误，请稍后再试。",
             "missingLoginFields": "请输入账号和密码。",
             "missingRegisterFields": "请输入邮箱和密码。",
+            "missingRegisterLanguage": "请选择语言。",
             "missingSupabaseSession": "Supabase 会话不可用。",
             "invalidCompanySlug": "公司标识格式不正确。",
+            "invalidCompanyTld": "顶级域名格式不正确。",
             "emptyPassword": "请输入当前密码和新密码。",
             "passwordMismatch": "两次输入的密码不一致。",
             "passwordWeak": "密码至少 10 位且包含字母和数字。"
         }
     },
     "languageModal": {
-        "title": "请选择沟通语种",
-        "subtitle": "该设置用于翻译和显示。",
+        "title": "请选择界面语言",
+        "subtitle": "仅影响界面文字显示。",
         "save": "保存",
         "saving": "保存中...",
         "required": "请选择一个语言。"
