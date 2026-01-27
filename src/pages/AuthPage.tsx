@@ -77,12 +77,24 @@ export function AuthPage() {
                 if (!clientUsername.trim() || !clientPassword.trim()) {
                     throw new Error(t("auth.errors.missingLoginFields"));
                 }
-                const response = await hubClientLogin(clientUsername.trim(), clientPassword.trim());
+                const supabase = getSupabaseClient();
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: clientUsername.trim(),
+                    password: clientPassword.trim(),
+                });
+                if (error) {
+                    throw new Error(error.message);
+                }
+                const session = data.session;
+                if (!session?.access_token) {
+                    throw new Error(t("auth.errors.missingSupabaseSession"));
+                }
+                const response = await hubClientLogin(clientUsername.trim(), clientPassword.trim(), session.access_token);
                 setClientSuccess(response);
-                const language = await fetchClientLanguage(response.matrix.access_token);
+                const language = await fetchClientLanguage(session.access_token);
                 if (!language) {
                     setPendingLanguageContext({
-                        accessToken: response.matrix.access_token,
+                        accessToken: session.access_token,
                         userType: "client",
                     });
                     setShowLanguageModal(true);

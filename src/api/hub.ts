@@ -37,12 +37,16 @@ async function postJson<T>(url: string, body: Record<string, unknown>, accessTok
     return (await response.json()) as T;
 }
 
-export async function hubClientLogin(account: string, password: string): Promise<HubClientLoginResponse> {
+export async function hubClientLogin(
+    account: string,
+    password: string,
+    accessToken?: string,
+): Promise<HubClientLoginResponse> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     return postJson<HubClientLoginResponse>(`${hubBaseUrl}/client/login`, {
         account,
         password,
-    });
+    }, accessToken);
 }
 
 export async function hubClientProvision(
