@@ -55,7 +55,9 @@ export function OauthSetupPage() {
         void (async (): Promise<void> => {
             const { data, error: profileError } = await supabase
                 .from("profiles")
-                .select("id, user_local_id, matrix_user_id, company_name, country, translation_locale, job_title, gender")
+                .select(
+                    "id, user_local_id, matrix_user_id, company_name, country, translation_locale, job_title, gender, password_set",
+                )
                 .eq("auth_user_id", session.user.id)
                 .eq("user_type", "client")
                 .maybeSingle();
@@ -74,7 +76,8 @@ export function OauthSetupPage() {
             if (data?.gender) setGender(data.gender);
             const hasAllRequired =
                 !!data?.user_local_id && !!data?.company_name && !!data?.country && !!data?.translation_locale;
-            setNeedsProvision(!hasAllRequired);
+            const hasPassword = !!data?.password_set;
+            setNeedsProvision(!hasAllRequired || !hasPassword);
         })();
     }, [session]);
 
