@@ -10,6 +10,11 @@ export default defineConfig({
                 target: "https://api.gotradetalk.com",
                 changeOrigin: true,
                 secure: true,
+                configure: (proxy) => {
+                    proxy.on("proxyReq", (proxyReq) => {
+                        proxyReq.setHeader("origin", "https://api.gotradetalk.com");
+                    });
+                },
             },
         },
     },
