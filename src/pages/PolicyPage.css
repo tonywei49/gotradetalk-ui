@@ -1,0 +1,37 @@
+.gt_policyPage {
+    min-height: 100vh;
+    background: #eef1f5;
+    display: flex;
+    justify-content: center;
+    padding: 48px 16px 80px;
+}
+
+.gt_policyCard {
+    width: min(920px, 100%);
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 40px 48px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+    line-height: 1.7;
+    color: #1f2937;
+}
+
+.gt_policyCard h1 {
+    margin: 0 0 16px;
+    font-size: 28px;
+}
+
+.gt_policyCard h2 {
+    margin: 24px 0 8px;
+    font-size: 18px;
+}
+
+.gt_policyCard p {
+    margin: 0 0 10px;
+}
+
+@media (max-width: 768px) {
+    .gt_policyCard {
+        padding: 28px 22px;
+    }
+}
