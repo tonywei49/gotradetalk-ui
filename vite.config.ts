@@ -12,7 +12,7 @@ export default defineConfig({
                 secure: true,
                 configure: (proxy) => {
                     proxy.on("proxyReq", (proxyReq) => {
-                        proxyReq.setHeader("origin", "https://api.gotradetalk.com");
+                        proxyReq.removeHeader("origin");
                     });
                 },
             },
