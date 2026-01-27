@@ -5,10 +5,11 @@ const ensureEnv = (value: string | undefined, key: string): string => {
     return value;
 };
 
-export const hubApiBaseUrl = ensureEnv(
-    import.meta.env.VITE_HUB_API_BASE_URL as string | undefined,
-    "VITE_HUB_API_BASE_URL",
-);
+const configuredHubBaseUrl = import.meta.env.VITE_HUB_API_BASE_URL as string | undefined;
+const defaultHubBaseUrl =
+    import.meta.env.MODE === "development" ? "/api" : "https://api.gotradetalk.com";
+
+export const hubApiBaseUrl = ensureEnv(configuredHubBaseUrl ?? defaultHubBaseUrl, "VITE_HUB_API_BASE_URL");
 
 export const defaultPublicHs =
     (import.meta.env.VITE_DEFAULT_PUBLIC_HS as string | undefined) ?? "https://matrix.gotradetalk.com";
