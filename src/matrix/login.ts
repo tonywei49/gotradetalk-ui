@@ -1,7 +1,14 @@
-import { createClient, type IMatrixClientCreds } from "matrix-js-sdk";
+import { createClient } from "matrix-js-sdk";
 
 type ServerConfig = {
     hsUrl: string;
+};
+
+export type MatrixLoginCredentials = {
+    userId: string;
+    accessToken: string;
+    deviceId: string;
+    homeserverUrl: string;
 };
 
 async function validateServerConfigWithStaticUrls(hsUrl: string): Promise<ServerConfig> {
@@ -12,7 +19,7 @@ export async function loginWithPassword(
     hsUrl: string,
     username: string,
     password: string,
-): Promise<IMatrixClientCreds> {
+): Promise<MatrixLoginCredentials> {
     const serverConfig = await validateServerConfigWithStaticUrls(hsUrl);
     const client = createClient({
         baseUrl: serverConfig.hsUrl,
@@ -28,9 +35,5 @@ export async function loginWithPassword(
         accessToken: response.access_token,
         deviceId: response.device_id,
         homeserverUrl: serverConfig.hsUrl,
-        identityServerUrl: undefined,
-        guest: false,
-        pickleKey: undefined,
-        freshLogin: true,
     };
 }
