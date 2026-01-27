@@ -61,6 +61,15 @@ export async function hubClientProvision(
     );
 }
 
+export async function hubClientResetPassword(accessToken: string, password: string): Promise<void> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    await postJson<Record<string, unknown>>(
+        `${hubBaseUrl}/client/reset-password`,
+        { password },
+        accessToken,
+    );
+}
+
 export type HubStaffPasswordStateResponse = {
     password_state: string;
 };

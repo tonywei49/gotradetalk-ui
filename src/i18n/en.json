@@ -24,7 +24,17 @@
             "registerConfirm": "Create account",
             "registerCancel": "Cancel",
             "registerBusy": "Creating...",
-            "forgotPassword": "Forgot password?"
+            "forgotPassword": "Forgot password?",
+            "resetTitle": "Reset your password",
+            "resetSubtitle": "Set a new password to continue.",
+            "resetEmailSubtitle": "We will email you a reset link.",
+            "resetConfirm": "Confirm reset",
+            "resetCancel": "Back",
+            "resetBusy": "Updating...",
+            "resetSuccess": "Password updated. Signing you in...",
+            "resetLoading": "Checking reset link...",
+            "resetInvalid": "Reset link is invalid or expired.",
+            "resetBack": "Back to login"
         },
         "company": {
             "title": "Staff entry",
@@ -69,6 +79,7 @@
             "missingLoginFields": "Please enter your username and password.",
             "missingRegisterFields": "Please enter email and password.",
             "missingRegisterLanguage": "Please select a language.",
+            "missingResetEmail": "Please enter your email.",
             "missingSupabaseSession": "Supabase session not available.",
             "invalidCompanySlug": "Company slug format is invalid.",
             "invalidCompanyTld": "Top-level domain format is invalid.",

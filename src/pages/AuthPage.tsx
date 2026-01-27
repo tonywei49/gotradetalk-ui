@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -33,6 +33,11 @@ export function AuthPage() {
     const [clientError, setClientError] = useState<string | null>(null);
     const [clientSuccess, setClientSuccess] = useState<HubClientLoginResponse | null>(null);
     const [showClientRegister, setShowClientRegister] = useState(false);
+    const [showClientReset, setShowClientReset] = useState(false);
+    const [resetEmail, setResetEmail] = useState("");
+    const [resetBusy, setResetBusy] = useState(false);
+    const [resetError, setResetError] = useState<string | null>(null);
+    const [resetSuccess, setResetSuccess] = useState<string | null>(null);
     const [registerEmail, setRegisterEmail] = useState("");
     const [registerPassword, setRegisterPassword] = useState("");
     const [registerUserLocalId, setRegisterUserLocalId] = useState("");
@@ -67,6 +72,18 @@ export function AuthPage() {
           }
         | null
     >(null);
+
+    useEffect(() => {
+        const supabase = getSupabaseClient();
+        const { data } = supabase.auth.onAuthStateChange((event) => {
+            if (event === "PASSWORD_RECOVERY") {
+                navigate("/reset-password");
+            }
+        });
+        return () => {
+            data.subscription.unsubscribe();
+        };
+    }, [navigate]);
 
     const hsPreview = useMemo(() => {
         const trimmed = companySlug.trim().toLowerCase();
@@ -232,6 +249,31 @@ export function AuthPage() {
         })();
     };
 
+    const onSubmitClientReset = (event: React.FormEvent<HTMLFormElement>): void => {
+        event.preventDefault();
+        void (async (): Promise<void> => {
+            setResetBusy(true);
+            setResetError(null);
+            setResetSuccess(null);
+            try {
+                const email = resetEmail.trim();
+                if (!email) {
+                    throw new Error(t("auth.errors.missingResetEmail"));
+                }
+                const supabase = getSupabaseClient();
+                const { error } = await supabase.auth.resetPasswordForEmail(email);
+                if (error) {
+                    throw new Error(error.message);
+                }
+                setResetSuccess(t("auth.client.resetSuccess"));
+            } catch (error) {
+                setResetError(error instanceof Error ? error.message : t("auth.errors.generic"));
+            } finally {
+                setResetBusy(false);
+            }
+        })();
+    };
+
     return (
         <div className="gt_app">
             <header className="gt_header">
@@ -315,7 +357,17 @@ export function AuthPage() {
                                 {t("auth.client.registerAction")}
                             </button>
                         </div>
-                        <button type="button" className="gt_link">
+                        <button
+                            type="button"
+                            className="gt_link"
+                            onClick={() => {
+                                setResetEmail(clientUsername.trim());
+                                setResetError(null);
+                                setResetSuccess(null);
+                                setShowClientReset(true);
+                            }}
+                            disabled={clientBusy}
+                        >
                             {t("auth.client.forgotPassword")}
                         </button>
                         {clientError && <div className="gt_error">{clientError}</div>}
@@ -473,6 +525,52 @@ export function AuthPage() {
                                     onClick={() => setShowClientRegister(false)}
                                 >
                                     {t("auth.client.registerCancel")}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showClientReset && (
+                <div className="gt_modalBackdrop">
+                    <div className="gt_modal">
+                        <div className="gt_modalHeader">
+                            <h3>{t("auth.client.resetTitle")}</h3>
+                            <button
+                                type="button"
+                                className="gt_modalClose"
+                                onClick={() => setShowClientReset(false)}
+                                disabled={resetBusy}
+                            >
+                                脳
+                            </button>
+                        </div>
+                        <p className="gt_modalSubtitle">{t("auth.client.resetEmailSubtitle")}</p>
+                        <form className="gt_form" onSubmit={onSubmitClientReset}>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.emailLabel")}</span>
+                                <input
+                                    type="email"
+                                    placeholder={t("auth.fields.emailPlaceholder")}
+                                    value={resetEmail}
+                                    onChange={(event) => setResetEmail(event.target.value)}
+                                    autoComplete="email"
+                                />
+                            </label>
+                            {resetError && <div className="gt_error">{resetError}</div>}
+                            {resetSuccess && <div className="gt_success">{resetSuccess}</div>}
+                            <div className="gt_actions">
+                                <button type="submit" className="gt_primary" disabled={resetBusy}>
+                                    {resetBusy ? t("auth.client.resetBusy") : t("auth.client.resetConfirm")}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="gt_secondary"
+                                    onClick={() => setShowClientReset(false)}
+                                    disabled={resetBusy}
+                                >
+                                    {t("auth.client.resetCancel")}
                                 </button>
                             </div>
                         </form>

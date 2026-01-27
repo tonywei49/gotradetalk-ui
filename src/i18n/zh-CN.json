@@ -24,7 +24,17 @@
             "registerConfirm": "创建账号",
             "registerCancel": "取消",
             "registerBusy": "创建中...",
-            "forgotPassword": "忘记密码？"
+            "forgotPassword": "忘记密码？",
+            "resetTitle": "重置密码",
+            "resetSubtitle": "设置新密码后继续登录。",
+            "resetEmailSubtitle": "我们将发送重置链接到邮箱。",
+            "resetConfirm": "确认重置",
+            "resetCancel": "返回",
+            "resetBusy": "更新中...",
+            "resetSuccess": "密码已更新，正在登录...",
+            "resetLoading": "正在检查重置链接...",
+            "resetInvalid": "重置链接无效或已过期。",
+            "resetBack": "返回登录"
         },
         "company": {
             "title": "员工入口",
@@ -69,6 +79,7 @@
             "missingLoginFields": "请输入账号和密码。",
             "missingRegisterFields": "请输入邮箱和密码。",
             "missingRegisterLanguage": "请选择语言。",
+            "missingResetEmail": "请输入邮箱。",
             "missingSupabaseSession": "Supabase 会话不可用。",
             "invalidCompanySlug": "公司标识格式不正确。",
             "invalidCompanyTld": "顶级域名格式不正确。",
