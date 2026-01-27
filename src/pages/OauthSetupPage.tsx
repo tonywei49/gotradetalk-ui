@@ -3,7 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
-import { hubClientLogin, hubClientProvision } from "../api/hub";
+import { hubClientLogin, hubClientProvision, hubClientSetPassword } from "../api/hub";
 import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
@@ -91,7 +91,7 @@ export function OauthSetupPage() {
                 setError(t("auth.errors.missingSupabaseSession"));
                 return;
             }
-            if (!password || (!confirmPassword && !existingAccount)) {
+            if (!password || (!confirmPassword && needsProvision)) {
                 setError(t("auth.errors.emptyPassword"));
                 return;
             }
@@ -125,25 +125,11 @@ export function OauthSetupPage() {
 
             setBusy(true);
             try {
-                const supabase = getSupabaseClient();
-                if (password) {
-                    const { error: updateError } = await supabase.auth.updateUser({ password });
-                    if (updateError) {
-                        throw new Error(updateError.message);
-                    }
-                }
-                const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
-                if (loginError || !loginData.session?.access_token) {
-                    throw new Error(t("auth.errors.invalidCredentials"));
-                }
-                const loginSession = loginData.session;
+                await hubClientSetPassword(session.access_token, password);
 
                 if (needsProvision) {
                     const normalizedUserId = userLocalId.trim().toLowerCase();
-                    await hubClientProvision(loginSession.access_token, {
+                    await hubClientProvision(session.access_token, {
                         user_local_id: normalizedUserId,
                         company_name: companyName.trim(),
                         country: country.trim(),
@@ -154,11 +140,11 @@ export function OauthSetupPage() {
                     });
                 }
 
-                const response = await hubClientLogin(email, password, loginSession.access_token);
+                const response = await hubClientLogin(email, password, session.access_token);
                 const hubSession = response.supabase ?? {
-                    access_token: loginSession.access_token,
-                    refresh_token: loginSession.refresh_token,
-                    expires_at: loginSession.expires_at ?? undefined,
+                    access_token: session.access_token,
+                    refresh_token: session.refresh_token ?? "",
+                    expires_at: session.expires_at ?? undefined,
                 };
                 const language = await fetchClientLanguage(hubSession);
                 if (!language) {

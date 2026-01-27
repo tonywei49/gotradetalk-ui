@@ -80,6 +80,15 @@ export async function hubClientProvision(
     );
 }
 
+export async function hubClientSetPassword(accessToken: string, password: string): Promise<void> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    await postJson<Record<string, unknown>>(
+        `${hubBaseUrl}/client/set-password`,
+        { password },
+        accessToken,
+    );
+}
+
 export async function hubClientResetPassword(accessToken: string, password: string): Promise<void> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     await postJson<Record<string, unknown>>(
