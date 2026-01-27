@@ -109,7 +109,7 @@
         "title": "Google account setup",
         "subtitle": "Set a password to complete your account.",
         "loginSubtitle": "Enter your password to continue.",
-        "confirm": "Create account",
+        "confirm": "Confirm",
         "cancel": "Cancel",
         "busy": "Creating...",
         "loading": "Checking your account...",
