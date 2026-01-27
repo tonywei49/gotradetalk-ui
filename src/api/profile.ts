@@ -1,121 +1,58 @@
-import { hubApiBaseUrl } from "../config";
+import type { HubSupabaseSession } from "./types";
+import { getSupabaseClient } from "./supabase";
 
-type ProfileResponse = {
-    preferred_language?: string | null;
-};
+const STAFF_LOCALE_KEY_PREFIX = "gt_staff_locale_";
 
-function normalizeBaseUrl(value: string): string {
-    return value.replace(/\/+$/, "");
-}
-
-async function readResponseMessage(response: Response): Promise<string> {
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-        try {
-            const data = (await response.json()) as { message?: string; error?: string };
-            if (data?.message) return data.message;
-            if (data?.error) return data.error;
-        } catch {
-            // fall through
-        }
-    }
-    const text = await response.text();
-    return text || `Request failed (${response.status})`;
-}
-
-async function getJson<T>(url: string, accessToken: string): Promise<T> {
-    const response = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-        },
+async function ensureSupabaseSession(session: HubSupabaseSession): Promise<string> {
+    const supabase = getSupabaseClient();
+    const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
     });
-
-    if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+    if (sessionError) {
+        throw new Error(sessionError.message);
     }
-
-    return (await response.json()) as T;
+    const userId = sessionData.session?.user?.id;
+    if (!userId) {
+        throw new Error("Missing Supabase user");
+    }
+    return userId;
 }
 
-async function postJson<T>(url: string, body: Record<string, unknown>, accessToken: string): Promise<T> {
-    const response = await fetch(url, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+export async function fetchClientLanguage(session: HubSupabaseSession): Promise<string | null> {
+    const supabase = getSupabaseClient();
+    const userId = await ensureSupabaseSession(session);
+    const { data, error } = await supabase
+        .from("profiles")
+        .select("locale")
+        .eq("auth_user_id", userId)
+        .eq("user_type", "client")
+        .maybeSingle();
+    if (error) {
+        throw new Error(error.message);
     }
-
-    return (await response.json()) as T;
+    return data?.locale ?? null;
 }
 
-export async function fetchClientLanguage(accessToken: string): Promise<string | null> {
-    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    try {
-        const response = await getJson<ProfileResponse>(`${hubBaseUrl}/client/profile`, accessToken);
-        return response.preferred_language ?? null;
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message.includes("Cannot GET")) {
-            return null;
-        }
-        throw error;
-    }
-}
-
-export async function fetchStaffLanguage(accessToken: string, hsUrl: string): Promise<string | null> {
-    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = new URL(`${hubBaseUrl}/staff/profile`);
-    url.searchParams.set("hs_url", hsUrl);
-    try {
-        const response = await getJson<ProfileResponse>(url.toString(), accessToken);
-        return response.preferred_language ?? null;
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message.includes("Cannot GET")) {
-            return null;
-        }
-        throw error;
+export async function updateClientLanguage(session: HubSupabaseSession, language: string): Promise<void> {
+    const supabase = getSupabaseClient();
+    const userId = await ensureSupabaseSession(session);
+    const { error } = await supabase
+        .from("profiles")
+        .update({ locale: language })
+        .eq("auth_user_id", userId)
+        .eq("user_type", "client");
+    if (error) {
+        throw new Error(error.message);
     }
 }
 
-export async function updateClientLanguage(accessToken: string, language: string): Promise<void> {
-    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    try {
-        await postJson<Record<string, unknown>>(
-            `${hubBaseUrl}/client/profile/language`,
-            { preferred_language: language },
-            accessToken,
-        );
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message.includes("Cannot POST")) {
-            return;
-        }
-        throw error;
-    }
+export function fetchStaffLanguageLocal(matrixUserId: string): string | null {
+    if (!matrixUserId) return null;
+    return localStorage.getItem(`${STAFF_LOCALE_KEY_PREFIX}${matrixUserId}`);
 }
 
-export async function updateStaffLanguage(accessToken: string, hsUrl: string, language: string): Promise<void> {
-    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    try {
-        await postJson<Record<string, unknown>>(
-            `${hubBaseUrl}/staff/profile/language`,
-            { preferred_language: language, hs_url: hsUrl },
-            accessToken,
-        );
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message.includes("Cannot POST")) {
-            return;
-        }
-        throw error;
-    }
+export function updateStaffLanguageLocal(matrixUserId: string, language: string): void {
+    if (!matrixUserId) return;
+    localStorage.setItem(`${STAFF_LOCALE_KEY_PREFIX}${matrixUserId}`, language);
 }

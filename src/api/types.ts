@@ -5,13 +5,15 @@ export type HubMatrixCredentials = {
     hs_url: string;
 };
 
+export type HubSupabaseSession = {
+    access_token: string;
+    refresh_token: string;
+    expires_at?: number;
+};
+
 export type HubClientLoginResponse = {
     matrix: HubMatrixCredentials;
-    supabase?: {
-        access_token: string;
-        refresh_token: string;
-        expires_at?: number;
-    };
+    supabase?: HubSupabaseSession;
 };
 
 export type HubClientSignupPayload = {

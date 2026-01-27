@@ -8,12 +8,12 @@ import {
     hubStaffActivatePasswordState,
     hubStaffPasswordState,
 } from "../api/hub";
-import type { HubClientLoginResponse } from "../api/types";
+import type { HubClientLoginResponse, HubSupabaseSession } from "../api/types";
 import {
     fetchClientLanguage,
-    fetchStaffLanguage,
+    fetchStaffLanguageLocal,
     updateClientLanguage,
-    updateStaffLanguage,
+    updateStaffLanguageLocal,
 } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
@@ -52,8 +52,8 @@ export function AuthPage() {
     const [forceResetInitialPassword, setForceResetInitialPassword] = useState("");
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageContext, setPendingLanguageContext] = useState<{
-        accessToken: string;
-        hsUrl?: string;
+        session?: HubSupabaseSession;
+        matrixUserId?: string;
         userType: "client" | "staff";
     } | null>(null);
 
@@ -91,10 +91,18 @@ export function AuthPage() {
                 }
                 const response = await hubClientLogin(clientUsername.trim(), clientPassword.trim(), session.access_token);
                 setClientSuccess(response);
-                const language = await fetchClientLanguage(session.access_token);
+                const hubSession = response.supabase ?? {
+                    access_token: session.access_token,
+                    refresh_token: session.refresh_token,
+                    expires_at: session.expires_at ?? undefined,
+                };
+                if (!hubSession) {
+                    throw new Error(t("auth.errors.missingSupabaseSession"));
+                }
+                const language = await fetchClientLanguage(hubSession);
                 if (!language) {
                     setPendingLanguageContext({
-                        accessToken: session.access_token,
+                        session: hubSession,
                         userType: "client",
                     });
                     setShowLanguageModal(true);
@@ -136,11 +144,10 @@ export function AuthPage() {
                     return;
                 }
                 setCompanySuccess(t("auth.company.loginSuccess"));
-                const language = await fetchStaffLanguage(credentials.accessToken, credentials.homeserverUrl);
+                const language = fetchStaffLanguageLocal(credentials.userId);
                 if (!language) {
                     setPendingLanguageContext({
-                        accessToken: credentials.accessToken,
-                        hsUrl: credentials.homeserverUrl,
+                        matrixUserId: credentials.userId,
                         userType: "staff",
                     });
                     setShowLanguageModal(true);
@@ -436,8 +443,7 @@ export function AuthPage() {
                                     await hubStaffActivatePasswordState(forceResetAccessToken, forceResetHsUrl);
                                     setShowForceReset(false);
                                     setPendingLanguageContext({
-                                        accessToken: forceResetAccessToken,
-                                        hsUrl: forceResetHsUrl,
+                                        matrixUserId: forceResetUserId,
                                         userType: "staff",
                                     });
                                     setShowLanguageModal(true);
@@ -457,13 +463,12 @@ export function AuthPage() {
                 onSave={async (language): Promise<void> => {
                     if (!pendingLanguageContext) return;
                     if (pendingLanguageContext.userType === "client") {
-                        await updateClientLanguage(pendingLanguageContext.accessToken, language);
+                        if (!pendingLanguageContext.session) {
+                            throw new Error(t("auth.errors.missingSupabaseSession"));
+                        }
+                        await updateClientLanguage(pendingLanguageContext.session, language);
                     } else {
-                        await updateStaffLanguage(
-                            pendingLanguageContext.accessToken,
-                            pendingLanguageContext.hsUrl ?? "",
-                            language,
-                        );
+                        updateStaffLanguageLocal(pendingLanguageContext.matrixUserId ?? "", language);
                     }
                     setLanguage(language);
                     setShowLanguageModal(false);
