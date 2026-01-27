@@ -191,6 +191,63 @@
     cursor: pointer;
 }
 
+.gt_error {
+    color: #b91c1c;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+}
+
+.gt_success {
+    color: #166534;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+}
+
+.gt_modalBackdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 10;
+}
+
+.gt_modal {
+    width: min(540px, 100%);
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 30px 80px rgba(15, 23, 42, 0.3);
+}
+
+.gt_modalHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.gt_modalHeader h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.gt_modalClose {
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    cursor: pointer;
+    color: #6b7280;
+}
+
 @media (max-width: 720px) {
     .gt_auth {
         padding: 24px;

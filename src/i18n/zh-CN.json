@@ -17,7 +17,13 @@
             "title": "客户入口",
             "subtitle": "使用客户账号登录",
             "loginAction": "登录",
+            "loginBusy": "登录中...",
+            "loginSuccess": "登录成功，已获取凭据。",
             "registerAction": "创建账号",
+            "registerTitle": "创建客户账号",
+            "registerConfirm": "创建账号",
+            "registerCancel": "取消",
+            "registerBusy": "创建中...",
             "forgotPassword": "忘记密码？"
         },
         "company": {
@@ -32,10 +38,22 @@
             "usernameLabel": "账号",
             "usernamePlaceholder": "username",
             "passwordLabel": "密码",
-            "passwordPlaceholder": "password"
+            "passwordPlaceholder": "password",
+            "emailLabel": "邮箱",
+            "emailPlaceholder": "name@example.com",
+            "userLocalIdLabel": "用户ID",
+            "userLocalIdPlaceholder": "yourname",
+            "companyNameLabel": "公司名称",
+            "companyNamePlaceholder": "公司名称"
         },
         "notes": {
             "companyHint": "Home Server 将使用 {{hs}}"
+        },
+        "errors": {
+            "generic": "发生错误，请稍后再试。",
+            "missingLoginFields": "请输入账号和密码。",
+            "missingRegisterFields": "请输入邮箱和密码。",
+            "missingSupabaseSession": "Supabase 会话不可用。"
         }
     }
 }

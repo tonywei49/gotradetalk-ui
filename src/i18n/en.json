@@ -17,7 +17,13 @@
             "title": "Client entry",
             "subtitle": "Login with your client credentials",
             "loginAction": "Login",
+            "loginBusy": "Signing in...",
+            "loginSuccess": "Login successful. Credentials received.",
             "registerAction": "Create an account",
+            "registerTitle": "Create client account",
+            "registerConfirm": "Create account",
+            "registerCancel": "Cancel",
+            "registerBusy": "Creating...",
             "forgotPassword": "Forgot password?"
         },
         "company": {
@@ -32,10 +38,22 @@
             "usernameLabel": "Username",
             "usernamePlaceholder": "username",
             "passwordLabel": "Password",
-            "passwordPlaceholder": "password"
+            "passwordPlaceholder": "password",
+            "emailLabel": "Email",
+            "emailPlaceholder": "name@example.com",
+            "userLocalIdLabel": "User ID",
+            "userLocalIdPlaceholder": "yourname",
+            "companyNameLabel": "Company name",
+            "companyNamePlaceholder": "Company name"
         },
         "notes": {
             "companyHint": "Home Server will be {{hs}}"
+        },
+        "errors": {
+            "generic": "Something went wrong. Please try again.",
+            "missingLoginFields": "Please enter your username and password.",
+            "missingRegisterFields": "Please enter email and password.",
+            "missingSupabaseSession": "Supabase session not available."
         }
     }
 }

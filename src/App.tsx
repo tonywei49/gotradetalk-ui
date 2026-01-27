@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { hubClientLogin, hubClientProvision } from "./api/hub";
+import { getSupabaseClient } from "./api/supabase";
+import type { HubClientLoginResponse } from "./api/types";
 import { setLanguage } from "./i18n";
 import "./App.css";
 
@@ -11,6 +14,16 @@ function App() {
     const [activeEntry, setActiveEntry] = useState<EntryMode>("client");
     const [clientUsername, setClientUsername] = useState("");
     const [clientPassword, setClientPassword] = useState("");
+    const [clientBusy, setClientBusy] = useState(false);
+    const [clientError, setClientError] = useState<string | null>(null);
+    const [clientSuccess, setClientSuccess] = useState<HubClientLoginResponse | null>(null);
+    const [showClientRegister, setShowClientRegister] = useState(false);
+    const [registerEmail, setRegisterEmail] = useState("");
+    const [registerPassword, setRegisterPassword] = useState("");
+    const [registerUserLocalId, setRegisterUserLocalId] = useState("");
+    const [registerCompanyName, setRegisterCompanyName] = useState("");
+    const [registerBusy, setRegisterBusy] = useState(false);
+    const [registerError, setRegisterError] = useState<string | null>(null);
     const [companySlug, setCompanySlug] = useState("");
     const [companyUsername, setCompanyUsername] = useState("");
     const [companyPassword, setCompanyPassword] = useState("");
@@ -27,12 +40,66 @@ function App() {
 
     const onSubmitClient = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
-        // TODO: integrate with Supabase + Hub client login/provision.
+        void (async (): Promise<void> => {
+            setClientBusy(true);
+            setClientError(null);
+            setClientSuccess(null);
+            try {
+                if (!clientUsername.trim() || !clientPassword.trim()) {
+                    throw new Error(t("auth.errors.missingLoginFields"));
+                }
+                const response = await hubClientLogin(clientUsername.trim(), clientPassword.trim());
+                setClientSuccess(response);
+            } catch (error) {
+                setClientError(error instanceof Error ? error.message : t("auth.errors.generic"));
+            } finally {
+                setClientBusy(false);
+            }
+        })();
     };
 
     const onSubmitCompany = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
         // TODO: integrate with Matrix password login + hub password state check.
+    };
+
+    const onSubmitClientRegister = (event: React.FormEvent<HTMLFormElement>): void => {
+        event.preventDefault();
+        void (async (): Promise<void> => {
+            setRegisterBusy(true);
+            setRegisterError(null);
+            try {
+                if (!registerEmail.trim() || !registerPassword.trim()) {
+                    throw new Error(t("auth.errors.missingRegisterFields"));
+                }
+                const supabase = getSupabaseClient();
+                const { data, error } = await supabase.auth.signUp({
+                    email: registerEmail.trim(),
+                    password: registerPassword.trim(),
+                });
+                if (error) {
+                    throw new Error(error.message);
+                }
+                const session = data.session;
+                if (!session?.access_token) {
+                    throw new Error(t("auth.errors.missingSupabaseSession"));
+                }
+                await hubClientProvision(session.access_token, {
+                    user_local_id: registerUserLocalId.trim(),
+                    company_name: registerCompanyName.trim(),
+                    password: registerPassword.trim(),
+                });
+                setShowClientRegister(false);
+                setRegisterEmail("");
+                setRegisterPassword("");
+                setRegisterUserLocalId("");
+                setRegisterCompanyName("");
+            } catch (error) {
+                setRegisterError(error instanceof Error ? error.message : t("auth.errors.generic"));
+            } finally {
+                setRegisterBusy(false);
+            }
+        })();
     };
 
     return (
@@ -107,15 +174,23 @@ function App() {
                         </label>
                         <div className="gt_actions">
                             <button type="submit" className="gt_primary">
-                                {t("auth.client.loginAction")}
+                                {clientBusy ? t("auth.client.loginBusy") : t("auth.client.loginAction")}
                             </button>
-                            <button type="button" className="gt_secondary">
+                            <button
+                                type="button"
+                                className="gt_secondary"
+                                onClick={() => setShowClientRegister(true)}
+                            >
                                 {t("auth.client.registerAction")}
                             </button>
                         </div>
                         <button type="button" className="gt_link">
                             {t("auth.client.forgotPassword")}
                         </button>
+                        {clientError && <div className="gt_error">{clientError}</div>}
+                        {clientSuccess && (
+                            <div className="gt_success">{t("auth.client.loginSuccess")}</div>
+                        )}
                     </form>
                 </section>
 
@@ -167,6 +242,77 @@ function App() {
                     </form>
                 </section>
             </main>
+            {showClientRegister && (
+                <div className="gt_modalBackdrop">
+                    <div className="gt_modal">
+                        <div className="gt_modalHeader">
+                            <h3>{t("auth.client.registerTitle")}</h3>
+                            <button
+                                type="button"
+                                className="gt_modalClose"
+                                onClick={() => setShowClientRegister(false)}
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <form className="gt_form" onSubmit={onSubmitClientRegister}>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.emailLabel")}</span>
+                                <input
+                                    type="email"
+                                    placeholder={t("auth.fields.emailPlaceholder")}
+                                    value={registerEmail}
+                                    onChange={(event) => setRegisterEmail(event.target.value)}
+                                    autoComplete="email"
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.passwordLabel")}</span>
+                                <input
+                                    type="password"
+                                    placeholder={t("auth.fields.passwordPlaceholder")}
+                                    value={registerPassword}
+                                    onChange={(event) => setRegisterPassword(event.target.value)}
+                                    autoComplete="new-password"
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.userLocalIdLabel")}</span>
+                                <input
+                                    type="text"
+                                    placeholder={t("auth.fields.userLocalIdPlaceholder")}
+                                    value={registerUserLocalId}
+                                    onChange={(event) => setRegisterUserLocalId(event.target.value)}
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.companyNameLabel")}</span>
+                                <input
+                                    type="text"
+                                    placeholder={t("auth.fields.companyNamePlaceholder")}
+                                    value={registerCompanyName}
+                                    onChange={(event) => setRegisterCompanyName(event.target.value)}
+                                />
+                            </label>
+                            {registerError && <div className="gt_error">{registerError}</div>}
+                            <div className="gt_actions">
+                                <button type="submit" className="gt_primary" disabled={registerBusy}>
+                                    {registerBusy
+                                        ? t("auth.client.registerBusy")
+                                        : t("auth.client.registerConfirm")}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="gt_secondary"
+                                    onClick={() => setShowClientRegister(false)}
+                                >
+                                    {t("auth.client.registerCancel")}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
