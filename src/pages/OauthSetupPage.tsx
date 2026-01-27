@@ -30,6 +30,7 @@ export function OauthSetupPage() {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [existingAccount, setExistingAccount] = useState(false);
+    const [needsProvision, setNeedsProvision] = useState(true);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
 
@@ -54,7 +55,7 @@ export function OauthSetupPage() {
         void (async (): Promise<void> => {
             const { data, error: profileError } = await supabase
                 .from("profiles")
-                .select("id, user_local_id, matrix_user_id")
+                .select("id, user_local_id, matrix_user_id, company_name, country, translation_locale, job_title, gender")
                 .eq("auth_user_id", session.user.id)
                 .eq("user_type", "client")
                 .maybeSingle();
@@ -65,6 +66,15 @@ export function OauthSetupPage() {
             if (data?.matrix_user_id) {
                 setExistingAccount(true);
             }
+            if (data?.user_local_id) setUserLocalId(data.user_local_id);
+            if (data?.company_name) setCompanyName(data.company_name);
+            if (data?.country) setCountry(data.country);
+            if (data?.translation_locale) setTranslationLocale(data.translation_locale);
+            if (data?.job_title) setJobTitle(data.job_title);
+            if (data?.gender) setGender(data.gender);
+            const hasAllRequired =
+                !!data?.user_local_id && !!data?.company_name && !!data?.country && !!data?.translation_locale;
+            setNeedsProvision(!hasAllRequired);
         })();
     }, [session]);
 
@@ -81,11 +91,11 @@ export function OauthSetupPage() {
                 setError(t("auth.errors.missingSupabaseSession"));
                 return;
             }
-            if (!password || !confirmPassword) {
+            if (!password || (!confirmPassword && !existingAccount)) {
                 setError(t("auth.errors.emptyPassword"));
                 return;
             }
-            if (!existingAccount) {
+            if (needsProvision) {
                 if (password !== confirmPassword) {
                     setError(t("auth.errors.passwordMismatch"));
                     return;
@@ -116,7 +126,7 @@ export function OauthSetupPage() {
             setBusy(true);
             try {
                 const supabase = getSupabaseClient();
-                if (!existingAccount) {
+                if (password) {
                     const { error: updateError } = await supabase.auth.updateUser({ password });
                     if (updateError) {
                         throw new Error(updateError.message);
@@ -131,7 +141,7 @@ export function OauthSetupPage() {
                 }
                 const loginSession = loginData.session;
 
-                if (!existingAccount) {
+                if (needsProvision) {
                     const normalizedUserId = userLocalId.trim().toLowerCase();
                     await hubClientProvision(loginSession.access_token, {
                         user_local_id: normalizedUserId,
@@ -202,14 +212,14 @@ export function OauthSetupPage() {
             <main className="gt_auth">
                 <div className="gt_cardHeader">
                     <h2>{t("oauth.title")}</h2>
-                    <p>{existingAccount ? t("oauth.loginSubtitle") : t("oauth.subtitle")}</p>
+                    <p>{needsProvision ? t("oauth.subtitle") : t("oauth.loginSubtitle")}</p>
                 </div>
                 <form className="gt_form" onSubmit={onSubmit}>
                     <label className="gt_field">
                         <span>{t("auth.fields.emailLabel")}</span>
                         <input type="email" value={email} readOnly />
                     </label>
-                    {!existingAccount && (
+                    {needsProvision && (
                         <>
                             <label className="gt_field">
                                 <span>{t("auth.fields.userLocalIdLabel")}</span>
@@ -280,7 +290,7 @@ export function OauthSetupPage() {
                             autoComplete="new-password"
                         />
                     </label>
-                    {!existingAccount && (
+                    {needsProvision && (
                         <label className="gt_field">
                             <span>{t("auth.fields.confirmPasswordLabel")}</span>
                             <input
