@@ -70,6 +70,13 @@
             "passwordWeak": "密码至少 10 位且包含字母和数字。"
         }
     },
+    "languageModal": {
+        "title": "请选择沟通语种",
+        "subtitle": "该设置用于翻译和显示。",
+        "save": "保存",
+        "saving": "保存中...",
+        "required": "请选择一个语言。"
+    },
     "main": {
         "sidebar": {
             "title": "GoTradeTalk",

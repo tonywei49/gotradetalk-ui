@@ -70,6 +70,13 @@
             "passwordWeak": "Password must be at least 10 characters and include letters and numbers."
         }
     },
+    "languageModal": {
+        "title": "Choose your communication language",
+        "subtitle": "This will be used for translations and display.",
+        "save": "Save",
+        "saving": "Saving...",
+        "required": "Please select a language."
+    },
     "main": {
         "sidebar": {
             "title": "GoTradeTalk",

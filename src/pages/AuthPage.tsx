@@ -8,8 +8,15 @@ import {
     hubStaffActivatePasswordState,
     hubStaffPasswordState,
 } from "../api/hub";
-import { getSupabaseClient } from "../api/supabase";
 import type { HubClientLoginResponse } from "../api/types";
+import {
+    fetchClientLanguage,
+    fetchStaffLanguage,
+    updateClientLanguage,
+    updateStaffLanguage,
+} from "../api/profile";
+import { getSupabaseClient } from "../api/supabase";
+import { LanguageModal } from "../components/LanguageModal";
 import { setLanguage } from "../i18n";
 import { loginWithPassword } from "../matrix/login";
 import "./AuthPage.css";
@@ -43,6 +50,12 @@ export function AuthPage() {
     const [forceResetHsUrl, setForceResetHsUrl] = useState("");
     const [forceResetUserId, setForceResetUserId] = useState("");
     const [forceResetInitialPassword, setForceResetInitialPassword] = useState("");
+    const [showLanguageModal, setShowLanguageModal] = useState(false);
+    const [pendingLanguageContext, setPendingLanguageContext] = useState<{
+        accessToken: string;
+        hsUrl?: string;
+        userType: "client" | "staff";
+    } | null>(null);
 
     const hsPreview = useMemo(() => {
         const trimmed = companySlug.trim().toLowerCase();
@@ -66,6 +79,16 @@ export function AuthPage() {
                 }
                 const response = await hubClientLogin(clientUsername.trim(), clientPassword.trim());
                 setClientSuccess(response);
+                const language = await fetchClientLanguage(response.matrix.access_token);
+                if (!language) {
+                    setPendingLanguageContext({
+                        accessToken: response.matrix.access_token,
+                        userType: "client",
+                    });
+                    setShowLanguageModal(true);
+                    return;
+                }
+                setLanguage(language === "zh-CN" ? "zh-CN" : "en");
                 navigate("/app");
             } catch (error) {
                 setClientError(error instanceof Error ? error.message : t("auth.errors.generic"));
@@ -101,6 +124,17 @@ export function AuthPage() {
                     return;
                 }
                 setCompanySuccess(t("auth.company.loginSuccess"));
+                const language = await fetchStaffLanguage(credentials.accessToken, credentials.homeserverUrl);
+                if (!language) {
+                    setPendingLanguageContext({
+                        accessToken: credentials.accessToken,
+                        hsUrl: credentials.homeserverUrl,
+                        userType: "staff",
+                    });
+                    setShowLanguageModal(true);
+                    return;
+                }
+                setLanguage(language === "zh-CN" ? "zh-CN" : "en");
                 navigate("/app");
             } catch (error) {
                 setCompanyError(error instanceof Error ? error.message : t("auth.errors.generic"));
@@ -389,7 +423,12 @@ export function AuthPage() {
                                 try {
                                     await hubStaffActivatePasswordState(forceResetAccessToken, forceResetHsUrl);
                                     setShowForceReset(false);
-                                    navigate("/app");
+                                    setPendingLanguageContext({
+                                        accessToken: forceResetAccessToken,
+                                        hsUrl: forceResetHsUrl,
+                                        userType: "staff",
+                                    });
+                                    setShowLanguageModal(true);
                                 } catch (error) {
                                     setCompanyError(
                                         error instanceof Error ? error.message : t("auth.errors.generic"),
@@ -401,6 +440,25 @@ export function AuthPage() {
                     </div>
                 </div>
             )}
+            <LanguageModal
+                open={showLanguageModal}
+                onSave={async (language): Promise<void> => {
+                    if (!pendingLanguageContext) return;
+                    if (pendingLanguageContext.userType === "client") {
+                        await updateClientLanguage(pendingLanguageContext.accessToken, language);
+                    } else {
+                        await updateStaffLanguage(
+                            pendingLanguageContext.accessToken,
+                            pendingLanguageContext.hsUrl ?? "",
+                            language,
+                        );
+                    }
+                    setLanguage(language);
+                    setShowLanguageModal(false);
+                    setPendingLanguageContext(null);
+                    navigate("/app");
+                }}
+            />
         </div>
     );
 }

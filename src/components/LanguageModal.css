@@ -1,0 +1,27 @@
+.gt_languageModal {
+    max-width: 420px;
+}
+
+.gt_modalSubtitle {
+    margin: 0 0 16px;
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.gt_languageOptions {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.gt_languageOption {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: #1f2937;
+}
+
+.gt_languageOption input {
+    accent-color: #2563eb;
+}
