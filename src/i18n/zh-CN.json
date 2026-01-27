@@ -1,0 +1,41 @@
+{
+    "app": {
+        "title": "GoTradeTalk",
+        "subtitle": "基于 Matrix 的商务沟通平台"
+    },
+    "language": {
+        "label": "语言",
+        "english": "English",
+        "chineseSimplified": "简体中文"
+    },
+    "auth": {
+        "tabs": {
+            "client": "我是客户",
+            "company": "我是员工"
+        },
+        "client": {
+            "title": "客户入口",
+            "subtitle": "使用客户账号登录",
+            "loginAction": "登录",
+            "registerAction": "创建账号",
+            "forgotPassword": "忘记密码？"
+        },
+        "company": {
+            "title": "员工入口",
+            "subtitle": "使用公司 Matrix 账号登录",
+            "loginAction": "登录",
+            "forgotPassword": "忘记密码？"
+        },
+        "fields": {
+            "companySlugLabel": "公司标识",
+            "companySlugPlaceholder": "your-company",
+            "usernameLabel": "账号",
+            "usernamePlaceholder": "username",
+            "passwordLabel": "密码",
+            "passwordPlaceholder": "password"
+        },
+        "notes": {
+            "companyHint": "Home Server 将使用 {{hs}}"
+        }
+    }
+}

@@ -1,0 +1,217 @@
+.gt_app {
+    min-height: 100vh;
+    padding: 48px 24px 64px;
+    color: #1b1d1f;
+    background:
+        radial-gradient(1200px 600px at 20% -10%, rgba(255, 190, 120, 0.25), transparent 60%),
+        radial-gradient(900px 500px at 90% 10%, rgba(120, 190, 255, 0.22), transparent 60%),
+        linear-gradient(180deg, #f7f6f2 0%, #f3f4f7 100%);
+}
+
+.gt_header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    max-width: 1100px;
+    margin: 0 auto 36px;
+}
+
+.gt_title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.gt_subtitle {
+    margin-top: 6px;
+    font-size: 14px;
+    color: #5a5f66;
+}
+
+.gt_lang {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #ffffffcc;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 8px 24px rgba(17, 23, 41, 0.08);
+}
+
+.gt_langLabel {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #68707a;
+}
+
+.gt_langButton {
+    border: none;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    background: transparent;
+    color: #36404a;
+    cursor: pointer;
+}
+
+.gt_langButton.active {
+    background: #1f2937;
+    color: #f9fafb;
+}
+
+.gt_auth {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: #ffffffd9;
+    border-radius: 24px;
+    padding: 32px;
+    box-shadow: 0 24px 80px rgba(21, 24, 34, 0.12);
+    backdrop-filter: blur(12px);
+}
+
+.gt_tabs {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+.gt_tab {
+    flex: 1;
+    border: none;
+    padding: 14px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 14px;
+    background: #f0f1f4;
+    color: #4b5563;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gt_tab.active {
+    background: #1f2937;
+    color: #f9fafb;
+    box-shadow: 0 12px 24px rgba(31, 41, 55, 0.2);
+    transform: translateY(-1px);
+}
+
+.gt_panel {
+    display: none;
+}
+
+.gt_panel.active {
+    display: block;
+    animation: gtFadeIn 0.35s ease;
+}
+
+.gt_cardHeader h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.gt_cardHeader p {
+    margin: 6px 0 0;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.gt_form {
+    margin-top: 24px;
+    display: grid;
+    gap: 16px;
+}
+
+.gt_field {
+    display: grid;
+    gap: 8px;
+    font-size: 13px;
+    color: #4b5563;
+}
+
+.gt_field input {
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    padding: 12px 14px;
+    font-size: 14px;
+    background: #ffffff;
+}
+
+.gt_field input:focus {
+    outline: 2px solid rgba(37, 99, 235, 0.25);
+    border-color: #93c5fd;
+}
+
+.gt_hint {
+    font-size: 12px;
+    color: #6b7280;
+    background: #f9fafb;
+    border-radius: 10px;
+    padding: 10px 12px;
+    border: 1px dashed #d1d5db;
+}
+
+.gt_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.gt_primary,
+.gt_secondary {
+    border-radius: 12px;
+    padding: 12px 18px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.gt_primary {
+    background: #2563eb;
+    color: #f8fafc;
+}
+
+.gt_secondary {
+    background: #f1f5f9;
+    color: #1f2937;
+}
+
+.gt_link {
+    background: transparent;
+    border: none;
+    color: #2563eb;
+    text-align: left;
+    padding: 0;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+@media (max-width: 720px) {
+    .gt_auth {
+        padding: 24px;
+    }
+
+    .gt_tabs {
+        flex-direction: column;
+    }
+
+    .gt_actions {
+        flex-direction: column;
+    }
+}
+
+@keyframes gtFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

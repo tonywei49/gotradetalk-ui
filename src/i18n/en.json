@@ -1,0 +1,41 @@
+{
+    "app": {
+        "title": "GoTradeTalk",
+        "subtitle": "Business communication built on Matrix"
+    },
+    "language": {
+        "label": "Language",
+        "english": "English",
+        "chineseSimplified": "简体中文"
+    },
+    "auth": {
+        "tabs": {
+            "client": "I am a client",
+            "company": "I am staff"
+        },
+        "client": {
+            "title": "Client entry",
+            "subtitle": "Login with your client credentials",
+            "loginAction": "Login",
+            "registerAction": "Create an account",
+            "forgotPassword": "Forgot password?"
+        },
+        "company": {
+            "title": "Staff entry",
+            "subtitle": "Use your company Matrix account",
+            "loginAction": "Login",
+            "forgotPassword": "Forgot password?"
+        },
+        "fields": {
+            "companySlugLabel": "Company slug",
+            "companySlugPlaceholder": "your-company",
+            "usernameLabel": "Username",
+            "usernamePlaceholder": "username",
+            "passwordLabel": "Password",
+            "passwordPlaceholder": "password"
+        },
+        "notes": {
+            "companyHint": "Home Server will be {{hs}}"
+        }
+    }
+}
