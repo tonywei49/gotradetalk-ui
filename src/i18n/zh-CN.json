@@ -30,6 +30,7 @@
             "resetTitle": "重置密码",
             "resetSubtitle": "设置新密码后继续登录。",
             "resetEmailSubtitle": "我们将发送重置链接到邮箱。",
+            "resetEmailSent": "重置邮件已发送，请查收。",
             "resetConfirm": "确认重置",
             "resetCancel": "返回",
             "resetBusy": "更新中...",

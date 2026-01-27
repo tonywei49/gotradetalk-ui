@@ -31,6 +31,8 @@ export function OauthSetupPage() {
     const [error, setError] = useState<string | null>(null);
     const [existingAccount, setExistingAccount] = useState(false);
     const [needsProvision, setNeedsProvision] = useState(true);
+    const [resetBusy, setResetBusy] = useState(false);
+    const [resetSuccess, setResetSuccess] = useState<string | null>(null);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
 
@@ -90,6 +92,7 @@ export function OauthSetupPage() {
         event.preventDefault();
         void (async (): Promise<void> => {
             setError(null);
+            setResetSuccess(null);
             if (!session?.access_token || !email) {
                 setError(t("auth.errors.missingSupabaseSession"));
                 return;
@@ -161,6 +164,27 @@ export function OauthSetupPage() {
                 setError(submitError instanceof Error ? submitError.message : t("auth.errors.generic"));
             } finally {
                 setBusy(false);
+            }
+        })();
+    };
+
+    const onSendReset = (): void => {
+        if (!email || resetBusy) return;
+        void (async (): Promise<void> => {
+            setResetBusy(true);
+            setError(null);
+            setResetSuccess(null);
+            try {
+                const supabase = getSupabaseClient();
+                const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
+                if (resetError) {
+                    throw new Error(resetError.message);
+                }
+                setResetSuccess(t("auth.client.resetEmailSent"));
+            } catch (resetError) {
+                setError(resetError instanceof Error ? resetError.message : t("auth.errors.generic"));
+            } finally {
+                setResetBusy(false);
             }
         })();
     };
@@ -291,6 +315,7 @@ export function OauthSetupPage() {
                         </label>
                     )}
                     {error && <div className="gt_error">{error}</div>}
+                    {resetSuccess && <div className="gt_success">{resetSuccess}</div>}
                     <div className="gt_actions">
                         <button type="submit" className="gt_primary" disabled={busy}>
                             {busy ? t("oauth.busy") : t("oauth.confirm")}
@@ -299,6 +324,9 @@ export function OauthSetupPage() {
                             {t("oauth.cancel")}
                         </button>
                     </div>
+                    <button type="button" className="gt_link" onClick={onSendReset} disabled={resetBusy}>
+                        {resetBusy ? t("auth.client.resetBusy") : t("auth.client.forgotPassword")}
+                    </button>
                 </form>
             </main>
             <LanguageModal

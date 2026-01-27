@@ -30,6 +30,7 @@
             "resetTitle": "Reset your password",
             "resetSubtitle": "Set a new password to continue.",
             "resetEmailSubtitle": "We will email you a reset link.",
+            "resetEmailSent": "Reset email sent. Please check your inbox.",
             "resetConfirm": "Confirm reset",
             "resetCancel": "Back",
             "resetBusy": "Updating...",
