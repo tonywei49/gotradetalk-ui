@@ -58,32 +58,64 @@ async function postJson<T>(url: string, body: Record<string, unknown>, accessTok
 
 export async function fetchClientLanguage(accessToken: string): Promise<string | null> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const response = await getJson<ProfileResponse>(`${hubBaseUrl}/client/profile`, accessToken);
-    return response.preferred_language ?? null;
+    try {
+        const response = await getJson<ProfileResponse>(`${hubBaseUrl}/client/profile`, accessToken);
+        return response.preferred_language ?? null;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("Cannot GET")) {
+            return null;
+        }
+        throw error;
+    }
 }
 
 export async function fetchStaffLanguage(accessToken: string, hsUrl: string): Promise<string | null> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     const url = new URL(`${hubBaseUrl}/staff/profile`);
     url.searchParams.set("hs_url", hsUrl);
-    const response = await getJson<ProfileResponse>(url.toString(), accessToken);
-    return response.preferred_language ?? null;
+    try {
+        const response = await getJson<ProfileResponse>(url.toString(), accessToken);
+        return response.preferred_language ?? null;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("Cannot GET")) {
+            return null;
+        }
+        throw error;
+    }
 }
 
 export async function updateClientLanguage(accessToken: string, language: string): Promise<void> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    await postJson<Record<string, unknown>>(
-        `${hubBaseUrl}/client/profile/language`,
-        { preferred_language: language },
-        accessToken,
-    );
+    try {
+        await postJson<Record<string, unknown>>(
+            `${hubBaseUrl}/client/profile/language`,
+            { preferred_language: language },
+            accessToken,
+        );
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("Cannot POST")) {
+            return;
+        }
+        throw error;
+    }
 }
 
 export async function updateStaffLanguage(accessToken: string, hsUrl: string, language: string): Promise<void> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    await postJson<Record<string, unknown>>(
-        `${hubBaseUrl}/staff/profile/language`,
-        { preferred_language: language, hs_url: hsUrl },
-        accessToken,
-    );
+    try {
+        await postJson<Record<string, unknown>>(
+            `${hubBaseUrl}/staff/profile/language`,
+            { preferred_language: language, hs_url: hsUrl },
+            accessToken,
+        );
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("Cannot POST")) {
+            return;
+        }
+        throw error;
+    }
 }
