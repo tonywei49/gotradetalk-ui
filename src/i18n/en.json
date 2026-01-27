@@ -69,5 +69,21 @@
             "passwordMismatch": "Passwords do not match.",
             "passwordWeak": "Password must be at least 10 characters and include letters and numbers."
         }
+    },
+    "main": {
+        "sidebar": {
+            "title": "GoTradeTalk",
+            "newChat": "New chat",
+            "rooms": "Rooms",
+            "empty": "No conversations yet",
+            "settings": "Settings"
+        },
+        "chat": {
+            "title": "Welcome",
+            "subtitle": "Select a conversation to start messaging.",
+            "empty": "Your messages will appear here.",
+            "placeholder": "Type a message...",
+            "send": "Send"
+        }
     }
 }

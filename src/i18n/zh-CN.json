@@ -69,5 +69,21 @@
             "passwordMismatch": "两次输入的密码不一致。",
             "passwordWeak": "密码至少 10 位且包含字母和数字。"
         }
+    },
+    "main": {
+        "sidebar": {
+            "title": "GoTradeTalk",
+            "newChat": "新建会话",
+            "rooms": "会话列表",
+            "empty": "暂无会话",
+            "settings": "设置"
+        },
+        "chat": {
+            "title": "欢迎",
+            "subtitle": "请选择会话开始沟通。",
+            "empty": "消息会显示在这里。",
+            "placeholder": "输入消息...",
+            "send": "发送"
+        }
     }
 }

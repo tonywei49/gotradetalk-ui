@@ -1,0 +1,142 @@
+.gt_main {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    min-height: 100vh;
+    background: #f3f4f7;
+}
+
+.gt_sidebar {
+    background: #111827;
+    color: #f9fafb;
+    display: flex;
+    flex-direction: column;
+    padding: 24px 20px;
+    gap: 20px;
+}
+
+.gt_sidebarHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.gt_sidebarTitle {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.gt_sidebarAction {
+    border: none;
+    background: #2563eb;
+    color: #f9fafb;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.gt_sidebarSectionTitle {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #9ca3af;
+    margin-bottom: 10px;
+}
+
+.gt_sidebarSection {
+    flex: 1;
+}
+
+.gt_sidebarEmpty {
+    font-size: 13px;
+    color: #9ca3af;
+    padding: 12px 0;
+}
+
+.gt_sidebarFooter {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 16px;
+}
+
+.gt_sidebarFooterButton {
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: transparent;
+    color: #e5e7eb;
+    padding: 10px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.gt_chat {
+    display: flex;
+    flex-direction: column;
+    padding: 28px 32px;
+}
+
+.gt_chatHeader {
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 16px;
+}
+
+.gt_chatTitle {
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827;
+}
+
+.gt_chatSubtitle {
+    font-size: 13px;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+.gt_chatBody {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-size: 14px;
+}
+
+.gt_chatComposer {
+    display: flex;
+    gap: 12px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 16px;
+}
+
+.gt_chatInput {
+    flex: 1;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 14px;
+    background: #ffffff;
+}
+
+.gt_chatSend {
+    border: none;
+    border-radius: 12px;
+    padding: 12px 18px;
+    background: #d1d5db;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+@media (max-width: 960px) {
+    .gt_main {
+        grid-template-columns: 1fr;
+    }
+
+    .gt_sidebar {
+        order: 2;
+    }
+
+    .gt_chat {
+        order: 1;
+        padding: 24px;
+    }
+}
