@@ -271,7 +271,7 @@ export function OauthSetupPage() {
                         </>
                     )}
                     <label className="gt_field">
-                        <span>{t("auth.fields.newPasswordLabel")}</span>
+                        <span>{needsProvision ? t("auth.fields.newPasswordLabel") : t("auth.fields.passwordLabel")}</span>
                         <input
                             type="password"
                             value={password}
