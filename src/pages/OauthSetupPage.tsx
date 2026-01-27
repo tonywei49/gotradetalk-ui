@@ -112,6 +112,11 @@ export function OauthSetupPage() {
             }
             setBusy(true);
             try {
+                const supabase = getSupabaseClient();
+                const { error: updateError } = await supabase.auth.updateUser({ password });
+                if (updateError) {
+                    throw new Error(updateError.message);
+                }
                 await hubClientProvision(session.access_token, {
                     user_local_id: normalizedUserId,
                     company_name: companyName.trim(),
@@ -148,8 +153,8 @@ export function OauthSetupPage() {
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
-                        <h2>{t("auth.oauth.title")}</h2>
-                        <p>{t("auth.oauth.loading")}</p>
+                        <h2>{t("oauth.title")}</h2>
+                        <p>{t("oauth.loading")}</p>
                     </div>
                 </main>
             </div>
@@ -161,12 +166,12 @@ export function OauthSetupPage() {
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
-                        <h2>{t("auth.oauth.title")}</h2>
-                        <p>{t("auth.oauth.invalid")}</p>
+                        <h2>{t("oauth.title")}</h2>
+                        <p>{t("oauth.invalid")}</p>
                     </div>
                     <div className="gt_actions">
                         <button type="button" className="gt_primary" onClick={() => navigate("/")}>
-                            {t("auth.oauth.back")}
+                            {t("oauth.back")}
                         </button>
                     </div>
                 </main>
@@ -179,12 +184,12 @@ export function OauthSetupPage() {
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
-                        <h2>{t("auth.oauth.title")}</h2>
-                        <p>{t("auth.oauth.exists")}</p>
+                        <h2>{t("oauth.title")}</h2>
+                        <p>{t("oauth.exists")}</p>
                     </div>
                     <div className="gt_actions">
                         <button type="button" className="gt_primary" onClick={() => navigate("/")}>
-                            {t("auth.oauth.back")}
+                            {t("oauth.back")}
                         </button>
                     </div>
                 </main>
@@ -196,8 +201,8 @@ export function OauthSetupPage() {
         <div className="gt_app">
             <main className="gt_auth">
                 <div className="gt_cardHeader">
-                    <h2>{t("auth.oauth.title")}</h2>
-                    <p>{t("auth.oauth.subtitle")}</p>
+                    <h2>{t("oauth.title")}</h2>
+                    <p>{t("oauth.subtitle")}</p>
                 </div>
                 <form className="gt_form" onSubmit={onSubmit}>
                     <label className="gt_field">
@@ -283,13 +288,13 @@ export function OauthSetupPage() {
                     {error && <div className="gt_error">{error}</div>}
                     <div className="gt_actions">
                         <button type="submit" className="gt_primary" disabled={busy}>
-                            {busy ? t("auth.oauth.busy") : t("auth.oauth.confirm")}
-                        </button>
-                        <button type="button" className="gt_secondary" onClick={() => navigate("/")} disabled={busy}>
-                            {t("auth.oauth.cancel")}
-                        </button>
-                    </div>
-                </form>
+                        {busy ? t("oauth.busy") : t("oauth.confirm")}
+                    </button>
+                    <button type="button" className="gt_secondary" onClick={() => navigate("/")} disabled={busy}>
+                        {t("oauth.cancel")}
+                    </button>
+                </div>
+            </form>
             </main>
             <LanguageModal
                 open={showLanguageModal}
