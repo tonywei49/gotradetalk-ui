@@ -96,10 +96,11 @@
             "missingTranslationLocale": "Please select a chat language.",
             "missingSupabaseSession": "Supabase session not available.",
             "invalidCompanySlug": "Company slug format is invalid.",
-            "invalidCompanyTld": "Top-level domain format is invalid.",
-            "invalidUserLocalId": "User ID format is invalid.",
-            "missingCompanyName": "Please enter your company name.",
-            "emptyPassword": "Please enter your current and new password.",
+        "invalidCompanyTld": "Top-level domain format is invalid.",
+        "invalidUserLocalId": "User ID format is invalid.",
+        "missingCompanyName": "Please enter your company name.",
+        "invalidCredentials": "Invalid credentials.",
+        "emptyPassword": "Please enter your current and new password.",
             "passwordMismatch": "Passwords do not match.",
             "passwordWeak": "Password must be at least 10 characters and include letters and numbers."
         }
@@ -107,6 +108,7 @@
     "oauth": {
         "title": "Google account setup",
         "subtitle": "Set a password to complete your account.",
+        "loginSubtitle": "Enter your password to continue.",
         "confirm": "Create account",
         "cancel": "Cancel",
         "busy": "Creating...",

@@ -96,10 +96,11 @@
             "missingTranslationLocale": "请选择聊天语种。",
             "missingSupabaseSession": "Supabase 会话不可用。",
             "invalidCompanySlug": "公司标识格式不正确。",
-            "invalidCompanyTld": "顶级域名格式不正确。",
-            "invalidUserLocalId": "用户 ID 格式不正确。",
-            "missingCompanyName": "请输入公司名称。",
-            "emptyPassword": "请输入当前密码和新密码。",
+        "invalidCompanyTld": "顶级域名格式不正确。",
+        "invalidUserLocalId": "用户 ID 格式不正确。",
+        "missingCompanyName": "请输入公司名称。",
+        "invalidCredentials": "账号或密码错误。",
+        "emptyPassword": "请输入当前密码和新密码。",
             "passwordMismatch": "两次输入的密码不一致。",
             "passwordWeak": "密码至少 10 位且包含字母和数字。"
         }
@@ -107,6 +108,7 @@
     "oauth": {
         "title": "Google 账号设置",
         "subtitle": "设置密码以完成账号创建。",
+        "loginSubtitle": "请输入密码以继续。",
         "confirm": "创建账号",
         "cancel": "取消",
         "busy": "创建中...",

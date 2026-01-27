@@ -81,56 +81,74 @@ export function OauthSetupPage() {
                 setError(t("auth.errors.missingSupabaseSession"));
                 return;
             }
-            const normalizedUserId = userLocalId.trim().toLowerCase();
-            if (!normalizedUserId || !USER_ID_PATTERN.test(normalizedUserId)) {
-                setError(t("auth.errors.invalidUserLocalId"));
-                return;
-            }
-            if (!companyName.trim()) {
-                setError(t("auth.errors.missingCompanyName"));
-                return;
-            }
-            if (!country.trim()) {
-                setError(t("auth.errors.missingCountry"));
-                return;
-            }
-            if (!translationLocale.trim()) {
-                setError(t("auth.errors.missingTranslationLocale"));
-                return;
-            }
             if (!password || !confirmPassword) {
                 setError(t("auth.errors.emptyPassword"));
                 return;
             }
-            if (password !== confirmPassword) {
-                setError(t("auth.errors.passwordMismatch"));
-                return;
+            if (!existingAccount) {
+                if (password !== confirmPassword) {
+                    setError(t("auth.errors.passwordMismatch"));
+                    return;
+                }
+                if (!isValidPassword(password)) {
+                    setError(t("auth.errors.passwordWeak"));
+                    return;
+                }
+                const normalizedUserId = userLocalId.trim().toLowerCase();
+                if (!normalizedUserId || !USER_ID_PATTERN.test(normalizedUserId)) {
+                    setError(t("auth.errors.invalidUserLocalId"));
+                    return;
+                }
+                if (!companyName.trim()) {
+                    setError(t("auth.errors.missingCompanyName"));
+                    return;
+                }
+                if (!country.trim()) {
+                    setError(t("auth.errors.missingCountry"));
+                    return;
+                }
+                if (!translationLocale.trim()) {
+                    setError(t("auth.errors.missingTranslationLocale"));
+                    return;
+                }
             }
-            if (!isValidPassword(password)) {
-                setError(t("auth.errors.passwordWeak"));
-                return;
-            }
+
             setBusy(true);
             try {
                 const supabase = getSupabaseClient();
-                const { error: updateError } = await supabase.auth.updateUser({ password });
-                if (updateError) {
-                    throw new Error(updateError.message);
+                if (!existingAccount) {
+                    const { error: updateError } = await supabase.auth.updateUser({ password });
+                    if (updateError) {
+                        throw new Error(updateError.message);
+                    }
                 }
-                await hubClientProvision(session.access_token, {
-                    user_local_id: normalizedUserId,
-                    company_name: companyName.trim(),
-                    country: country.trim(),
-                    translation_locale: translationLocale.trim(),
+                const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+                    email,
                     password,
-                    job_title: jobTitle.trim() || undefined,
-                    gender: gender.trim() || undefined,
                 });
-                const response = await hubClientLogin(email, password, session.access_token);
+                if (loginError || !loginData.session?.access_token) {
+                    throw new Error(t("auth.errors.invalidCredentials"));
+                }
+                const loginSession = loginData.session;
+
+                if (!existingAccount) {
+                    const normalizedUserId = userLocalId.trim().toLowerCase();
+                    await hubClientProvision(loginSession.access_token, {
+                        user_local_id: normalizedUserId,
+                        company_name: companyName.trim(),
+                        country: country.trim(),
+                        translation_locale: translationLocale.trim(),
+                        password,
+                        job_title: jobTitle.trim() || undefined,
+                        gender: gender.trim() || undefined,
+                    });
+                }
+
+                const response = await hubClientLogin(email, password, loginSession.access_token);
                 const hubSession = response.supabase ?? {
-                    access_token: session.access_token,
-                    refresh_token: session.refresh_token ?? "",
-                    expires_at: session.expires_at ?? undefined,
+                    access_token: loginSession.access_token,
+                    refresh_token: loginSession.refresh_token,
+                    expires_at: loginSession.expires_at ?? undefined,
                 };
                 const language = await fetchClientLanguage(hubSession);
                 if (!language) {
@@ -179,94 +197,80 @@ export function OauthSetupPage() {
         );
     }
 
-    if (existingAccount) {
-        return (
-            <div className="gt_app">
-                <main className="gt_auth">
-                    <div className="gt_cardHeader">
-                        <h2>{t("oauth.title")}</h2>
-                        <p>{t("oauth.exists")}</p>
-                    </div>
-                    <div className="gt_actions">
-                        <button type="button" className="gt_primary" onClick={() => navigate("/")}>
-                            {t("oauth.back")}
-                        </button>
-                    </div>
-                </main>
-            </div>
-        );
-    }
-
     return (
         <div className="gt_app">
             <main className="gt_auth">
                 <div className="gt_cardHeader">
                     <h2>{t("oauth.title")}</h2>
-                    <p>{t("oauth.subtitle")}</p>
+                    <p>{existingAccount ? t("oauth.loginSubtitle") : t("oauth.subtitle")}</p>
                 </div>
                 <form className="gt_form" onSubmit={onSubmit}>
                     <label className="gt_field">
                         <span>{t("auth.fields.emailLabel")}</span>
                         <input type="email" value={email} readOnly />
                     </label>
-                    <label className="gt_field">
-                        <span>{t("auth.fields.userLocalIdLabel")}</span>
-                        <input
-                            type="text"
-                            value={userLocalId}
-                            onChange={(event) => setUserLocalId(event.target.value)}
-                            placeholder={t("auth.fields.userLocalIdPlaceholder")}
-                        />
-                    </label>
-                    <label className="gt_field">
-                        <span>{t("auth.fields.companyNameLabel")}</span>
-                        <input
-                            type="text"
-                            value={companyName}
-                            onChange={(event) => setCompanyName(event.target.value)}
-                            placeholder={t("auth.fields.companyNamePlaceholder")}
-                        />
-                    </label>
-                    <label className="gt_field">
-                        <span>{t("auth.fields.countryLabel")}</span>
-                        <input
-                            type="text"
-                            value={country}
-                            onChange={(event) => setCountry(event.target.value)}
-                            placeholder={t("auth.fields.countryPlaceholder")}
-                        />
-                    </label>
-                    <label className="gt_field">
-                        <span>{t("auth.fields.jobTitleLabel")}</span>
-                        <input
-                            type="text"
-                            value={jobTitle}
-                            onChange={(event) => setJobTitle(event.target.value)}
-                            placeholder={t("auth.fields.jobTitlePlaceholder")}
-                        />
-                    </label>
-                    <label className="gt_field">
-                        <span>{t("auth.fields.genderLabel")}</span>
-                        <select value={gender} onChange={(event) => setGender(event.target.value)}>
-                            <option value="">{t("auth.fields.genderUnknown")}</option>
-                            <option value="male">{t("auth.fields.genderMale")}</option>
-                            <option value="female">{t("auth.fields.genderFemale")}</option>
-                        </select>
-                    </label>
-                    <label className="gt_field">
-                        <span>{t("auth.fields.translationLocaleLabel")}</span>
-                        <select
-                            value={translationLocale}
-                            onChange={(event) => setTranslationLocale(event.target.value)}
-                        >
-                            <option value="">{t("auth.fields.translationLocalePlaceholder")}</option>
-                            {translationLanguageOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                    {!existingAccount && (
+                        <>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.userLocalIdLabel")}</span>
+                                <input
+                                    type="text"
+                                    value={userLocalId}
+                                    onChange={(event) => setUserLocalId(event.target.value)}
+                                    placeholder={t("auth.fields.userLocalIdPlaceholder")}
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.companyNameLabel")}</span>
+                                <input
+                                    type="text"
+                                    value={companyName}
+                                    onChange={(event) => setCompanyName(event.target.value)}
+                                    placeholder={t("auth.fields.companyNamePlaceholder")}
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.countryLabel")}</span>
+                                <input
+                                    type="text"
+                                    value={country}
+                                    onChange={(event) => setCountry(event.target.value)}
+                                    placeholder={t("auth.fields.countryPlaceholder")}
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.jobTitleLabel")}</span>
+                                <input
+                                    type="text"
+                                    value={jobTitle}
+                                    onChange={(event) => setJobTitle(event.target.value)}
+                                    placeholder={t("auth.fields.jobTitlePlaceholder")}
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.genderLabel")}</span>
+                                <select value={gender} onChange={(event) => setGender(event.target.value)}>
+                                    <option value="">{t("auth.fields.genderUnknown")}</option>
+                                    <option value="male">{t("auth.fields.genderMale")}</option>
+                                    <option value="female">{t("auth.fields.genderFemale")}</option>
+                                </select>
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.translationLocaleLabel")}</span>
+                                <select
+                                    value={translationLocale}
+                                    onChange={(event) => setTranslationLocale(event.target.value)}
+                                >
+                                    <option value="">{t("auth.fields.translationLocalePlaceholder")}</option>
+                                    {translationLanguageOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        </>
+                    )}
                     <label className="gt_field">
                         <span>{t("auth.fields.newPasswordLabel")}</span>
                         <input
@@ -276,25 +280,27 @@ export function OauthSetupPage() {
                             autoComplete="new-password"
                         />
                     </label>
-                    <label className="gt_field">
-                        <span>{t("auth.fields.confirmPasswordLabel")}</span>
-                        <input
-                            type="password"
-                            value={confirmPassword}
-                            onChange={(event) => setConfirmPassword(event.target.value)}
-                            autoComplete="new-password"
-                        />
-                    </label>
+                    {!existingAccount && (
+                        <label className="gt_field">
+                            <span>{t("auth.fields.confirmPasswordLabel")}</span>
+                            <input
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(event) => setConfirmPassword(event.target.value)}
+                                autoComplete="new-password"
+                            />
+                        </label>
+                    )}
                     {error && <div className="gt_error">{error}</div>}
                     <div className="gt_actions">
                         <button type="submit" className="gt_primary" disabled={busy}>
-                        {busy ? t("oauth.busy") : t("oauth.confirm")}
-                    </button>
-                    <button type="button" className="gt_secondary" onClick={() => navigate("/")} disabled={busy}>
-                        {t("oauth.cancel")}
-                    </button>
-                </div>
-            </form>
+                            {busy ? t("oauth.busy") : t("oauth.confirm")}
+                        </button>
+                        <button type="button" className="gt_secondary" onClick={() => navigate("/")} disabled={busy}>
+                            {t("oauth.cancel")}
+                        </button>
+                    </div>
+                </form>
             </main>
             <LanguageModal
                 open={showLanguageModal}
