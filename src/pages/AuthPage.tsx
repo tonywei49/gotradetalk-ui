@@ -16,6 +16,7 @@ import {
     updateStaffLanguage,
 } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
+import { translationLanguageOptions } from "../constants/translationLanguages";
 import { LanguageModal } from "../components/LanguageModal";
 import { setLanguage } from "../i18n";
 import { loginWithPassword } from "../matrix/login";
@@ -42,6 +43,10 @@ export function AuthPage() {
     const [registerPassword, setRegisterPassword] = useState("");
     const [registerUserLocalId, setRegisterUserLocalId] = useState("");
     const [registerCompanyName, setRegisterCompanyName] = useState("");
+    const [registerCountry, setRegisterCountry] = useState("");
+    const [registerGender, setRegisterGender] = useState("");
+    const [registerJobTitle, setRegisterJobTitle] = useState("");
+    const [registerTranslationLocale, setRegisterTranslationLocale] = useState("");
     const [registerLanguage, setRegisterLanguage] = useState("en");
     const [registerBusy, setRegisterBusy] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(null);
@@ -94,6 +99,16 @@ export function AuthPage() {
 
     const onSwitchLanguage = (language: "en" | "zh-CN"): void => {
         setLanguage(language);
+    };
+
+    const onGoogleLogin = (): void => {
+        const supabase = getSupabaseClient();
+        void supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: {
+                redirectTo: `${window.location.origin}/oauth`,
+            },
+        });
     };
 
     const onSubmitClient = (event: React.FormEvent<HTMLFormElement>): void => {
@@ -218,6 +233,12 @@ export function AuthPage() {
                 if (!registerEmail.trim() || !registerPassword.trim()) {
                     throw new Error(t("auth.errors.missingRegisterFields"));
                 }
+                if (!registerCountry.trim()) {
+                    throw new Error(t("auth.errors.missingCountry"));
+                }
+                if (!registerTranslationLocale.trim()) {
+                    throw new Error(t("auth.errors.missingTranslationLocale"));
+                }
                 if (!registerLanguage) {
                     throw new Error(t("auth.errors.missingRegisterLanguage"));
                 }
@@ -236,7 +257,11 @@ export function AuthPage() {
                 await hubClientProvision(session.access_token, {
                     user_local_id: registerUserLocalId.trim(),
                     company_name: registerCompanyName.trim(),
+                    country: registerCountry.trim(),
+                    translation_locale: registerTranslationLocale.trim(),
                     password: registerPassword.trim(),
+                    gender: registerGender.trim() || undefined,
+                    job_title: registerJobTitle.trim() || undefined,
                 });
                 await updateClientLanguage(
                     {
@@ -251,6 +276,10 @@ export function AuthPage() {
                 setRegisterPassword("");
                 setRegisterUserLocalId("");
                 setRegisterCompanyName("");
+                setRegisterCountry("");
+                setRegisterGender("");
+                setRegisterJobTitle("");
+                setRegisterTranslationLocale("");
                 setRegisterLanguage("en");
             } catch (error) {
                 setRegisterError(error instanceof Error ? error.message : t("auth.errors.generic"));
@@ -368,6 +397,10 @@ export function AuthPage() {
                                 {t("auth.client.registerAction")}
                             </button>
                         </div>
+                        <div className="gt_separator">{t("auth.client.or")}</div>
+                        <button type="button" className="gt_googleButton" onClick={onGoogleLogin} disabled={clientBusy}>
+                            {t("auth.client.googleLogin")}
+                        </button>
                         <button
                             type="button"
                             className="gt_link"
@@ -512,6 +545,49 @@ export function AuthPage() {
                                     value={registerCompanyName}
                                     onChange={(event) => setRegisterCompanyName(event.target.value)}
                                 />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.countryLabel")}</span>
+                                <input
+                                    type="text"
+                                    placeholder={t("auth.fields.countryPlaceholder")}
+                                    value={registerCountry}
+                                    onChange={(event) => setRegisterCountry(event.target.value)}
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.jobTitleLabel")}</span>
+                                <input
+                                    type="text"
+                                    placeholder={t("auth.fields.jobTitlePlaceholder")}
+                                    value={registerJobTitle}
+                                    onChange={(event) => setRegisterJobTitle(event.target.value)}
+                                />
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.genderLabel")}</span>
+                                <select
+                                    value={registerGender}
+                                    onChange={(event) => setRegisterGender(event.target.value)}
+                                >
+                                    <option value="">{t("auth.fields.genderUnknown")}</option>
+                                    <option value="male">{t("auth.fields.genderMale")}</option>
+                                    <option value="female">{t("auth.fields.genderFemale")}</option>
+                                </select>
+                            </label>
+                            <label className="gt_field">
+                                <span>{t("auth.fields.translationLocaleLabel")}</span>
+                                <select
+                                    value={registerTranslationLocale}
+                                    onChange={(event) => setRegisterTranslationLocale(event.target.value)}
+                                >
+                                    <option value="">{t("auth.fields.translationLocalePlaceholder")}</option>
+                                    {translationLanguageOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
                             </label>
                             <label className="gt_field">
                                 <span>{t("auth.fields.languageLabel")}</span>

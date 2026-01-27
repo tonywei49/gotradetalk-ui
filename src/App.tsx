@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthPage } from "./pages/AuthPage";
 import { MainPage } from "./pages/MainPage";
+import { OauthSetupPage } from "./pages/OauthSetupPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { TermsPage } from "./pages/TermsPage";
@@ -11,6 +12,7 @@ export function App() {
         <BrowserRouter>
             <Routes>
                 <Route path="/" element={<AuthPage />} />
+                <Route path="/oauth" element={<OauthSetupPage />} />
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/app" element={<MainPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />

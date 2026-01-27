@@ -19,6 +19,8 @@ export type HubClientLoginResponse = {
 export type HubClientSignupPayload = {
     user_local_id: string;
     company_name: string;
+    country: string;
+    translation_locale: string;
     password: string;
     display_name?: string;
     gender?: string;
