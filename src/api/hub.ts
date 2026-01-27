@@ -56,3 +56,42 @@ export async function hubClientProvision(
         accessToken,
     );
 }
+
+export type HubStaffPasswordStateResponse = {
+    password_state: string;
+};
+
+export async function hubStaffPasswordState(
+    accessToken: string,
+    hsUrl: string,
+): Promise<HubStaffPasswordStateResponse> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = new URL(`${hubBaseUrl}/staff/password-state/self`);
+    url.searchParams.set("hs_url", hsUrl);
+    return getJson<HubStaffPasswordStateResponse>(url.toString(), accessToken);
+}
+
+export async function hubStaffActivatePasswordState(accessToken: string, hsUrl: string): Promise<void> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    await postJson<Record<string, unknown>>(
+        `${hubBaseUrl}/staff/password-state/activate-self`,
+        { hs_url: hsUrl },
+        accessToken,
+    );
+}
+
+async function getJson<T>(url: string, accessToken?: string): Promise<T> {
+    const response = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+    });
+
+    if (!response.ok) {
+        throw new Error(await readResponseMessage(response));
+    }
+
+    return (await response.json()) as T;
+}

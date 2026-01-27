@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { hubClientLogin, hubClientProvision } from "./api/hub";
+import { hubClientLogin, hubClientProvision, hubStaffActivatePasswordState, hubStaffPasswordState } from "./api/hub";
 import { getSupabaseClient } from "./api/supabase";
 import type { HubClientLoginResponse } from "./api/types";
+import { loginWithPassword } from "./matrix/login";
 import { setLanguage } from "./i18n";
 import "./App.css";
 
@@ -27,6 +28,14 @@ function App() {
     const [companySlug, setCompanySlug] = useState("");
     const [companyUsername, setCompanyUsername] = useState("");
     const [companyPassword, setCompanyPassword] = useState("");
+    const [companyBusy, setCompanyBusy] = useState(false);
+    const [companyError, setCompanyError] = useState<string | null>(null);
+    const [companySuccess, setCompanySuccess] = useState<string | null>(null);
+    const [showForceReset, setShowForceReset] = useState(false);
+    const [forceResetAccessToken, setForceResetAccessToken] = useState("");
+    const [forceResetHsUrl, setForceResetHsUrl] = useState("");
+    const [forceResetUserId, setForceResetUserId] = useState("");
+    const [forceResetInitialPassword, setForceResetInitialPassword] = useState("");
 
     const hsPreview = useMemo(() => {
         const trimmed = companySlug.trim().toLowerCase();
@@ -60,7 +69,36 @@ function App() {
 
     const onSubmitCompany = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
-        // TODO: integrate with Matrix password login + hub password state check.
+        void (async (): Promise<void> => {
+            setCompanyBusy(true);
+            setCompanyError(null);
+            setCompanySuccess(null);
+            try {
+                const normalizedSlug = companySlug.trim().toLowerCase();
+                if (!normalizedSlug || !companyUsername.trim() || !companyPassword.trim()) {
+                    throw new Error(t("auth.errors.missingLoginFields"));
+                }
+                if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
+                    throw new Error(t("auth.errors.invalidCompanySlug"));
+                }
+                const hsUrl = `https://matrix.${normalizedSlug}.com`;
+                const credentials = await loginWithPassword(hsUrl, companyUsername.trim(), companyPassword);
+                const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
+                if (passwordState.password_state === "RESET_REQUIRED") {
+                    setForceResetAccessToken(credentials.accessToken);
+                    setForceResetHsUrl(credentials.homeserverUrl);
+                    setForceResetUserId(credentials.userId);
+                    setForceResetInitialPassword(companyPassword);
+                    setShowForceReset(true);
+                    return;
+                }
+                setCompanySuccess(t("auth.company.loginSuccess"));
+            } catch (error) {
+                setCompanyError(error instanceof Error ? error.message : t("auth.errors.generic"));
+            } finally {
+                setCompanyBusy(false);
+            }
+        })();
     };
 
     const onSubmitClientRegister = (event: React.FormEvent<HTMLFormElement>): void => {
@@ -173,13 +211,14 @@ function App() {
                             />
                         </label>
                         <div className="gt_actions">
-                            <button type="submit" className="gt_primary">
+                            <button type="submit" className="gt_primary" disabled={clientBusy}>
                                 {clientBusy ? t("auth.client.loginBusy") : t("auth.client.loginAction")}
                             </button>
                             <button
                                 type="button"
                                 className="gt_secondary"
                                 onClick={() => setShowClientRegister(true)}
+                                disabled={clientBusy}
                             >
                                 {t("auth.client.registerAction")}
                             </button>
@@ -232,13 +271,15 @@ function App() {
                         </label>
                         <div className="gt_hint">{t("auth.notes.companyHint", { hs: hsPreview })}</div>
                         <div className="gt_actions">
-                            <button type="submit" className="gt_primary">
-                                {t("auth.company.loginAction")}
+                            <button type="submit" className="gt_primary" disabled={companyBusy}>
+                                {companyBusy ? t("auth.company.loginBusy") : t("auth.company.loginAction")}
                             </button>
                         </div>
                         <button type="button" className="gt_link">
                             {t("auth.company.forgotPassword")}
                         </button>
+                        {companyError && <div className="gt_error">{companyError}</div>}
+                        {companySuccess && <div className="gt_success">{companySuccess}</div>}
                     </form>
                 </section>
             </main>
@@ -251,6 +292,7 @@ function App() {
                                 type="button"
                                 className="gt_modalClose"
                                 onClick={() => setShowClientRegister(false)}
+                                disabled={registerBusy}
                             >
                                 ×
                             </button>
@@ -313,8 +355,183 @@ function App() {
                     </div>
                 </div>
             )}
+            {showForceReset && (
+                <div className="gt_modalBackdrop">
+                    <div className="gt_modal">
+                        <div className="gt_modalHeader">
+                            <h3>{t("auth.company.resetTitle")}</h3>
+                            <button
+                                type="button"
+                                className="gt_modalClose"
+                                onClick={() => setShowForceReset(false)}
+                                disabled
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <ForcePasswordResetForm
+                            accessToken={forceResetAccessToken}
+                            hsUrl={forceResetHsUrl}
+                            userId={forceResetUserId}
+                            initialPassword={forceResetInitialPassword}
+                            onComplete={async (): Promise<void> => {
+                                try {
+                                    await hubStaffActivatePasswordState(forceResetAccessToken, forceResetHsUrl);
+                                    setShowForceReset(false);
+                                } catch (error) {
+                                    setCompanyError(
+                                        error instanceof Error ? error.message : t("auth.errors.generic"),
+                                    );
+                                }
+                            }}
+                            onCancel={() => setShowForceReset(false)}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
+}
+
+type ForcePasswordResetProps = {
+    accessToken: string;
+    hsUrl: string;
+    userId: string;
+    initialPassword: string;
+    onComplete: () => Promise<void>;
+    onCancel: () => void;
+};
+
+function ForcePasswordResetForm({
+    accessToken,
+    hsUrl,
+    userId,
+    initialPassword,
+    onComplete,
+    onCancel,
+}: ForcePasswordResetProps) {
+    const { t } = useTranslation();
+    const [currentPassword, setCurrentPassword] = useState(initialPassword);
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const isValidPassword = (value: string): boolean => {
+        if (value.length < 10) return false;
+        return /[A-Za-z]/.test(value) && /\d/.test(value);
+    };
+
+    const onSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
+        event.preventDefault();
+        void (async (): Promise<void> => {
+            setError(null);
+            if (!currentPassword || !newPassword) {
+                setError(t("auth.errors.emptyPassword"));
+                return;
+            }
+            if (newPassword !== confirmPassword) {
+                setError(t("auth.errors.passwordMismatch"));
+                return;
+            }
+            if (!isValidPassword(newPassword)) {
+                setError(t("auth.errors.passwordWeak"));
+                return;
+            }
+            setBusy(true);
+            try {
+                await changeMatrixPassword(hsUrl, accessToken, userId, currentPassword, newPassword);
+                await onComplete();
+            } catch (error) {
+                setError(error instanceof Error ? error.message : t("auth.errors.generic"));
+            } finally {
+                setBusy(false);
+            }
+        })();
+    };
+
+    return (
+        <form className="gt_form" onSubmit={onSubmit}>
+            <div className="gt_hint">{t("auth.company.resetHint")}</div>
+            <label className="gt_field">
+                <span>{t("auth.fields.currentPasswordLabel")}</span>
+                <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    autoComplete="current-password"
+                />
+            </label>
+            <label className="gt_field">
+                <span>{t("auth.fields.newPasswordLabel")}</span>
+                <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    autoComplete="new-password"
+                />
+            </label>
+            <label className="gt_field">
+                <span>{t("auth.fields.confirmPasswordLabel")}</span>
+                <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    autoComplete="new-password"
+                />
+            </label>
+            {error && <div className="gt_error">{error}</div>}
+            <div className="gt_actions">
+                <button type="submit" className="gt_primary" disabled={busy}>
+                    {busy ? t("auth.company.resetBusy") : t("auth.company.resetConfirm")}
+                </button>
+                <button type="button" className="gt_secondary" onClick={onCancel} disabled={busy}>
+                    {t("auth.company.resetCancel")}
+                </button>
+            </div>
+        </form>
+    );
+}
+
+async function changeMatrixPassword(
+    hsUrl: string,
+    accessToken: string,
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+): Promise<void> {
+    const url = new URL("/_matrix/client/v3/account/password", hsUrl);
+    const response = await fetch(url.toString(), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+            auth: {
+                type: "m.login.password",
+                identifier: {
+                    type: "m.id.user",
+                    user: userId,
+                },
+                password: currentPassword,
+            },
+            new_password: newPassword,
+            logout_devices: false,
+        }),
+    });
+
+    if (!response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            const data = (await response.json()) as { error?: string };
+            if (data?.error) {
+                throw new Error(data.error);
+            }
+        }
+        const text = await response.text();
+        throw new Error(text || `Request failed (${response.status})`);
+    }
 }
 
 export default App;

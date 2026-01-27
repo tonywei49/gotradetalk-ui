@@ -226,6 +226,7 @@
     border-radius: 20px;
     padding: 24px;
     box-shadow: 0 30px 80px rgba(15, 23, 42, 0.3);
+    position: relative;
 }
 
 .gt_modalHeader {
@@ -246,6 +247,11 @@
     font-size: 20px;
     cursor: pointer;
     color: #6b7280;
+}
+
+.gt_modalClose:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 @media (max-width: 720px) {

@@ -30,6 +30,13 @@
             "title": "Staff entry",
             "subtitle": "Use your company Matrix account",
             "loginAction": "Login",
+            "loginBusy": "Signing in...",
+            "loginSuccess": "Login successful.",
+            "resetTitle": "Reset password",
+            "resetHint": "Please update your password before continuing.",
+            "resetConfirm": "Update password",
+            "resetCancel": "Back to login",
+            "resetBusy": "Updating...",
             "forgotPassword": "Forgot password?"
         },
         "fields": {
@@ -44,7 +51,10 @@
             "userLocalIdLabel": "User ID",
             "userLocalIdPlaceholder": "yourname",
             "companyNameLabel": "Company name",
-            "companyNamePlaceholder": "Company name"
+            "companyNamePlaceholder": "Company name",
+            "currentPasswordLabel": "Current password",
+            "newPasswordLabel": "New password",
+            "confirmPasswordLabel": "Confirm new password"
         },
         "notes": {
             "companyHint": "Home Server will be {{hs}}"
@@ -53,7 +63,11 @@
             "generic": "Something went wrong. Please try again.",
             "missingLoginFields": "Please enter your username and password.",
             "missingRegisterFields": "Please enter email and password.",
-            "missingSupabaseSession": "Supabase session not available."
+            "missingSupabaseSession": "Supabase session not available.",
+            "invalidCompanySlug": "Company slug format is invalid.",
+            "emptyPassword": "Please enter your current and new password.",
+            "passwordMismatch": "Passwords do not match.",
+            "passwordWeak": "Password must be at least 10 characters and include letters and numbers."
         }
     }
 }
