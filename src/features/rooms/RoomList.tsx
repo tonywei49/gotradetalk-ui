@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
+import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import type { AuthUserType } from "../../stores/AuthStore";
 import { searchDirectoryCustomers, searchDirectoryEmployees } from "../../api/directory";
@@ -76,6 +77,7 @@ export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSel
     const [searchResults, setSearchResults] = useState<
         { id: string; name: string; matrixUserId: string | null }[]
     >([]);
+    const [showSearchModal, setShowSearchModal] = useState(false);
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -177,43 +179,25 @@ export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSel
         if (!client || !matrixUserId) return;
         const roomId = await getOrCreateDirectRoom(client, matrixUserId);
         onSelectRoom(roomId);
+        setShowSearchModal(false);
+        setQuery("");
     };
 
     return (
         <div className="flex-1 overflow-y-auto">
-            <div className="px-4 pt-2 pb-3">
-                <input
-                    type="text"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search user..."
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-                {searchBusy && <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">Searching...</div>}
-                {searchError && <div className="mt-2 text-xs text-rose-500">{searchError}</div>}
+            <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
+                <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    Direct Messages
+                </span>
+                <button
+                    type="button"
+                    onClick={() => setShowSearchModal(true)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-100"
+                    aria-label="Start chat"
+                >
+                    <PlusIcon className="h-4 w-4" />
+                </button>
             </div>
-            {searchResults.length > 0 && (
-                <div className="border-t border-gray-100 dark:border-slate-800">
-                    {searchResults.map((item) => (
-                        <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => void onStartChat(item.matrixUserId)}
-                            className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
-                        >
-                            <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                    {item.name}
-                                </div>
-                                <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                    {item.matrixUserId ?? "No matrix account"}
-                                </div>
-                            </div>
-                            <span className="text-xs text-emerald-500">Chat</span>
-                        </button>
-                    ))}
-                </div>
-            )}
             {rooms.length === 0 ? (
                 <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
                     No direct chats yet.
@@ -244,6 +228,58 @@ export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSel
                         </div>
                     </button>
                 ))
+            )}
+            {showSearchModal && (
+                <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Start a chat</h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowSearchModal(false)}
+                                className="rounded-full p-1 text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
+                                aria-label="Close"
+                            >
+                                <XMarkIcon className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={(event) => setQuery(event.target.value)}
+                            placeholder="Search user..."
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                        {searchBusy && (
+                            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">Searching...</div>
+                        )}
+                        {searchError && <div className="mt-3 text-xs text-rose-500">{searchError}</div>}
+                        <div className="mt-4 max-h-72 overflow-y-auto">
+                            {searchResults.length === 0 && query.trim() ? (
+                                <div className="text-sm text-slate-500 dark:text-slate-400">No results.</div>
+                            ) : (
+                                searchResults.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => void onStartChat(item.matrixUserId)}
+                                        className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
+                                    >
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                                {item.name}
+                                            </div>
+                                            <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                                                {item.matrixUserId ?? "No matrix account"}
+                                            </div>
+                                        </div>
+                                        <span className="text-xs text-emerald-500">Chat</span>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
