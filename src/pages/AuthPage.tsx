@@ -348,21 +348,18 @@ export function AuthPage() {
                     <div className="gt_subtitle">{t("app.subtitle")}</div>
                 </div>
                 <div className="gt_lang">
-                    <span className="gt_langLabel">{t("language.label")}</span>
-                    <button
-                        type="button"
-                        className={i18n.language === "en" ? "gt_langButton active" : "gt_langButton"}
-                        onClick={() => onSwitchLanguage("en")}
+                    <label className="gt_langLabel" htmlFor="gt_lang_select">
+                        {t("language.label")}
+                    </label>
+                    <select
+                        id="gt_lang_select"
+                        className="gt_langSelect"
+                        value={i18n.language === "zh-CN" ? "zh-CN" : "en"}
+                        onChange={(event) => onSwitchLanguage(event.target.value as "en" | "zh-CN")}
                     >
-                        {t("language.english")}
-                    </button>
-                    <button
-                        type="button"
-                        className={i18n.language === "zh-CN" ? "gt_langButton active" : "gt_langButton"}
-                        onClick={() => onSwitchLanguage("zh-CN")}
-                    >
-                        {t("language.chineseSimplified")}
-                    </button>
+                        <option value="en">{t("language.english")}</option>
+                        <option value="zh-CN">{t("language.chineseSimplified")}</option>
+                    </select>
                 </div>
             </header>
 

@@ -48,19 +48,14 @@
     color: #68707a;
 }
 
-.gt_langButton {
-    border: none;
-    padding: 6px 12px;
+.gt_langSelect {
+    border: 1px solid rgba(15, 23, 42, 0.12);
     border-radius: 999px;
+    padding: 6px 12px;
     font-size: 13px;
-    background: transparent;
-    color: #36404a;
-    cursor: pointer;
-}
-
-.gt_langButton.active {
-    background: #1f2937;
-    color: #f9fafb;
+    background: #ffffff;
+    color: #1f2937;
+    min-width: 160px;
 }
 
 .gt_auth {
