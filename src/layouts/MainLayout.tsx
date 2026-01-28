@@ -111,12 +111,6 @@ export const MainLayout: React.FC = () => {
                             <div className="text-xs text-slate-500 truncate dark:text-slate-400">Account</div>
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
-                    >
-                        Settings
-                    </button>
                 </div>
 
                 {/* Search Bar */}
