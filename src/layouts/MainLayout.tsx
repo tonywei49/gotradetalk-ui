@@ -46,6 +46,8 @@ export const MainLayout: React.FC = () => {
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const userType = useAuthStore((state) => state.userType);
     const hubAccessToken = useAuthStore((state) => state.hubSession?.access_token ?? null);
+    const matrixAccessToken = useAuthStore((state) => state.matrixCredentials?.access_token ?? null);
+    const matrixHsUrl = useAuthStore((state) => state.matrixCredentials?.hs_url ?? null);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -155,6 +157,8 @@ export const MainLayout: React.FC = () => {
                     client={matrixClient}
                     userType={userType}
                     hubAccessToken={hubAccessToken}
+                    matrixAccessToken={matrixAccessToken}
+                    matrixHsUrl={matrixHsUrl}
                     activeRoomId={activeRoomId}
                     onSelectRoom={(roomId) => setActiveRoomId(roomId)}
                 />

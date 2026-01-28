@@ -62,6 +62,17 @@ export async function searchDirectoryCustomers(
     return response.items;
 }
 
+export async function searchStaffDirectoryCustomers(
+    query: string,
+    hsUrl: string,
+    accessToken: string,
+): Promise<DirectoryCustomer[]> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = withQuery(`${hubBaseUrl}/staff/directory/customers/search`, { q: query, hs_url: hsUrl });
+    const response = await getJson<DirectoryResponse<DirectoryCustomer>>(url, accessToken);
+    return response.items;
+}
+
 export async function searchDirectoryEmployees(
     query: string,
     accessToken: string,

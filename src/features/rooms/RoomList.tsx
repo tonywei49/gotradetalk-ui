@@ -4,7 +4,7 @@ import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import type { AuthUserType } from "../../stores/AuthStore";
-import { searchDirectoryCustomers, searchDirectoryEmployees } from "../../api/directory";
+import { searchDirectoryCustomers, searchDirectoryEmployees, searchStaffDirectoryCustomers } from "../../api/directory";
 import { getOrCreateDirectRoom } from "../../matrix/direct";
 
 type DirectRoomEntry = {
@@ -20,6 +20,8 @@ type RoomListProps = {
     client: MatrixClient | null;
     userType: AuthUserType | null;
     hubAccessToken: string | null;
+    matrixAccessToken: string | null;
+    matrixHsUrl: string | null;
     activeRoomId: string | null;
     onSelectRoom: (roomId: string) => void;
 };
@@ -69,7 +71,15 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
     return Array.from(byUser.values()).sort((a, b) => b.lastActive - a.lastActive);
 }
 
-export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSelectRoom }: RoomListProps) {
+export function RoomList({
+    client,
+    userType,
+    hubAccessToken,
+    matrixAccessToken,
+    matrixHsUrl,
+    activeRoomId,
+    onSelectRoom,
+}: RoomListProps) {
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
     const [query, setQuery] = useState("");
     const [searchBusy, setSearchBusy] = useState(false);
@@ -133,19 +143,22 @@ export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSel
             setSearchError(null);
             return;
         }
-        if (!hubAccessToken) {
-            setSearchError("Search requires hub access.");
-            setSearchResults([]);
-            return;
-        }
-
         const handler = window.setTimeout(() => {
             void (async () => {
                 setSearchBusy(true);
                 setSearchError(null);
                 try {
                     if (userType === "staff") {
-                        const results = await searchDirectoryCustomers(query.trim(), hubAccessToken);
+                        if (!matrixAccessToken || !matrixHsUrl) {
+                            setSearchError("Search requires staff token.");
+                            setSearchResults([]);
+                            return;
+                        }
+                        const results = await searchStaffDirectoryCustomers(
+                            query.trim(),
+                            matrixHsUrl,
+                            matrixAccessToken,
+                        );
                         setSearchResults(
                             results.map((item) => ({
                                 id: item.customer_user_id,
@@ -154,6 +167,11 @@ export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSel
                             })),
                         );
                     } else {
+                        if (!hubAccessToken) {
+                            setSearchError("Search requires hub access.");
+                            setSearchResults([]);
+                            return;
+                        }
                         const results = await searchDirectoryEmployees(query.trim(), hubAccessToken);
                         setSearchResults(
                             results.map((item) => ({
@@ -172,8 +190,8 @@ export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSel
             })();
         }, 350);
 
-        return () => window.clearTimeout(handler);
-    }, [query, hubAccessToken, userType]);
+            return () => window.clearTimeout(handler);
+    }, [query, hubAccessToken, userType, matrixAccessToken, matrixHsUrl]);
 
     const onStartChat = async (matrixUserId: string | null): Promise<void> => {
         if (!client || !matrixUserId) return;
