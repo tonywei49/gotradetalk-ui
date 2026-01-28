@@ -10,6 +10,7 @@ type PersistedAuthState = {
     userType: AuthUserType;
     matrixCredentials: HubMatrixCredentials;
     hubSession: HubSupabaseSession | null;
+    persistedAt: number;
 };
 
 type AuthState = {
@@ -22,16 +23,22 @@ type AuthState = {
         matrixCredentials: HubMatrixCredentials;
         hubSession: HubSupabaseSession | null;
     }) => void;
+    validateSession: () => Promise<void>;
     clearSession: () => void;
 };
 
 const STORAGE_KEY = "gt_auth_session";
+const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24;
 
 function loadPersistedState(): PersistedAuthState | null {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return null;
-        return JSON.parse(raw) as PersistedAuthState;
+        const parsed = JSON.parse(raw) as PersistedAuthState;
+        if (!parsed.persistedAt) {
+            parsed.persistedAt = Date.now();
+        }
+        return parsed;
     } catch {
         return null;
     }
@@ -49,7 +56,22 @@ function persistState(state: PersistedAuthState | null): void {
     }
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+async function validateMatrixSession(credentials: HubMatrixCredentials): Promise<boolean> {
+    try {
+        const url = new URL("/_matrix/client/v3/account/whoami", credentials.hs_url);
+        const response = await fetch(url.toString(), {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${credentials.access_token}`,
+            },
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
     userType: null,
     matrixCredentials: null,
     hubSession: null,
@@ -82,6 +104,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             userType,
             matrixCredentials,
             hubSession,
+            persistedAt: Date.now(),
         });
         set({
             userType,
@@ -89,6 +112,26 @@ export const useAuthStore = create<AuthState>((set) => ({
             hubSession,
             matrixClient,
         });
+    },
+    validateSession: async () => {
+        const state = get();
+        if (!state.matrixCredentials) return;
+        const persisted = loadPersistedState();
+        if (!persisted) {
+            get().clearSession();
+            return;
+        }
+        const nowSec = Date.now() / 1000;
+        const hubExpiry = persisted.hubSession?.expires_at;
+        const expiresAtMs = hubExpiry ? hubExpiry * 1000 : persisted.persistedAt + DEFAULT_TTL_MS;
+        if (expiresAtMs <= Date.now()) {
+            get().clearSession();
+            return;
+        }
+        const ok = await validateMatrixSession(persisted.matrixCredentials);
+        if (!ok) {
+            get().clearSession();
+        }
     },
     clearSession: () => {
         persistState(null);

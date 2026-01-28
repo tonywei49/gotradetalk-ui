@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthPage } from "./pages/AuthPage";
@@ -17,6 +18,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 export function App() {
+    const validateSession = useAuthStore((state) => state.validateSession);
+
+    useEffect(() => {
+        void validateSession();
+    }, [validateSession]);
+
     return (
         <BrowserRouter>
             <Routes>
