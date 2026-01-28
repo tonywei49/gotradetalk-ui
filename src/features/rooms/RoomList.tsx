@@ -42,9 +42,11 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
     const accountData = client.getAccountData(EventType.Direct);
     const content = (accountData?.getContent() ?? {}) as Record<string, string[]>;
     const byUser = new Map<string, DirectRoomEntry>();
+    const visibleRoomIds = new Set(client.getVisibleRooms().map((room) => room.roomId));
 
     Object.entries(content).forEach(([userId, roomIds]) => {
         roomIds.forEach((roomId) => {
+            if (!visibleRoomIds.has(roomId)) return;
             const room = client.getRoom(roomId);
             if (!room) return;
             const lastActive = room.getLastActiveTimestamp();
