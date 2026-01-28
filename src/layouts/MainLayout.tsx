@@ -7,11 +7,9 @@ import "./MainLayout.css";
 export function MainLayout() {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { userType, matrixCredentials, clearSession } = useAuthStore((state) => ({
-        userType: state.userType,
-        matrixCredentials: state.matrixCredentials,
-        clearSession: state.clearSession,
-    }));
+    const userType = useAuthStore((state) => state.userType);
+    const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
+    const clearSession = useAuthStore((state) => state.clearSession);
 
     const handleLogout = (): void => {
         clearSession();
