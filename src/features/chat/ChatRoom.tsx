@@ -219,7 +219,7 @@ export const ChatRoom: React.FC = () => {
                     </div>
                 )}
                 {mergedEvents.map((event) => {
-                    const status = event.getStatus?.() ?? null;
+                    const status = event.getAssociatedStatus?.() ?? event.status ?? null;
                     const isMe = event.getSender() === userId;
                     const content = event.getContent() as { url?: string } | undefined;
                     const mediaUrl =
