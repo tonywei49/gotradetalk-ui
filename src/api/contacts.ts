@@ -1,0 +1,120 @@
+import { hubApiBaseUrl } from "../config";
+
+type ContactEntry = {
+    contact_id: string;
+    user_id: string;
+    display_name: string | null;
+    user_local_id: string | null;
+    company_name: string | null;
+    country: string | null;
+    handle: string | null;
+    matrix_user_id: string | null;
+};
+
+type ContactRequestEntry = {
+    request_id: string;
+    requester_id: string;
+    display_name: string | null;
+    user_local_id: string | null;
+    company_name: string | null;
+    country: string | null;
+    handle: string | null;
+    matrix_user_id: string | null;
+};
+
+type ListResponse<T> = {
+    items: T[];
+};
+
+function normalizeBaseUrl(value: string): string {
+    return value.replace(/\/+$/, "");
+}
+
+async function getJson<T>(url: string, accessToken: string, hsUrl?: string | null): Promise<T> {
+    const response = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            ...(hsUrl ? { "x-hs-url": hsUrl } : {}),
+        },
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed (${response.status})`);
+    }
+
+    return (await response.json()) as T;
+}
+
+async function postJson<T>(
+    url: string,
+    accessToken: string,
+    body: Record<string, unknown>,
+    hsUrl?: string | null,
+): Promise<T> {
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            ...(hsUrl ? { "x-hs-url": hsUrl } : {}),
+        },
+        body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed (${response.status})`);
+    }
+
+    return (await response.json()) as T;
+}
+
+export async function listContacts(accessToken: string, hsUrl?: string | null): Promise<ContactEntry[]> {
+    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const url = `${base}/contacts`;
+    const response = await getJson<ListResponse<ContactEntry>>(url, accessToken, hsUrl);
+    return response.items;
+}
+
+export async function listContactRequests(
+    accessToken: string,
+    hsUrl?: string | null,
+): Promise<ContactRequestEntry[]> {
+    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const url = `${base}/contacts/requests`;
+    const response = await getJson<ListResponse<ContactRequestEntry>>(url, accessToken, hsUrl);
+    return response.items;
+}
+
+export async function requestContact(
+    accessToken: string,
+    targetId: string,
+    hsUrl?: string | null,
+): Promise<{ status: string }> {
+    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const url = `${base}/contacts/request`;
+    return postJson<{ status: string }>(url, accessToken, { target_id: targetId }, hsUrl);
+}
+
+export async function acceptContact(
+    accessToken: string,
+    requesterId: string,
+    hsUrl?: string | null,
+): Promise<{ status: string }> {
+    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const url = `${base}/contacts/accept`;
+    return postJson<{ status: string }>(url, accessToken, { requester_id: requesterId }, hsUrl);
+}
+
+export async function rejectContact(
+    accessToken: string,
+    requesterId: string,
+    hsUrl?: string | null,
+): Promise<{ status: string }> {
+    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const url = `${base}/contacts/reject`;
+    return postJson<{ status: string }>(url, accessToken, { requester_id: requesterId }, hsUrl);
+}

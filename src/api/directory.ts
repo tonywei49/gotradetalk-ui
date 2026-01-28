@@ -82,3 +82,39 @@ export async function searchDirectoryEmployees(
     const response = await getJson<DirectoryResponse<DirectoryEmployee>>(url, accessToken);
     return response.items;
 }
+
+export async function searchDirectoryAll(
+    query: string,
+    accessToken: string,
+    hsUrl?: string | null,
+): Promise<
+    Array<{
+        profile_id: string;
+        display_name: string | null;
+        user_local_id: string | null;
+        company_name: string | null;
+        country: string | null;
+        handle: string | null;
+        matrix_user_id: string | null;
+        user_type: string | null;
+    }>
+> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = withQuery(`${hubBaseUrl}/directory/all/search`, {
+        q: query,
+        ...(hsUrl ? { hs_url: hsUrl } : {}),
+    });
+    const response = await getJson<
+        DirectoryResponse<{
+            profile_id: string;
+            display_name: string | null;
+            user_local_id: string | null;
+            company_name: string | null;
+            country: string | null;
+            handle: string | null;
+            matrix_user_id: string | null;
+            user_type: string | null;
+        }>
+    >(url, accessToken);
+    return response.items;
+}

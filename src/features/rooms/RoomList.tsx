@@ -4,7 +4,8 @@ import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import type { AuthUserType } from "../../stores/AuthStore";
-import { searchDirectoryCustomers, searchDirectoryEmployees, searchStaffDirectoryCustomers } from "../../api/directory";
+import { searchDirectoryAll } from "../../api/directory";
+import { acceptContact, listContactRequests, listContacts, requestContact } from "../../api/contacts";
 import { getOrCreateDirectRoom } from "../../matrix/direct";
 
 type DirectRoomEntry = {
@@ -85,9 +86,38 @@ export function RoomList({
     const [searchBusy, setSearchBusy] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [searchResults, setSearchResults] = useState<
-        { id: string; name: string; matrixUserId: string | null }[]
+        {
+            id: string;
+            displayName: string | null;
+            userLocalId: string | null;
+            companyName: string | null;
+            country: string | null;
+            matrixUserId: string | null;
+        }[]
     >([]);
     const [showSearchModal, setShowSearchModal] = useState(false);
+    const [contacts, setContacts] = useState<
+        {
+            id: string;
+            displayName: string | null;
+            userLocalId: string | null;
+            companyName: string | null;
+            country: string | null;
+            matrixUserId: string | null;
+        }[]
+    >([]);
+    const [incomingRequests, setIncomingRequests] = useState<
+        {
+            id: string;
+            requesterId: string;
+            displayName: string | null;
+            userLocalId: string | null;
+            companyName: string | null;
+            country: string | null;
+            matrixUserId: string | null;
+        }[]
+    >([]);
+    const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -137,10 +167,18 @@ export function RoomList({
         }
     }, [rooms, activeRoomId, onSelectRoom]);
 
+    const searchToken = matrixAccessToken || hubAccessToken;
+    const searchHsUrl = matrixAccessToken ? matrixHsUrl : null;
+
     useEffect(() => {
         if (!query.trim()) {
             setSearchResults([]);
             setSearchError(null);
+            return;
+        }
+        if (!searchToken) {
+            setSearchError("Search requires access token.");
+            setSearchResults([]);
             return;
         }
         const handler = window.setTimeout(() => {
@@ -148,39 +186,17 @@ export function RoomList({
                 setSearchBusy(true);
                 setSearchError(null);
                 try {
-                    if (userType === "staff") {
-                        if (!matrixAccessToken || !matrixHsUrl) {
-                            setSearchError("Search requires staff token.");
-                            setSearchResults([]);
-                            return;
-                        }
-                        const results = await searchStaffDirectoryCustomers(
-                            query.trim(),
-                            matrixHsUrl,
-                            matrixAccessToken,
-                        );
-                        setSearchResults(
-                            results.map((item) => ({
-                                id: item.customer_user_id,
-                                name: item.display_name || item.handle || item.customer_user_id,
-                                matrixUserId: item.matrix_user_id ?? null,
-                            })),
-                        );
-                    } else {
-                        if (!hubAccessToken) {
-                            setSearchError("Search requires hub access.");
-                            setSearchResults([]);
-                            return;
-                        }
-                        const results = await searchDirectoryEmployees(query.trim(), hubAccessToken);
-                        setSearchResults(
-                            results.map((item) => ({
-                                id: item.person_id,
-                                name: item.display_name || item.username || item.person_id,
-                                matrixUserId: item.matrix_user_id ?? null,
-                            })),
-                        );
-                    }
+                    const results = await searchDirectoryAll(query.trim(), searchToken, searchHsUrl);
+                    setSearchResults(
+                        results.map((item) => ({
+                            id: item.profile_id,
+                            displayName: item.display_name,
+                            userLocalId: item.user_local_id,
+                            companyName: item.company_name,
+                            country: item.country,
+                            matrixUserId: item.matrix_user_id ?? null,
+                        })),
+                    );
                 } catch (error) {
                     setSearchError(error instanceof Error ? error.message : "Search failed");
                     setSearchResults([]);
@@ -190,8 +206,43 @@ export function RoomList({
             })();
         }, 350);
 
-            return () => window.clearTimeout(handler);
-    }, [query, hubAccessToken, userType, matrixAccessToken, matrixHsUrl]);
+        return () => window.clearTimeout(handler);
+    }, [query, searchToken, searchHsUrl]);
+
+    useEffect(() => {
+        if (!searchToken) return;
+        void (async () => {
+            try {
+                const [contactItems, requestItems] = await Promise.all([
+                    listContacts(searchToken, searchHsUrl),
+                    listContactRequests(searchToken, searchHsUrl),
+                ]);
+                setContacts(
+                    contactItems.map((item) => ({
+                        id: item.user_id,
+                        displayName: item.display_name,
+                        userLocalId: item.user_local_id,
+                        companyName: item.company_name,
+                        country: item.country,
+                        matrixUserId: item.matrix_user_id,
+                    })),
+                );
+                setIncomingRequests(
+                    requestItems.map((item) => ({
+                        id: item.request_id,
+                        requesterId: item.requester_id,
+                        displayName: item.display_name,
+                        userLocalId: item.user_local_id,
+                        companyName: item.company_name,
+                        country: item.country,
+                        matrixUserId: item.matrix_user_id,
+                    })),
+                );
+            } catch {
+                // ignore list failures
+            }
+        })();
+    }, [searchToken, searchHsUrl]);
 
     const onStartChat = async (matrixUserId: string | null): Promise<void> => {
         if (!client || !matrixUserId) return;
@@ -199,6 +250,31 @@ export function RoomList({
         onSelectRoom(roomId);
         setShowSearchModal(false);
         setQuery("");
+    };
+
+    const onRequestContact = async (targetId: string): Promise<void> => {
+        if (!searchToken) return;
+        try {
+            const result = await requestContact(searchToken, targetId, searchHsUrl);
+            if (result.status === "pending") {
+                setRequestedIds((prev) => new Set(prev).add(targetId));
+            }
+        } catch (error) {
+            setSearchError(error instanceof Error ? error.message : "Request failed");
+        }
+    };
+
+    const onAcceptRequest = async (requesterId: string, matrixUserId: string | null): Promise<void> => {
+        if (!searchToken) return;
+        try {
+            await acceptContact(searchToken, requesterId, searchHsUrl);
+            setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
+            if (matrixUserId) {
+                await onStartChat(matrixUserId);
+            }
+        } catch (error) {
+            setSearchError(error instanceof Error ? error.message : "Accept failed");
+        }
     };
 
     return (
@@ -247,6 +323,37 @@ export function RoomList({
                     </button>
                 ))
             )}
+            {contacts.length > 0 && (
+                <div className="px-4 py-4 border-t border-gray-100 dark:border-slate-800">
+                    <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
+                        Contacts
+                    </div>
+                    <div className="space-y-2">
+                        {contacts.map((contact) => (
+                            <button
+                                key={contact.id}
+                                type="button"
+                                onClick={() => void onStartChat(contact.matrixUserId)}
+                                className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
+                            >
+                                <div className="min-w-0">
+                                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                        {contact.displayName || contact.userLocalId || contact.id}
+                                    </div>
+                                    <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                                        {(contact.userLocalId || "-") +
+                                            " · " +
+                                            (contact.companyName || "-") +
+                                            " · " +
+                                            (contact.country || "-")}
+                                    </div>
+                                </div>
+                                <span className="text-xs text-emerald-500">Chat</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
             {showSearchModal && (
                 <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
@@ -268,6 +375,41 @@ export function RoomList({
                             placeholder="Search user..."
                             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         />
+                        {incomingRequests.length > 0 && (
+                            <div className="mt-4">
+                                <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
+                                    Requests
+                                </div>
+                                <div className="space-y-2">
+                                    {incomingRequests.map((item) => (
+                                        <div
+                                            key={item.id}
+                                            className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
+                                        >
+                                            <div className="min-w-0">
+                                                <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                                    {item.displayName || item.userLocalId || item.requesterId}
+                                                </div>
+                                                <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                                                    {(item.userLocalId || "-") +
+                                                        " · " +
+                                                        (item.companyName || "-") +
+                                                        " · " +
+                                                        (item.country || "-")}
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => void onAcceptRequest(item.requesterId, item.matrixUserId)}
+                                                className="text-xs text-emerald-500 hover:text-emerald-400"
+                                            >
+                                                Accept
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         {searchBusy && (
                             <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">Searching...</div>
                         )}
@@ -280,18 +422,24 @@ export function RoomList({
                                     <button
                                         key={item.id}
                                         type="button"
-                                        onClick={() => void onStartChat(item.matrixUserId)}
+                                        onClick={() => void onRequestContact(item.id)}
                                         className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
                                     >
                                         <div className="min-w-0">
                                             <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                                {item.name}
+                                                {item.displayName || item.userLocalId || item.id}
                                             </div>
                                             <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                                {item.matrixUserId ?? "No matrix account"}
+                                                {(item.userLocalId || "-") +
+                                                    " · " +
+                                                    (item.companyName || "-") +
+                                                    " · " +
+                                                    (item.country || "-")}
                                             </div>
                                         </div>
-                                        <span className="text-xs text-emerald-500">Chat</span>
+                                        <span className="text-xs text-emerald-500">
+                                            {requestedIds.has(item.id) ? "Requested" : "+"}
+                                        </span>
                                     </button>
                                 ))
                             )}
