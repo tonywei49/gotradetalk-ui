@@ -1,9 +1,22 @@
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
+import { useAuthStore } from "../stores/AuthStore";
 import "./MainLayout.css";
 
 export function MainLayout() {
     const { t } = useTranslation();
+    const navigate = useNavigate();
+    const { userType, matrixCredentials, clearSession } = useAuthStore((state) => ({
+        userType: state.userType,
+        matrixCredentials: state.matrixCredentials,
+        clearSession: state.clearSession,
+    }));
+
+    const handleLogout = (): void => {
+        clearSession();
+        navigate("/");
+    };
 
     return (
         <div className="gt_main">
@@ -19,6 +32,18 @@ export function MainLayout() {
                     <div className="gt_sidebarEmpty">{t("main.sidebar.empty")}</div>
                 </div>
                 <div className="gt_sidebarFooter">
+                    {matrixCredentials && (
+                        <div className="gt_sidebarUser">
+                            <div className="gt_sidebarUserLabel">{t("main.sidebar.user")}</div>
+                            <div className="gt_sidebarUserValue">{matrixCredentials.user_id}</div>
+                            <div className="gt_sidebarUserRole">
+                                {userType === "staff" ? t("main.sidebar.staff") : t("main.sidebar.client")}
+                            </div>
+                            <button type="button" className="gt_sidebarFooterButton" onClick={handleLogout}>
+                                {t("main.sidebar.logout")}
+                            </button>
+                        </div>
+                    )}
                     <button type="button" className="gt_sidebarFooterButton">
                         {t("main.sidebar.settings")}
                     </button>

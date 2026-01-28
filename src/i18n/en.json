@@ -131,7 +131,11 @@
             "newChat": "New chat",
             "rooms": "Rooms",
             "empty": "No conversations yet",
-            "settings": "Settings"
+            "settings": "Settings",
+            "user": "Signed in",
+            "client": "Client",
+            "staff": "Staff",
+            "logout": "Log out"
         },
         "chat": {
             "title": "Welcome",

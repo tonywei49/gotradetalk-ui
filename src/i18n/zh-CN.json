@@ -131,7 +131,11 @@
             "newChat": "新建会话",
             "rooms": "会话列表",
             "empty": "暂无会话",
-            "settings": "设置"
+            "settings": "设置",
+            "user": "当前账号",
+            "client": "客户",
+            "staff": "员工",
+            "logout": "退出登录"
         },
         "chat": {
             "title": "欢迎",
