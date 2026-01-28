@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import {
     ChatBubbleLeftRightIcon,
@@ -46,6 +46,14 @@ export const MainLayout: React.FC = () => {
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const userType = useAuthStore((state) => state.userType);
     const hubAccessToken = useAuthStore((state) => state.hubSession?.access_token ?? null);
+
+    useEffect(() => {
+        if (!matrixClient) return undefined;
+        matrixClient.startClient({ initialSyncLimit: 20 });
+        return () => {
+            matrixClient.stopClient();
+        };
+    }, [matrixClient]);
 
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
