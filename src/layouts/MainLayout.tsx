@@ -9,6 +9,7 @@ import {
     SunIcon,
 } from "@heroicons/react/24/outline";
 import { useThemeStore } from "../stores/ThemeStore";
+import { useAuthStore } from "../stores/AuthStore";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -39,6 +40,7 @@ export const MainLayout: React.FC = () => {
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
     const themeMode = useThemeStore((state) => state.mode);
     const toggleMode = useThemeStore((state) => state.toggleMode);
+    const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
 
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -100,10 +102,21 @@ export const MainLayout: React.FC = () => {
             <aside className="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800">
                 {/* Header */}
                 <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                    <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Chats</h1>
-                    <div className="flex gap-2">
-                        {/* Search Icon Placeholder */}
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
+                        <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                {matrixCredentials?.user_id ?? "User"}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate dark:text-slate-400">Account</div>
+                        </div>
                     </div>
+                    <button
+                        type="button"
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
+                    >
+                        Settings
+                    </button>
                 </div>
 
                 {/* Search Bar */}
