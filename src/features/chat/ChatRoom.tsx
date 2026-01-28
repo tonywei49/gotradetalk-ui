@@ -106,6 +106,22 @@ export const ChatRoom: React.FC = () => {
     const [composerText, setComposerText] = useState("");
     const [scrollLoading, setScrollLoading] = useState(false);
 
+    const mergedEvents = useMemo(() => {
+        if (!room) return [];
+        const pending = room.getPendingEvents ? room.getPendingEvents() : [];
+        const combined = [...events, ...pending];
+        const seen = new Set<string>();
+        const filtered = combined.filter((event) => {
+            if (event.getType() !== EventType.RoomMessage) return false;
+            const key = event.getId() ?? event.getTxnId() ?? String(event.getTs());
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+        filtered.sort((a, b) => a.getTs() - b.getTs());
+        return filtered;
+    }, [events, room]);
+
     if (!activeRoomId) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
@@ -121,21 +137,6 @@ export const ChatRoom: React.FC = () => {
             </div>
         );
     }
-
-    const mergedEvents = useMemo(() => {
-        const pending = room.getPendingEvents ? room.getPendingEvents() : [];
-        const combined = [...events, ...pending];
-        const seen = new Set<string>();
-        const filtered = combined.filter((event) => {
-            if (event.getType() !== EventType.RoomMessage) return false;
-            const key = event.getId() ?? event.getTxnId() ?? String(event.getTs());
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-        filtered.sort((a, b) => a.getTs() - b.getTs());
-        return filtered;
-    }, [events, room]);
 
     useEffect(() => {
         const container = timelineRef.current;
