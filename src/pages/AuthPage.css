@@ -8,6 +8,14 @@
         linear-gradient(180deg, #f7f6f2 0%, #f3f4f7 100%);
 }
 
+.dark .gt_app {
+    color: #e2e8f0;
+    background:
+        radial-gradient(1200px 600px at 20% -10%, rgba(56, 189, 248, 0.15), transparent 60%),
+        radial-gradient(900px 500px at 90% 10%, rgba(99, 102, 241, 0.18), transparent 60%),
+        linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+}
+
 .gt_header {
     display: flex;
     flex-wrap: wrap;
@@ -30,6 +38,10 @@
     color: #5a5f66;
 }
 
+.dark .gt_subtitle {
+    color: #94a3b8;
+}
+
 .gt_lang {
     display: flex;
     align-items: center;
@@ -48,6 +60,16 @@
     color: #68707a;
 }
 
+.dark .gt_lang {
+    background: rgba(15, 23, 42, 0.72);
+    border-color: rgba(148, 163, 184, 0.2);
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.35);
+}
+
+.dark .gt_langLabel {
+    color: #94a3b8;
+}
+
 .gt_langSelect {
     border: 1px solid rgba(15, 23, 42, 0.12);
     border-radius: 999px;
@@ -58,6 +80,12 @@
     min-width: 160px;
 }
 
+.dark .gt_langSelect {
+    background: #0f172a;
+    border-color: rgba(148, 163, 184, 0.2);
+    color: #e2e8f0;
+}
+
 .gt_auth {
     max-width: 1100px;
     margin: 0 auto;
@@ -66,6 +94,11 @@
     padding: 32px;
     box-shadow: 0 24px 80px rgba(21, 24, 34, 0.12);
     backdrop-filter: blur(12px);
+}
+
+.dark .gt_auth {
+    background: rgba(15, 23, 42, 0.85);
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.45);
 }
 
 .gt_tabs {
@@ -87,11 +120,22 @@
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.dark .gt_tab {
+    background: rgba(148, 163, 184, 0.12);
+    color: #cbd5f5;
+}
+
 .gt_tab.active {
     background: #1f2937;
     color: #f9fafb;
     box-shadow: 0 12px 24px rgba(31, 41, 55, 0.2);
     transform: translateY(-1px);
+}
+
+.dark .gt_tab.active {
+    background: #38bdf8;
+    color: #0b1220;
+    box-shadow: 0 12px 24px rgba(56, 189, 248, 0.35);
 }
 
 .gt_panel {
@@ -114,6 +158,10 @@
     font-size: 14px;
 }
 
+.dark .gt_cardHeader p {
+    color: #94a3b8;
+}
+
 .gt_form {
     margin-top: 24px;
     display: grid;
@@ -127,12 +175,23 @@
     color: #4b5563;
 }
 
+.dark .gt_field {
+    color: #cbd5f5;
+}
+
 .gt_field input {
     border-radius: 12px;
     border: 1px solid #e5e7eb;
     padding: 12px 14px;
     font-size: 14px;
     background: #ffffff;
+}
+
+.dark .gt_field input,
+.dark .gt_field select {
+    background: #0f172a;
+    border-color: rgba(148, 163, 184, 0.25);
+    color: #e2e8f0;
 }
 
 .gt_field select {
@@ -146,6 +205,12 @@
 .gt_field input:focus {
     outline: 2px solid rgba(37, 99, 235, 0.25);
     border-color: #93c5fd;
+}
+
+.dark .gt_field input:focus,
+.dark .gt_field select:focus {
+    outline: 2px solid rgba(56, 189, 248, 0.35);
+    border-color: #38bdf8;
 }
 
 .gt_inlineField {
@@ -169,6 +234,12 @@
     border: 1px dashed #d1d5db;
 }
 
+.dark .gt_hint {
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.25);
+}
+
 .gt_actions {
     display: flex;
     flex-wrap: wrap;
@@ -183,6 +254,10 @@
     text-align: center;
 }
 
+.dark .gt_separator {
+    color: #94a3b8;
+}
+
 .gt_googleButton {
     width: 100%;
     border-radius: 12px;
@@ -193,6 +268,12 @@
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
+}
+
+.dark .gt_googleButton {
+    background: rgba(15, 23, 42, 0.7);
+    border-color: rgba(148, 163, 184, 0.25);
+    color: #e2e8f0;
 }
 
 .gt_googleButton:disabled {
@@ -215,9 +296,19 @@
     color: #f8fafc;
 }
 
+.dark .gt_primary {
+    background: #38bdf8;
+    color: #0b1220;
+}
+
 .gt_secondary {
     background: #f1f5f9;
     color: #1f2937;
+}
+
+.dark .gt_secondary {
+    background: rgba(148, 163, 184, 0.12);
+    color: #e2e8f0;
 }
 
 .gt_link {
@@ -230,6 +321,10 @@
     cursor: pointer;
 }
 
+.dark .gt_link {
+    color: #7dd3fc;
+}
+
 .gt_error {
     color: #b91c1c;
     background: #fef2f2;
@@ -239,6 +334,12 @@
     font-size: 13px;
 }
 
+.dark .gt_error {
+    color: #fecaca;
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
 .gt_success {
     color: #166534;
     background: #f0fdf4;
@@ -246,6 +347,12 @@
     padding: 10px 12px;
     border-radius: 10px;
     font-size: 13px;
+}
+
+.dark .gt_success {
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.3);
 }
 
 .gt_modalBackdrop {
@@ -268,6 +375,11 @@
     position: relative;
 }
 
+.dark .gt_modal {
+    background: #0f172a;
+    box-shadow: 0 30px 80px rgba(15, 23, 42, 0.5);
+}
+
 .gt_modalHeader {
     display: flex;
     align-items: center;
@@ -286,6 +398,10 @@
     font-size: 20px;
     cursor: pointer;
     color: #6b7280;
+}
+
+.dark .gt_modalClose {
+    color: #94a3b8;
 }
 
 .gt_modalClose:disabled {
