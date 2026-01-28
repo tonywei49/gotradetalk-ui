@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
-import { EventType, RoomEvent } from "matrix-js-sdk";
+import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 
 import type { AuthUserType } from "../../stores/AuthStore";
 import { searchDirectoryCustomers, searchDirectoryEmployees } from "../../api/directory";
@@ -108,11 +108,11 @@ export function RoomList({ client, userType, hubAccessToken, activeRoomId, onSel
         };
 
         client.on(RoomEvent.Timeline, onTimeline);
-        client.on("accountData", onAccountData);
+        client.on(ClientEvent.AccountData, onAccountData);
 
         return () => {
             client.off(RoomEvent.Timeline, onTimeline);
-            client.off("accountData", onAccountData);
+            client.off(ClientEvent.AccountData, onAccountData);
         };
     }, [client, refresh]);
 

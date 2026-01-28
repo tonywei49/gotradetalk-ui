@@ -1,5 +1,5 @@
 import type { MatrixClient } from "matrix-js-sdk";
-import { EventType } from "matrix-js-sdk";
+import { EventType, Preset } from "matrix-js-sdk";
 
 type DirectAccountData = Record<string, string[]>;
 
@@ -21,7 +21,7 @@ export async function getOrCreateDirectRoom(client: MatrixClient, userId: string
     const created = await client.createRoom({
         invite: [userId],
         is_direct: true,
-        preset: "trusted_private_chat",
+        preset: Preset.TrustedPrivateChat,
     });
 
     const content = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as DirectAccountData;
