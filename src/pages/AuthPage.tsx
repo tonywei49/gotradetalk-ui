@@ -20,6 +20,7 @@ import { translationLanguageOptions } from "../constants/translationLanguages";
 import { LanguageModal } from "../components/LanguageModal";
 import { setLanguage } from "../i18n";
 import { loginWithPassword } from "../matrix/login";
+import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
 type EntryMode = "client" | "company";
@@ -27,6 +28,7 @@ type EntryMode = "client" | "company";
 export function AuthPage() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
+    const setAuthSession = useAuthStore((state) => state.setSession);
     const [activeEntry, setActiveEntry] = useState<EntryMode>("client");
     const [clientUsername, setClientUsername] = useState("");
     const [clientPassword, setClientPassword] = useState("");
@@ -68,12 +70,14 @@ export function AuthPage() {
         | {
               userType: "client";
               session: HubSupabaseSession;
+              matrixCredentials: HubClientLoginResponse["matrix"];
           }
         | {
               userType: "staff";
               accessToken: string;
               hsUrl: string;
               matrixUserId: string;
+              matrixCredentials: HubClientLoginResponse["matrix"];
           }
         | null
     >(null);
@@ -159,11 +163,17 @@ export function AuthPage() {
                     setPendingLanguageContext({
                         session: hubSession,
                         userType: "client",
+                        matrixCredentials: response.matrix,
                     });
                     setShowLanguageModal(true);
                     return;
                 }
                 setLanguage(language === "zh-CN" ? "zh-CN" : "en");
+                setAuthSession({
+                    userType: "client",
+                    matrixCredentials: response.matrix,
+                    hubSession,
+                });
                 navigate("/app");
             } catch (error) {
                 setClientError(error instanceof Error ? error.message : t("auth.errors.generic"));
@@ -210,11 +220,27 @@ export function AuthPage() {
                         matrixUserId: credentials.userId,
                         accessToken: credentials.accessToken,
                         hsUrl: credentials.homeserverUrl,
+                        matrixCredentials: {
+                            access_token: credentials.accessToken,
+                            device_id: credentials.deviceId,
+                            user_id: credentials.userId,
+                            hs_url: credentials.homeserverUrl,
+                        },
                     });
                     setShowLanguageModal(true);
                     return;
                 }
                 setLanguage(language === "zh-CN" ? "zh-CN" : "en");
+                setAuthSession({
+                    userType: "staff",
+                    matrixCredentials: {
+                        access_token: credentials.accessToken,
+                        device_id: credentials.deviceId,
+                        user_id: credentials.userId,
+                        hs_url: credentials.homeserverUrl,
+                    },
+                    hubSession: null,
+                });
                 navigate("/app");
             } catch (error) {
                 setCompanyError(error instanceof Error ? error.message : t("auth.errors.generic"));
@@ -693,6 +719,12 @@ export function AuthPage() {
                                         userType: "staff",
                                         accessToken: forceResetAccessToken,
                                         hsUrl: forceResetHsUrl,
+                                        matrixCredentials: {
+                                            access_token: forceResetAccessToken,
+                                            device_id: "",
+                                            user_id: forceResetUserId,
+                                            hs_url: forceResetHsUrl,
+                                        },
                                     });
                                     setShowLanguageModal(true);
                                 } catch (error) {
@@ -712,12 +744,22 @@ export function AuthPage() {
                     if (!pendingLanguageContext) return;
                     if (pendingLanguageContext.userType === "client") {
                         await updateClientLanguage(pendingLanguageContext.session, language);
+                        setAuthSession({
+                            userType: "client",
+                            matrixCredentials: pendingLanguageContext.matrixCredentials,
+                            hubSession: pendingLanguageContext.session,
+                        });
                     } else {
                         await updateStaffLanguage(
                             pendingLanguageContext.accessToken,
                             pendingLanguageContext.hsUrl,
                             language,
                         );
+                        setAuthSession({
+                            userType: "staff",
+                            matrixCredentials: pendingLanguageContext.matrixCredentials,
+                            hubSession: null,
+                        });
                     }
                     setLanguage(language);
                     setShowLanguageModal(false);

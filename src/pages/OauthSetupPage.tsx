@@ -10,6 +10,7 @@ import { getSupabaseClient } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n";
+import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
 const USER_ID_PATTERN = /^[a-z0-9._=-]+$/;
@@ -17,6 +18,7 @@ const USER_ID_PATTERN = /^[a-z0-9._=-]+$/;
 export function OauthSetupPage() {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const setAuthSession = useAuthStore((state) => state.setSession);
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
     const [userLocalId, setUserLocalId] = useState("");
@@ -33,6 +35,12 @@ export function OauthSetupPage() {
     const [needsProvision, setNeedsProvision] = useState(true);
     const [resetBusy, setResetBusy] = useState(false);
     const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+    const [matrixCredentials, setMatrixCredentials] = useState<{
+        access_token: string;
+        device_id: string;
+        user_id: string;
+        hs_url: string;
+    } | null>(null);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
 
@@ -147,6 +155,7 @@ export function OauthSetupPage() {
                 }
 
                 const response = await hubClientLogin(email, password, session.access_token);
+                setMatrixCredentials(response.matrix);
                 const hubSession = response.supabase ?? {
                     access_token: session.access_token,
                     refresh_token: session.refresh_token ?? "",
@@ -159,6 +168,11 @@ export function OauthSetupPage() {
                     return;
                 }
                 setLanguage(language === "zh-CN" ? "zh-CN" : "en");
+                setAuthSession({
+                    userType: "client",
+                    matrixCredentials: response.matrix,
+                    hubSession,
+                });
                 navigate("/app");
             } catch (submitError) {
                 setError(submitError instanceof Error ? submitError.message : t("auth.errors.generic"));
@@ -333,8 +347,16 @@ export function OauthSetupPage() {
                 open={showLanguageModal}
                 onSave={async (language): Promise<void> => {
                     if (!pendingLanguageSession) return;
+                    if (!matrixCredentials) {
+                        throw new Error(t("auth.errors.missingSupabaseSession"));
+                    }
                     await updateClientLanguage(pendingLanguageSession, language);
                     setLanguage(language);
+                    setAuthSession({
+                        userType: "client",
+                        matrixCredentials,
+                        hubSession: pendingLanguageSession,
+                    });
                     setShowLanguageModal(false);
                     setPendingLanguageSession(null);
                     navigate("/app");
