@@ -129,6 +129,16 @@ export const ChatRoom: React.FC = () => {
         return filtered;
     }, [events, room]);
 
+    useEffect(() => {
+        if (!room) return;
+        const container = timelineRef.current;
+        if (!container) return;
+        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (distanceFromBottom < 120) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }, [mergedEvents.length, room]);
+
     if (!activeRoomId) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
@@ -144,15 +154,6 @@ export const ChatRoom: React.FC = () => {
             </div>
         );
     }
-
-    useEffect(() => {
-        const container = timelineRef.current;
-        if (!container) return;
-        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (distanceFromBottom < 120) {
-            container.scrollTop = container.scrollHeight;
-        }
-    }, [mergedEvents.length]);
 
     const onScroll = async (): Promise<void> => {
         if (!matrixClient || scrollLoading) return;
