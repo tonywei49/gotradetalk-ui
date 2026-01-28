@@ -121,7 +121,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             get().clearSession();
             return;
         }
-        const nowSec = Date.now() / 1000;
         const hubExpiry = persisted.hubSession?.expires_at;
         const expiresAtMs = hubExpiry ? hubExpiry * 1000 : persisted.persistedAt + DEFAULT_TTL_MS;
         if (expiresAtMs <= Date.now()) {
