@@ -5,7 +5,10 @@ import {
     UserGroupIcon,
     ClipboardDocumentListIcon,
     Cog6ToothIcon,
+    MoonIcon,
+    SunIcon,
 } from "@heroicons/react/24/outline";
+import { useThemeStore } from "../stores/ThemeStore";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -34,11 +37,13 @@ const NavBarItem = ({ icon: Icon, active, onClick }: NavBarItemProps) => (
 
 export const MainLayout: React.FC = () => {
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
+    const themeMode = useThemeStore((state) => state.mode);
+    const toggleMode = useThemeStore((state) => state.toggleMode);
 
     return (
-        <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans">
+        <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
             {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
-            <nav className="w-16 bg-gray-900 flex flex-col items-center py-4 flex-shrink-0 z-20">
+            <nav className="w-16 bg-gray-900 flex flex-col items-center py-4 flex-shrink-0 z-20 dark:bg-slate-900">
                 {/* App Logo Placeholder */}
                 <div className="w-10 h-10 bg-[#2F5C56] rounded-xl mb-8 flex items-center justify-center text-white font-bold text-xs">
                     GT
@@ -70,6 +75,18 @@ export const MainLayout: React.FC = () => {
                         active={activeTab === "settings"}
                         onClick={() => setActiveTab("settings")}
                     />
+                    <button
+                        type="button"
+                        onClick={toggleMode}
+                        className="w-full h-12 flex items-center justify-center text-gray-400 hover:text-gray-200 transition-colors"
+                        aria-label="Toggle theme"
+                    >
+                        {themeMode === "dark" ? (
+                            <SunIcon className="w-6 h-6" />
+                        ) : (
+                            <MoonIcon className="w-6 h-6" />
+                        )}
+                    </button>
                     {/* Avatar Placeholder */}
                     <div className="w-full flex justify-center mt-4">
                         <div className="w-10 h-10 rounded-full bg-gray-700 border-2 border-gray-600 overflow-hidden">
@@ -80,10 +97,10 @@ export const MainLayout: React.FC = () => {
             </nav>
 
             {/* 2. List Panel (w-80, bg-white) */}
-            <aside className="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm">
+            <aside className="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800">
                 {/* Header */}
-                <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100">
-                    <h1 className="text-xl font-bold text-slate-800">Chats</h1>
+                <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
+                    <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Chats</h1>
                     <div className="flex gap-2">
                         {/* Search Icon Placeholder */}
                     </div>
@@ -91,8 +108,13 @@ export const MainLayout: React.FC = () => {
 
                 {/* Search Bar */}
                 <div className="p-3">
-                    <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2">
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
+                        <svg
+                            className="w-5 h-5 text-gray-400 dark:text-slate-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
                             <path
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
@@ -103,7 +125,7 @@ export const MainLayout: React.FC = () => {
                         <input
                             type="text"
                             placeholder="Search"
-                            className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400"
+                            className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
                         />
                     </div>
                 </div>
@@ -114,17 +136,21 @@ export const MainLayout: React.FC = () => {
                     {[1, 2, 3, 4, 5].map((i) => (
                         <div
                             key={i}
-                            className={`px-4 py-3 flex gap-3 cursor-pointer hover:bg-gray-50 ${
-                                i === 1 ? "bg-[#F0F7F6]" : ""
+                            className={`px-4 py-3 flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 ${
+                                i === 1 ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
                             }`}
                         >
-                            <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0" />
+                            <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
                             <div className="flex-1 min-w-0 flex flex-col justify-center">
                                 <div className="flex justify-between items-baseline">
-                                    <span className="font-semibold text-slate-800 truncate">Alice Chen</span>
-                                    <span className="text-xs text-gray-400">10:30 AM</span>
+                                    <span className="font-semibold text-slate-800 truncate dark:text-slate-100">
+                                        Alice Chen
+                                    </span>
+                                    <span className="text-xs text-gray-400 dark:text-slate-500">10:30 AM</span>
                                 </div>
-                                <p className="text-sm text-gray-500 truncate">Please check the attached file.</p>
+                                <p className="text-sm text-gray-500 truncate dark:text-slate-400">
+                                    Please check the attached file.
+                                </p>
                             </div>
                         </div>
                     ))}
@@ -132,7 +158,7 @@ export const MainLayout: React.FC = () => {
             </aside>
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
-            <main className="flex-1 flex flex-col bg-[#F2F4F7] relative min-w-0">
+            <main className="flex-1 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950">
                 {/* Render nested routes (ChatRoom) here */}
                 <Outlet />
 

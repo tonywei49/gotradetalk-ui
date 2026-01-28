@@ -1,11 +1,18 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MainLayout } from "./layouts/MainLayout";
 import { ChatRoom } from "./features/chat";
 import { AuthPage } from "./pages/AuthPage";
 import { useAuthStore } from "./stores/AuthStore";
+import { useThemeStore } from "./stores/ThemeStore";
 
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
+    const initTheme = useThemeStore((state) => state.initTheme);
+
+    useEffect(() => {
+        initTheme();
+    }, [initTheme]);
 
     return (
         <BrowserRouter>
