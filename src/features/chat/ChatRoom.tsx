@@ -108,15 +108,7 @@ export const ChatRoom: React.FC = () => {
 
     const mergedEvents = useMemo(() => {
         if (!room) return [];
-        let pending: MatrixEvent[] = [];
-        if (room.getPendingEvents) {
-            try {
-                pending = room.getPendingEvents();
-            } catch {
-                pending = [];
-            }
-        }
-        const combined = [...events, ...pending];
+        const combined = [...events];
         const seen = new Set<string>();
         const filtered = combined.filter((event) => {
             if (event.getType() !== EventType.RoomMessage) return false;

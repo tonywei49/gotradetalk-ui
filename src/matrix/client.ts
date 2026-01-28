@@ -1,4 +1,4 @@
-import { MatrixClient, MatrixScheduler, MemoryStore, PendingEventOrdering } from "matrix-js-sdk";
+import { MatrixClient, MatrixScheduler, MemoryStore } from "matrix-js-sdk";
 
 type MatrixClientConfig = {
     baseUrl: string;
@@ -20,7 +20,6 @@ export function createMatrixClient(config: MatrixClientConfig): MatrixClient {
         deviceId: config.deviceId,
         timelineSupport: true,
         useAuthorizationHeader: true,
-        pendingEventOrdering: PendingEventOrdering.Detached,
         store,
         scheduler,
     });
