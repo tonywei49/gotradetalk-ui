@@ -44,6 +44,8 @@ export const MainLayout: React.FC = () => {
     const toggleMode = useThemeStore((state) => state.toggleMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const matrixClient = useAuthStore((state) => state.matrixClient);
+    const userType = useAuthStore((state) => state.userType);
+    const hubAccessToken = useAuthStore((state) => state.hubSession?.access_token ?? null);
 
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -143,6 +145,8 @@ export const MainLayout: React.FC = () => {
                 {/* Room List Content (Placeholder) */}
                 <RoomList
                     client={matrixClient}
+                    userType={userType}
+                    hubAccessToken={hubAccessToken}
                     activeRoomId={activeRoomId}
                     onSelectRoom={(roomId) => setActiveRoomId(roomId)}
                 />
