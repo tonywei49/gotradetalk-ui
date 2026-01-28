@@ -1,72 +1,144 @@
-import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
+import { Outlet } from "react-router-dom";
+import {
+    ChatBubbleLeftRightIcon,
+    UserGroupIcon,
+    ClipboardDocumentListIcon,
+    Cog6ToothIcon,
+} from "@heroicons/react/24/outline";
 
-import { useAuthStore } from "../stores/AuthStore";
-import "./MainLayout.css";
+// Placeholder for RoomList and ChatArea to be implemented later
+// For now, we just create the layout structure
+type NavBarItemProps = {
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    active?: boolean;
+    onClick?: () => void;
+};
 
-export function MainLayout() {
-    const { t } = useTranslation();
-    const navigate = useNavigate();
-    const userType = useAuthStore((state) => state.userType);
-    const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
-    const clearSession = useAuthStore((state) => state.clearSession);
+const NavBarItem = ({ icon: Icon, active, onClick }: NavBarItemProps) => (
+    <div
+        onClick={onClick}
+        className={`
+            w-full h-16 flex items-center justify-center cursor-pointer transition-colors
+            ${active ? "text-[#2F5C56] bg-gray-800" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}
+        `}
+    >
+        <div className="relative">
+            <Icon className="w-7 h-7" />
+            {active && (
+                <div className="absolute -left-5 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#2F5C56] rounded-r-full" />
+            )}
+        </div>
+    </div>
+);
 
-    const handleLogout = (): void => {
-        clearSession();
-        navigate("/");
-    };
+export const MainLayout: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
 
     return (
-        <div className="gt_main">
-            <aside className="gt_sidebar">
-                <div className="gt_sidebarHeader">
-                    <div className="gt_sidebarTitle">{t("main.sidebar.title")}</div>
-                    <button type="button" className="gt_sidebarAction">
-                        {t("main.sidebar.newChat")}
-                    </button>
+        <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans">
+            {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
+            <nav className="w-16 bg-gray-900 flex flex-col items-center py-4 flex-shrink-0 z-20">
+                {/* App Logo Placeholder */}
+                <div className="w-10 h-10 bg-[#2F5C56] rounded-xl mb-8 flex items-center justify-center text-white font-bold text-xs">
+                    GT
                 </div>
-                <div className="gt_sidebarSection">
-                    <div className="gt_sidebarSectionTitle">{t("main.sidebar.rooms")}</div>
-                    <div className="gt_sidebarEmpty">{t("main.sidebar.empty")}</div>
+
+                {/* Nav Items */}
+                <div className="flex-1 w-full flex flex-col gap-2">
+                    <NavBarItem
+                        icon={ChatBubbleLeftRightIcon}
+                        active={activeTab === "chat"}
+                        onClick={() => setActiveTab("chat")}
+                    />
+                    <NavBarItem
+                        icon={UserGroupIcon}
+                        active={activeTab === "contacts"}
+                        onClick={() => setActiveTab("contacts")}
+                    />
+                    <NavBarItem
+                        icon={ClipboardDocumentListIcon}
+                        active={activeTab === "orders"}
+                        onClick={() => setActiveTab("orders")}
+                    />
                 </div>
-                <div className="gt_sidebarFooter">
-                    {matrixCredentials && (
-                        <div className="gt_sidebarUser">
-                            <div className="gt_sidebarUserLabel">{t("main.sidebar.user")}</div>
-                            <div className="gt_sidebarUserValue">{matrixCredentials.user_id}</div>
-                            <div className="gt_sidebarUserRole">
-                                {userType === "staff" ? t("main.sidebar.staff") : t("main.sidebar.client")}
-                            </div>
-                            <button type="button" className="gt_sidebarFooterButton" onClick={handleLogout}>
-                                {t("main.sidebar.logout")}
-                            </button>
+
+                {/* Bottom Actions */}
+                <div className="w-full flex flex-col gap-2 mb-4">
+                    <NavBarItem
+                        icon={Cog6ToothIcon}
+                        active={activeTab === "settings"}
+                        onClick={() => setActiveTab("settings")}
+                    />
+                    {/* Avatar Placeholder */}
+                    <div className="w-full flex justify-center mt-4">
+                        <div className="w-10 h-10 rounded-full bg-gray-700 border-2 border-gray-600 overflow-hidden">
+                            {/* <img src="..." /> */}
                         </div>
-                    )}
-                    <button type="button" className="gt_sidebarFooterButton">
-                        {t("main.sidebar.settings")}
-                    </button>
+                    </div>
+                </div>
+            </nav>
+
+            {/* 2. List Panel (w-80, bg-white) */}
+            <aside className="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm">
+                {/* Header */}
+                <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100">
+                    <h1 className="text-xl font-bold text-slate-800">Chats</h1>
+                    <div className="flex gap-2">
+                        {/* Search Icon Placeholder */}
+                    </div>
+                </div>
+
+                {/* Search Bar */}
+                <div className="p-3">
+                    <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2">
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                            />
+                        </svg>
+                        <input
+                            type="text"
+                            placeholder="Search"
+                            className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400"
+                        />
+                    </div>
+                </div>
+
+                {/* Room List Content (Placeholder) */}
+                <div className="flex-1 overflow-y-auto">
+                    {/* Example Item */}
+                    {[1, 2, 3, 4, 5].map((i) => (
+                        <div
+                            key={i}
+                            className={`px-4 py-3 flex gap-3 cursor-pointer hover:bg-gray-50 ${
+                                i === 1 ? "bg-[#F0F7F6]" : ""
+                            }`}
+                        >
+                            <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0" />
+                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                <div className="flex justify-between items-baseline">
+                                    <span className="font-semibold text-slate-800 truncate">Alice Chen</span>
+                                    <span className="text-xs text-gray-400">10:30 AM</span>
+                                </div>
+                                <p className="text-sm text-gray-500 truncate">Please check the attached file.</p>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </aside>
-            <section className="gt_chat">
-                <div className="gt_chatHeader">
-                    <div className="gt_chatTitle">{t("main.chat.title")}</div>
-                    <div className="gt_chatSubtitle">{t("main.chat.subtitle")}</div>
-                </div>
-                <div className="gt_chatBody">
-                    <div className="gt_chatEmpty">{t("main.chat.empty")}</div>
-                </div>
-                <div className="gt_chatComposer">
-                    <input
-                        type="text"
-                        className="gt_chatInput"
-                        placeholder={t("main.chat.placeholder")}
-                        disabled
-                    />
-                    <button type="button" className="gt_chatSend" disabled>
-                        {t("main.chat.send")}
-                    </button>
-                </div>
-            </section>
+
+            {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
+            <main className="flex-1 flex flex-col bg-[#F2F4F7] relative min-w-0">
+                {/* Render nested routes (ChatRoom) here */}
+                <Outlet />
+
+                {/* Placeholder for when no chat is selected (if Outlet is empty) */}
+                {/* <div className="flex-1 flex items-center justify-center text-gray-400">Select a chat to start messaging</div> */}
+            </main>
         </div>
     );
-}
+};

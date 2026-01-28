@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { MainLayout } from './layouts/MainLayout';
-import { ChatRoom } from './features/chat';
-import { AuthPage } from './pages/AuthPage';
-import { useAuthStore } from './stores/AuthStore';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { MainLayout } from "./layouts/MainLayout";
+import { ChatRoom } from "./features/chat";
+import { AuthPage } from "./pages/AuthPage";
+import { useAuthStore } from "./stores/AuthStore";
 
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
