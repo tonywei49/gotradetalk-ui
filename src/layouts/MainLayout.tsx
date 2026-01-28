@@ -10,6 +10,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
+import { RoomList } from "../features/rooms";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -38,9 +39,11 @@ const NavBarItem = ({ icon: Icon, active, onClick }: NavBarItemProps) => (
 
 export const MainLayout: React.FC = () => {
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
+    const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
     const toggleMode = useThemeStore((state) => state.toggleMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
+    const matrixClient = useAuthStore((state) => state.matrixClient);
 
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -138,36 +141,17 @@ export const MainLayout: React.FC = () => {
                 </div>
 
                 {/* Room List Content (Placeholder) */}
-                <div className="flex-1 overflow-y-auto">
-                    {/* Example Item */}
-                    {[1, 2, 3, 4, 5].map((i) => (
-                        <div
-                            key={i}
-                            className={`px-4 py-3 flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 ${
-                                i === 1 ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
-                            }`}
-                        >
-                            <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
-                            <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                <div className="flex justify-between items-baseline">
-                                    <span className="font-semibold text-slate-800 truncate dark:text-slate-100">
-                                        Alice Chen
-                                    </span>
-                                    <span className="text-xs text-gray-400 dark:text-slate-500">10:30 AM</span>
-                                </div>
-                                <p className="text-sm text-gray-500 truncate dark:text-slate-400">
-                                    Please check the attached file.
-                                </p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                <RoomList
+                    client={matrixClient}
+                    activeRoomId={activeRoomId}
+                    onSelectRoom={(roomId) => setActiveRoomId(roomId)}
+                />
             </aside>
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
             <main className="flex-1 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950">
                 {/* Render nested routes (ChatRoom) here */}
-                <Outlet />
+                <Outlet context={{ activeRoomId }} />
 
                 {/* Placeholder for when no chat is selected (if Outlet is empty) */}
                 {/* <div className="flex-1 flex items-center justify-center text-gray-400">Select a chat to start messaging</div> */}

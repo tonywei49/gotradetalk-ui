@@ -1,4 +1,5 @@
 import React from "react";
+import { useOutletContext } from "react-router-dom";
 import {
     MagnifyingGlassIcon,
     LanguageIcon,
@@ -87,7 +88,21 @@ const MessageBubble = ({ msg }: { msg: MockMessage }) => {
     );
 };
 
+type ChatRoomContext = {
+    activeRoomId: string | null;
+};
+
 export const ChatRoom: React.FC = () => {
+    const { activeRoomId } = useOutletContext<ChatRoomContext>();
+
+    if (!activeRoomId) {
+        return (
+            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                Select a chat to start messaging
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-full w-full">
             {/* 4. Header */}
