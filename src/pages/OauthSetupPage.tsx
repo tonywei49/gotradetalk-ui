@@ -31,7 +31,6 @@ export function OauthSetupPage() {
     const [confirmPassword, setConfirmPassword] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [existingAccount, setExistingAccount] = useState(false);
     const [needsProvision, setNeedsProvision] = useState(true);
     const [resetBusy, setResetBusy] = useState(false);
     const [resetSuccess, setResetSuccess] = useState<string | null>(null);
@@ -75,9 +74,7 @@ export function OauthSetupPage() {
                 setError(profileError.message);
                 return;
             }
-            if (data?.matrix_user_id) {
-                setExistingAccount(true);
-            }
+            const hasMatrixAccount = Boolean(data?.matrix_user_id);
             if (data?.user_local_id) setUserLocalId(data.user_local_id);
             if (data?.company_name) setCompanyName(data.company_name);
             if (data?.country) setCountry(data.country);
@@ -87,7 +84,7 @@ export function OauthSetupPage() {
             const hasAllRequired =
                 !!data?.user_local_id && !!data?.company_name && !!data?.country && !!data?.translation_locale;
             const hasPassword = !!data?.password_set;
-            setNeedsProvision(!hasAllRequired || !hasPassword);
+            setNeedsProvision(!hasAllRequired || !hasPassword || !hasMatrixAccount);
         })();
     }, [session]);
 
