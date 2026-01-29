@@ -3,7 +3,7 @@ import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
-import { searchDirectoryAll } from "../../api/directory";
+import { searchDirectoryAll, searchStaffDirectoryCustomers, searchStaffDirectoryEmployees } from "../../api/directory";
 import {
     acceptContact,
     listContactRequests,
@@ -250,30 +250,9 @@ export function RoomList({
             setSearchResults([]);
             return;
         }
-
-        const localpart = staffSearchMode === "customer"
-            ? normalizeMatrixLocalpart(staffCustomerId)
-            : normalizeMatrixLocalpart(staffPersonId);
-        const domain = staffSearchMode === "customer"
-            ? STAFF_CUSTOMER_DOMAIN
-            : (() => {
-                  const normalizedDomain = normalizeMatrixDomain(staffCompanyDomain);
-                  if (!normalizedDomain) return "";
-                  return normalizedDomain.startsWith("matrix.")
-                      ? normalizedDomain
-                      : `matrix.${normalizedDomain}`;
-              })();
-
-        if (!localpart || !domain) {
+        if (!searchHsUrl) {
+            setSearchError("Missing homeserver URL.");
             setSearchResults([]);
-            setSearchError(null);
-            return;
-        }
-
-        const matrixUserId = buildMatrixUserId(localpart, domain);
-        if (!matrixUserId) {
-            setSearchResults([]);
-            setSearchError("Invalid user id.");
             return;
         }
 
@@ -282,20 +261,56 @@ export function RoomList({
                 setSearchBusy(true);
                 setSearchError(null);
                 try {
-                    const results = await searchDirectoryAll(matrixUserId, searchToken, searchHsUrl);
-                    const filtered = results.filter((item) => {
-                        if (item.matrix_user_id !== matrixUserId) return false;
-                        if (staffSearchMode === "customer") return item.user_type === "client";
-                        return item.user_type === "staff";
-                    });
+                    if (staffSearchMode === "customer") {
+                        const localpart = normalizeMatrixLocalpart(staffCustomerId);
+                        if (!localpart) {
+                            setSearchResults([]);
+                            setSearchError(null);
+                            return;
+                        }
+                        const matrixUserId = buildMatrixUserId(localpart, STAFF_CUSTOMER_DOMAIN);
+                        if (!matrixUserId) {
+                            setSearchResults([]);
+                            setSearchError("Invalid user id.");
+                            return;
+                        }
+                        const results = await searchStaffDirectoryCustomers(matrixUserId, searchHsUrl, searchToken);
+                        const filtered = results.filter((item) => item.matrix_user_id === matrixUserId);
+                        setSearchResults(
+                            filtered.map((item) => ({
+                                id: item.customer_user_id,
+                                displayName: item.display_name,
+                                userLocalId: null,
+                                companyName: null,
+                                country: null,
+                                matrixUserId: item.matrix_user_id ?? null,
+                            })),
+                        );
+                        return;
+                    }
+
+                    const normalizedDomain = normalizeMatrixDomain(staffCompanyDomain);
+                    const domain = normalizedDomain
+                        ? normalizedDomain.startsWith("matrix.")
+                            ? normalizedDomain
+                            : `matrix.${normalizedDomain}`
+                        : "";
+                    const localpart = normalizeMatrixLocalpart(staffPersonId);
+                    if (!localpart || !domain) {
+                        setSearchResults([]);
+                        setSearchError(null);
+                        return;
+                    }
+                    const results = await searchStaffDirectoryEmployees(domain, localpart, searchHsUrl, searchToken);
+                    const matrixUserId = buildMatrixUserId(localpart, domain);
                     setSearchResults(
-                        filtered.map((item) => ({
-                            id: item.profile_id,
+                        results.map((item) => ({
+                            id: item.person_id,
                             displayName: item.display_name,
-                            userLocalId: item.user_local_id,
+                            userLocalId: item.username,
                             companyName: item.company_name,
-                            country: item.country,
-                            matrixUserId: item.matrix_user_id ?? null,
+                            country: null,
+                            matrixUserId: item.matrix_user_id ?? matrixUserId,
                         })),
                     );
                 } catch (error) {
