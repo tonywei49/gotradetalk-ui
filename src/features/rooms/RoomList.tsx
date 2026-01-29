@@ -3,7 +3,6 @@ import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
-import type { AuthUserType } from "../../stores/AuthStore";
 import { searchDirectoryAll } from "../../api/directory";
 import { acceptContact, listContactRequests, listContacts, requestContact } from "../../api/contacts";
 import { getOrCreateDirectRoom } from "../../matrix/direct";
@@ -19,7 +18,6 @@ type DirectRoomEntry = {
 
 type RoomListProps = {
     client: MatrixClient | null;
-    userType: AuthUserType | null;
     hubAccessToken: string | null;
     matrixAccessToken: string | null;
     matrixHsUrl: string | null;
@@ -74,7 +72,6 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
 
 export function RoomList({
     client,
-    userType,
     hubAccessToken,
     matrixAccessToken,
     matrixHsUrl,

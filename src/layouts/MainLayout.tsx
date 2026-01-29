@@ -44,7 +44,6 @@ export const MainLayout: React.FC = () => {
     const toggleMode = useThemeStore((state) => state.toggleMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const matrixClient = useAuthStore((state) => state.matrixClient);
-    const userType = useAuthStore((state) => state.userType);
     const hubAccessToken = useAuthStore((state) => state.hubSession?.access_token ?? null);
     const matrixAccessToken = useAuthStore((state) => state.matrixCredentials?.access_token ?? null);
     const matrixHsUrl = useAuthStore((state) => state.matrixCredentials?.hs_url ?? null);
@@ -155,7 +154,6 @@ export const MainLayout: React.FC = () => {
                 {/* Room List Content (Placeholder) */}
                 <RoomList
                     client={matrixClient}
-                    userType={userType}
                     hubAccessToken={hubAccessToken}
                     matrixAccessToken={matrixAccessToken}
                     matrixHsUrl={matrixHsUrl}
