@@ -420,6 +420,7 @@ export function RoomList({
                     requestItems.map((item) => ({
                         id: item.request_id,
                         requesterId: item.requester_id,
+                        requesterUserType: item.user_type,
                         displayName: item.display_name,
                         userLocalId: item.user_local_id,
                         companyName: item.company_name,
