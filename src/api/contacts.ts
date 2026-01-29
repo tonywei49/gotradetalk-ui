@@ -60,12 +60,14 @@ function withMatrixUserId(url: string, matrixUserId?: string | null, hsUrl?: str
 }
 
 async function getJson<T>(url: string, accessToken: string, hsUrl?: string | null): Promise<T> {
+    const matrixUserId = hsUrl ? localStorage.getItem("gt_matrix_user_id") : null;
     const response = await fetch(url, {
         method: "GET",
         cache: "no-store",
         headers: {
             Authorization: `Bearer ${accessToken}`,
             ...(hsUrl ? { "x-hs-url": hsUrl } : {}),
+            ...(matrixUserId ? { "x-matrix-user-id": matrixUserId } : {}),
         },
     });
 

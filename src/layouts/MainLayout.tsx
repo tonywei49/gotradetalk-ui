@@ -65,6 +65,12 @@ export const MainLayout: React.FC = () => {
         };
     }, [matrixClient]);
 
+    useEffect(() => {
+        if (matrixCredentials?.user_id) {
+            localStorage.setItem("gt_matrix_user_id", matrixCredentials.user_id);
+        }
+    }, [matrixCredentials?.user_id]);
+
     const onLogout = (): void => {
         clearSession();
         navigate("/auth");
