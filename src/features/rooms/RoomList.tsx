@@ -478,6 +478,20 @@ export function RoomList({
     const getMetaLabel = (item: { companyName: string | null; title: string | null; country: string | null }): string =>
         `${item.companyName || "-"} · ${item.title || "-"} · ${item.country || "-"}`;
 
+    const joinInviteFromUser = async (inviterUserId: string): Promise<string | null> => {
+        if (!client) return null;
+        const myUserId = client.getUserId();
+        if (!myUserId) return null;
+        const inviteRoom = client.getRooms().find((room) => {
+            if (room.getMyMembership() !== "invite") return false;
+            const inviteEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
+            return inviteEvent?.getSender() === inviterUserId;
+        });
+        if (!inviteRoom) return null;
+        await client.joinRoom(inviteRoom.roomId);
+        return inviteRoom.roomId;
+    };
+
     const sortedContacts = useMemo(() => {
         const copy = [...contacts];
         const compareText = (a: string | null, b: string | null): number => {
@@ -504,10 +518,18 @@ export function RoomList({
             await acceptContact(searchToken, requesterId, searchHsUrl);
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
             await refreshContacts();
-            if (matrixUserId && client && userType === "staff" && requesterUserType === "client") {
-                const roomId = await getOrCreateDirectRoom(client, matrixUserId);
-                onSelectRoom(roomId);
-                setShowSearchModal(false);
+            if (matrixUserId && client) {
+                if (userType === "staff" && requesterUserType === "client") {
+                    const roomId = await getOrCreateDirectRoom(client, matrixUserId);
+                    onSelectRoom(roomId);
+                    setShowSearchModal(false);
+                } else {
+                    const joinedRoomId = await joinInviteFromUser(matrixUserId);
+                    if (joinedRoomId) {
+                        onSelectRoom(joinedRoomId);
+                        setShowSearchModal(false);
+                    }
+                }
             }
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : "Accept failed");
