@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
@@ -127,6 +127,7 @@ export function RoomList({
             displayName: string | null;
             userLocalId: string | null;
             companyName: string | null;
+            title: string | null;
             country: string | null;
             matrixUserId: string | null;
         }[]
@@ -233,6 +234,7 @@ export function RoomList({
                             displayName: item.display_name,
                             userLocalId: item.user_local_id,
                             companyName: item.company_name,
+                            title: null,
                             country: item.country,
                             matrixUserId: item.matrix_user_id ?? null,
                         })),
@@ -288,6 +290,7 @@ export function RoomList({
                                 displayName: item.display_name,
                                 userLocalId: null,
                                 companyName: null,
+                                title: null,
                                 country: null,
                                 matrixUserId: item.matrix_user_id ?? null,
                             })),
@@ -315,6 +318,7 @@ export function RoomList({
                             displayName: item.display_name,
                             userLocalId: item.username,
                             companyName: item.company_name,
+                            title: item.title ?? null,
                             country: null,
                             matrixUserId: item.matrix_user_id ?? matrixUserId,
                         })),
@@ -440,6 +444,12 @@ export function RoomList({
         }
     };
 
+    const getAccountIdLabel = (item: { matrixUserId: string | null; userLocalId: string | null }): string =>
+        item.matrixUserId || item.userLocalId || "-";
+
+    const getMetaLabel = (item: { companyName: string | null; title: string | null; country: string | null }): string =>
+        `${item.companyName || "-"} · ${item.title || "-"} · ${item.country || "-"}`;
+
     const onAcceptRequest = async (requesterId: string, matrixUserId: string | null): Promise<void> => {
         if (!searchToken) return;
         try {
@@ -475,7 +485,7 @@ export function RoomList({
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-100"
                     aria-label="Start chat"
                 >
-                    <PlusIcon className="h-4 w-4" />
+                    <PlusIcon className="h-5 w-5" />
                 </button>
             </div>
             {view === "chat" ? (
@@ -743,17 +753,13 @@ export function RoomList({
                                     >
                                         <div className="min-w-0">
                                             <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                                {item.displayName || item.userLocalId || item.id}
+                                                {getAccountIdLabel(item)}
                                             </div>
                                             <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                                {(item.userLocalId || "-") +
-                                                    " · " +
-                                                    (item.companyName || "-") +
-                                                    " · " +
-                                                    (item.country || "-")}
+                                                {getMetaLabel(item)}
                                             </div>
                                         </div>
-                                        <span className="text-xs text-emerald-500">
+                                        <span className="text-lg font-semibold text-emerald-500">
                                             {requestedIds.has(item.id) ? "已邀請" : "+"}
                                         </span>
                                     </button>

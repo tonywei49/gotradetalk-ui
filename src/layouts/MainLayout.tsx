@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import {
     ChatBubbleLeftRightIcon,
@@ -31,11 +31,11 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount }: NavBarItemProps
     >
         <div className="relative">
             <Icon className="w-7 h-7" />
-            {badgeCount && badgeCount > 0 && (
+            {typeof badgeCount === "number" && badgeCount > 0 ? (
                 <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-semibold flex items-center justify-center ring-2 ring-gray-900">
                     {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
-            )}
+            ) : null}
             {active && (
                 <div className="absolute -left-5 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#2F5C56] rounded-r-full" />
             )}
@@ -58,6 +58,10 @@ export const MainLayout: React.FC = () => {
     const userType = useAuthStore((state) => state.userType);
     const clearSession = useAuthStore((state) => state.clearSession);
     const navigate = useNavigate();
+    const [showAccountMenu, setShowAccountMenu] = useState(false);
+    const accountMenuRef = useRef<HTMLDivElement | null>(null);
+    const accountButtonRef = useRef<HTMLButtonElement | null>(null);
+    const accountInitial = (matrixCredentials?.user_id || "U").replace(/^@/, "").charAt(0).toUpperCase() || "U";
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -73,6 +77,20 @@ export const MainLayout: React.FC = () => {
         }
     }, [matrixCredentials?.user_id]);
 
+    useEffect(() => {
+        const onClickOutside = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (accountMenuRef.current?.contains(target) || accountButtonRef.current?.contains(target)) return;
+            setShowAccountMenu(false);
+        };
+        if (showAccountMenu) {
+            document.addEventListener("click", onClickOutside);
+        }
+        return () => {
+            document.removeEventListener("click", onClickOutside);
+        };
+    }, [showAccountMenu]);
+
     const onLogout = (): void => {
         clearSession();
         navigate("/auth");
@@ -83,8 +101,40 @@ export const MainLayout: React.FC = () => {
             {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
             <nav className="w-16 bg-gray-900 flex flex-col items-center py-4 flex-shrink-0 z-20 dark:bg-slate-900">
                 {/* App Logo Placeholder */}
-                <div className="w-10 h-10 bg-[#2F5C56] rounded-xl mb-8 flex items-center justify-center text-white font-bold text-xs">
-                    GT
+                <div className="relative mb-8">
+                    <button
+                        ref={accountButtonRef}
+                        type="button"
+                        onClick={() => setShowAccountMenu((prev) => !prev)}
+                        className="w-10 h-10 bg-[#2F5C56] rounded-xl flex items-center justify-center text-white font-bold text-sm"
+                        aria-label="Account menu"
+                    >
+                        {accountInitial}
+                    </button>
+                    {showAccountMenu && (
+                        <div
+                            ref={accountMenuRef}
+                            className="absolute left-0 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-2 text-sm shadow-lg dark:border-slate-800 dark:bg-slate-900"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab("settings");
+                                    setShowAccountMenu(false);
+                                }}
+                                className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                賬號設定
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onLogout}
+                                className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
+                            >
+                                Logout
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Nav Items */}
@@ -114,13 +164,6 @@ export const MainLayout: React.FC = () => {
                         active={activeTab === "settings"}
                         onClick={() => setActiveTab("settings")}
                     />
-                    <button
-                        type="button"
-                        onClick={onLogout}
-                        className="w-full h-12 flex items-center justify-center text-rose-400 hover:text-rose-300 transition-colors text-xs font-semibold"
-                    >
-                        Logout
-                    </button>
                     <button
                         type="button"
                         onClick={toggleMode}
