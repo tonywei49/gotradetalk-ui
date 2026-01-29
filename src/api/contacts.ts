@@ -174,3 +174,13 @@ export async function rejectContact(
     const url = `${base}/contacts/reject`;
     return postJson<{ status: string }>(url, accessToken, { requester_id: requesterId }, hsUrl);
 }
+
+export async function removeContact(
+    accessToken: string,
+    targetId: string,
+    hsUrl?: string | null,
+): Promise<{ status: string }> {
+    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const url = `${base}/contacts/remove`;
+    return postJson<{ status: string }>(url, accessToken, { target_id: targetId }, hsUrl);
+}

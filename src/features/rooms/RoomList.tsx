@@ -10,9 +10,10 @@ import {
     listContacts,
     listOutgoingContactRequests,
     rejectContact,
+    removeContact,
     requestContact,
 } from "../../api/contacts";
-import { getOrCreateDirectRoom } from "../../matrix/direct";
+import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../../matrix/direct";
 
 type DirectRoomEntry = {
     userId: string;
@@ -156,6 +157,8 @@ export function RoomList({
     >([]);
     const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
     const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
+    const [acceptedMatrixUserIds, setAcceptedMatrixUserIds] = useState<Set<string>>(new Set());
+    const [contactSort, setContactSort] = useState<"company" | "name">("company");
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -363,6 +366,9 @@ export function RoomList({
                 })),
             );
             setAcceptedIds(new Set(contactItems.map((item) => item.user_id)));
+            setAcceptedMatrixUserIds(
+                new Set(contactItems.map((item) => item.matrix_user_id).filter((value): value is string => Boolean(value))),
+            );
             setIncomingRequests(
                 requestItems.map((item) => ({
                     id: item.request_id,
@@ -441,16 +447,14 @@ export function RoomList({
         setStaffPersonId("");
     };
 
-    const onRequestContact = async (targetId: string, matrixUserId: string | null): Promise<void> => {
+    const onRequestContact = async (targetId: string): Promise<void> => {
         if (!searchToken) return;
         try {
             const result = await requestContact(searchToken, targetId, searchHsUrl);
             if (result.status === "pending") {
                 setRequestedIds((prev) => new Set(prev).add(targetId));
             }
-            if (matrixUserId) {
-                await onStartChat(matrixUserId);
-            }
+            await refreshContacts();
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : "Request failed");
         }
@@ -467,13 +471,32 @@ export function RoomList({
     const getMetaLabel = (item: { companyName: string | null; title: string | null; country: string | null }): string =>
         `${item.companyName || "-"} · ${item.title || "-"} · ${item.country || "-"}`;
 
+    const sortedContacts = useMemo(() => {
+        const copy = [...contacts];
+        const compareText = (a: string | null, b: string | null): number => {
+            const left = (a || "").toLowerCase();
+            const right = (b || "").toLowerCase();
+            return left.localeCompare(right);
+        };
+        return copy.sort((a, b) => {
+            if (contactSort === "company") {
+                const companyDiff = compareText(a.companyName, b.companyName);
+                if (companyDiff !== 0) return companyDiff;
+            }
+            return compareText(a.displayName || a.userLocalId, b.displayName || b.userLocalId);
+        });
+    }, [contacts, contactSort]);
+
     const onAcceptRequest = async (requesterId: string, matrixUserId: string | null): Promise<void> => {
         if (!searchToken) return;
         try {
             await acceptContact(searchToken, requesterId, searchHsUrl);
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
-            if (matrixUserId) {
-                await onStartChat(matrixUserId);
+            await refreshContacts();
+            if (matrixUserId && client) {
+                const roomId = await getOrCreateDirectRoom(client, matrixUserId);
+                onSelectRoom(roomId);
+                setShowSearchModal(false);
             }
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : "Accept failed");
@@ -485,10 +508,41 @@ export function RoomList({
         try {
             await rejectContact(searchToken, requesterId, searchHsUrl);
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
+            await refreshContacts();
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : "Reject failed");
         }
     };
+
+    const onRemoveContact = async (targetId: string, matrixUserId: string | null): Promise<void> => {
+        if (!searchToken) return;
+        try {
+            await removeContact(searchToken, targetId, searchHsUrl);
+            if (client && matrixUserId) {
+                const roomId = getDirectRoomId(client, matrixUserId);
+                if (roomId) {
+                    await hideDirectRoom(client, matrixUserId, roomId);
+                }
+            }
+            await refreshContacts();
+        } catch (error) {
+            setSearchError(error instanceof Error ? error.message : "Remove failed");
+        }
+    };
+
+    const onHideRoom = async (entry: DirectRoomEntry): Promise<void> => {
+        if (!client) return;
+        try {
+            await hideDirectRoom(client, entry.userId, entry.roomId);
+            refresh?.();
+        } catch {
+            // ignore hide failures
+        }
+    };
+
+    const visibleRooms = acceptedMatrixUserIds.size
+        ? rooms.filter((entry) => acceptedMatrixUserIds.has(entry.userId))
+        : rooms;
 
     return (
         <div className="flex-1 overflow-y-auto">
@@ -506,35 +560,46 @@ export function RoomList({
                 </button>
             </div>
             {view === "chat" ? (
-                rooms.length === 0 ? (
+                visibleRooms.length === 0 ? (
                     <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
                         No direct chats yet.
                     </div>
                 ) : (
-                    rooms.map((entry) => (
-                        <button
+                    visibleRooms.map((entry) => (
+                        <div
                             key={entry.roomId}
-                            type="button"
-                            onClick={() => onSelectRoom(entry.roomId)}
-                            className={`w-full text-left px-4 py-3 flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 ${
+                            className={`group w-full px-4 py-3 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${
                                 entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
                             }`}
                         >
-                            <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
-                            <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                <div className="flex justify-between items-baseline">
-                                    <span className="font-semibold text-slate-800 truncate dark:text-slate-100">
-                                        {entry.displayName}
-                                    </span>
-                                    <span className="text-xs text-gray-400 dark:text-slate-500">
-                                        {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
-                                    </span>
+                            <button
+                                type="button"
+                                onClick={() => onSelectRoom(entry.roomId)}
+                                className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                            >
+                                <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
+                                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                    <div className="flex justify-between items-baseline">
+                                        <span className="font-semibold text-slate-800 truncate dark:text-slate-100">
+                                            {entry.displayName}
+                                        </span>
+                                        <span className="text-xs text-gray-400 dark:text-slate-500">
+                                            {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-gray-500 truncate dark:text-slate-400">
+                                        {entry.lastMessage || " "}
+                                    </p>
                                 </div>
-                                <p className="text-sm text-gray-500 truncate dark:text-slate-400">
-                                    {entry.lastMessage || " "}
-                                </p>
-                            </div>
-                        </button>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void onHideRoom(entry)}
+                                className="text-xs text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                                Hide
+                            </button>
+                        </div>
                     ))
                 )
             ) : (
@@ -552,14 +617,17 @@ export function RoomList({
                                     >
                                         <div className="min-w-0">
                                             <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                                {item.displayName || item.userLocalId || item.requesterId}
+                                                {getAccountIdLabel({
+                                                    matrixUserId: item.matrixUserId,
+                                                    userLocalId: item.userLocalId,
+                                                })}
                                             </div>
                                             <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                                {(item.userLocalId || "-") +
-                                                    " 路 " +
-                                                    (item.companyName || "-") +
-                                                    " 路 " +
-                                                    (item.country || "-")}
+                                                {getMetaLabel({
+                                                    companyName: item.companyName,
+                                                    title: null,
+                                                    country: item.country,
+                                                })}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
@@ -587,27 +655,71 @@ export function RoomList({
                         <div className="text-sm text-slate-500 dark:text-slate-400">No contacts yet.</div>
                     ) : (
                         <div className="space-y-2">
-                            {contacts.map((contact) => (
+                            <div className="flex items-center gap-2">
                                 <button
-                                    key={contact.id}
                                     type="button"
-                                    onClick={() => void onStartChat(contact.matrixUserId)}
+                                    onClick={() => setContactSort("company")}
+                                    className={`text-xs px-2 py-1 rounded-full border ${
+                                        contactSort === "company"
+                                            ? "border-emerald-400 text-emerald-600"
+                                            : "border-gray-200 text-slate-500"
+                                    }`}
+                                >
+                                    By company
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setContactSort("name")}
+                                    className={`text-xs px-2 py-1 rounded-full border ${
+                                        contactSort === "name"
+                                            ? "border-emerald-400 text-emerald-600"
+                                            : "border-gray-200 text-slate-500"
+                                    }`}
+                                >
+                                    By name
+                                </button>
+                            </div>
+                            {sortedContacts.map((contact) => (
+                                <div
+                                    key={contact.id}
                                     className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
                                 >
-                                    <div className="min-w-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => void onStartChat(contact.matrixUserId)}
+                                        className="min-w-0 text-left"
+                                    >
                                         <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                            {contact.displayName || contact.userLocalId || contact.id}
+                                            {getAccountIdLabel({
+                                                matrixUserId: contact.matrixUserId,
+                                                userLocalId: contact.userLocalId,
+                                            })}
                                         </div>
                                         <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                            {(contact.userLocalId || "-") +
-                                                " 路 " +
-                                                (contact.companyName || "-") +
-                                                " 路 " +
-                                                (contact.country || "-")}
+                                            {getMetaLabel({
+                                                companyName: contact.companyName,
+                                                title: null,
+                                                country: contact.country,
+                                            })}
                                         </div>
+                                    </button>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => void onStartChat(contact.matrixUserId)}
+                                            className="text-xs text-emerald-500"
+                                        >
+                                            Chat
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => void onRemoveContact(contact.id, contact.matrixUserId)}
+                                            className="text-xs text-rose-400 hover:text-rose-300"
+                                        >
+                                            Remove
+                                        </button>
                                     </div>
-                                    <span className="text-xs text-emerald-500">Chat</span>
-                                </button>
+                                </div>
                             ))}
                         </div>
                     )}
@@ -712,14 +824,17 @@ export function RoomList({
                                         >
                                             <div className="min-w-0">
                                                 <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                                    {item.displayName || item.userLocalId || item.requesterId}
+                                                    {getAccountIdLabel({
+                                                        matrixUserId: item.matrixUserId,
+                                                        userLocalId: item.userLocalId,
+                                                    })}
                                                 </div>
                                                 <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                                    {(item.userLocalId || "-") +
-                                                        " · " +
-                                                        (item.companyName || "-") +
-                                                        " · " +
-                                                        (item.country || "-")}
+                                                    {getMetaLabel({
+                                                        companyName: item.companyName,
+                                                        title: null,
+                                                        country: item.country,
+                                                    })}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3">
@@ -762,7 +877,7 @@ export function RoomList({
                                     <button
                                         key={item.id}
                                         type="button"
-                                        onClick={() => void onRequestContact(item.id, item.matrixUserId)}
+                                        onClick={() => void onRequestContact(item.id)}
                                         disabled={requestedIds.has(item.id) || acceptedIds.has(item.id)}
                                         className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${
                                             requestedIds.has(item.id) || acceptedIds.has(item.id)

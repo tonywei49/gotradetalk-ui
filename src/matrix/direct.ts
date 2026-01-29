@@ -14,6 +14,15 @@ export function getDirectRoomId(client: MatrixClient, userId: string): string | 
     return null;
 }
 
+export async function hideDirectRoom(client: MatrixClient, userId: string, roomId: string): Promise<void> {
+    const content = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as DirectAccountData;
+    const roomIds = content[userId] ?? [];
+    if (!roomIds.includes(roomId)) return;
+    const updated: DirectAccountData = { ...content };
+    updated[userId] = roomIds.filter((id) => id !== roomId);
+    await client.setAccountData(EventType.Direct, updated);
+}
+
 export async function getOrCreateDirectRoom(client: MatrixClient, userId: string): Promise<string> {
     const existing = getDirectRoomId(client, userId);
     if (existing) {

@@ -8,6 +8,7 @@ import {
     MoonIcon,
     SunIcon,
 } from "@heroicons/react/24/outline";
+import { RoomEvent } from "matrix-js-sdk";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
@@ -66,7 +67,13 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!matrixClient) return undefined;
         matrixClient.startClient({ initialSyncLimit: 20 });
+        const onMembership = (room: any, membership: string): void => {
+            if (membership !== "invite") return;
+            void matrixClient.joinRoom(room.roomId);
+        };
+        matrixClient.on(RoomEvent.MyMembership, onMembership);
         return () => {
+            matrixClient.off(RoomEvent.MyMembership, onMembership);
             matrixClient.stopClient();
         };
     }, [matrixClient]);
