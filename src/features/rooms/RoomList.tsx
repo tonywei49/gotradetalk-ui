@@ -137,6 +137,8 @@ export function RoomList({
     const [contacts, setContacts] = useState<
         {
             id: string;
+            initiatedByMe: boolean;
+            userType: string | null;
             displayName: string | null;
             userLocalId: string | null;
             companyName: string | null;
@@ -148,6 +150,7 @@ export function RoomList({
         {
             id: string;
             requesterId: string;
+            requesterUserType: string | null;
             displayName: string | null;
             userLocalId: string | null;
             companyName: string | null;
@@ -358,6 +361,8 @@ export function RoomList({
             setContacts(
                 contactItems.map((item) => ({
                     id: item.user_id,
+                    initiatedByMe: item.initiated_by_me,
+                    userType: item.user_type,
                     displayName: item.display_name,
                     userLocalId: item.user_local_id,
                     companyName: item.company_name,
@@ -373,6 +378,7 @@ export function RoomList({
                 requestItems.map((item) => ({
                     id: item.request_id,
                     requesterId: item.requester_id,
+                    requesterUserType: item.user_type,
                     displayName: item.display_name,
                     userLocalId: item.user_local_id,
                     companyName: item.company_name,
@@ -487,13 +493,17 @@ export function RoomList({
         });
     }, [contacts, contactSort]);
 
-    const onAcceptRequest = async (requesterId: string, matrixUserId: string | null): Promise<void> => {
+    const onAcceptRequest = async (
+        requesterId: string,
+        matrixUserId: string | null,
+        requesterUserType: string | null,
+    ): Promise<void> => {
         if (!searchToken) return;
         try {
             await acceptContact(searchToken, requesterId, searchHsUrl);
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
             await refreshContacts();
-            if (matrixUserId && client) {
+            if (matrixUserId && client && userType === "staff" && requesterUserType === "client") {
                 const roomId = await getOrCreateDirectRoom(client, matrixUserId);
                 onSelectRoom(roomId);
                 setShowSearchModal(false);
@@ -539,6 +549,37 @@ export function RoomList({
             // ignore hide failures
         }
     };
+
+    const shouldCreateRoomForContact = (contact: {
+        initiatedByMe: boolean;
+        userType: string | null;
+        matrixUserId: string | null;
+    }): boolean => {
+        if (!contact.matrixUserId) return false;
+        if (userType === "staff") {
+            if (contact.userType === "client") return true;
+            if (contact.userType === "staff") return contact.initiatedByMe;
+        }
+        if (userType === "client") {
+            if (contact.userType === "client") return contact.initiatedByMe;
+            return false;
+        }
+        return false;
+    };
+
+    useEffect(() => {
+        if (!client) return;
+        void (async (): Promise<void> => {
+            for (const contact of contacts) {
+                if (!contact.matrixUserId) continue;
+                if (!shouldCreateRoomForContact(contact)) continue;
+                const existing = getDirectRoomId(client, contact.matrixUserId);
+                if (!existing) {
+                    await getOrCreateDirectRoom(client, contact.matrixUserId);
+                }
+            }
+        })();
+    }, [client, contacts, userType]);
 
     const visibleRooms = acceptedMatrixUserIds.size
         ? rooms.filter((entry) => acceptedMatrixUserIds.has(entry.userId))
@@ -633,7 +674,13 @@ export function RoomList({
                                         <div className="flex items-center gap-3">
                                             <button
                                                 type="button"
-                                                onClick={() => void onAcceptRequest(item.requesterId, item.matrixUserId)}
+                                                onClick={() =>
+                                                    void onAcceptRequest(
+                                                        item.requesterId,
+                                                        item.matrixUserId,
+                                                        item.requesterUserType,
+                                                    )
+                                                }
                                                 className="text-xs text-emerald-500 hover:text-emerald-400"
                                             >
                                                 Accept
@@ -841,7 +888,11 @@ export function RoomList({
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        void onAcceptRequest(item.requesterId, item.matrixUserId)
+                                                        void onAcceptRequest(
+                                                            item.requesterId,
+                                                            item.matrixUserId,
+                                                            item.requesterUserType,
+                                                        )
                                                     }
                                                     className="text-xs text-emerald-500 hover:text-emerald-400"
                                                 >

@@ -2,6 +2,7 @@ import { hubApiBaseUrl } from "../config";
 
 type ContactEntry = {
     contact_id: string;
+    initiated_by_me: boolean;
     user_id: string;
     display_name: string | null;
     user_local_id: string | null;
@@ -9,6 +10,7 @@ type ContactEntry = {
     country: string | null;
     handle: string | null;
     matrix_user_id: string | null;
+    user_type: string | null;
 };
 
 type ContactRequestEntry = {
@@ -20,6 +22,7 @@ type ContactRequestEntry = {
     country: string | null;
     handle: string | null;
     matrix_user_id: string | null;
+    user_type: string | null;
 };
 
 type OutgoingContactRequestEntry = {
@@ -31,6 +34,7 @@ type OutgoingContactRequestEntry = {
     country: string | null;
     handle: string | null;
     matrix_user_id: string | null;
+    user_type: string | null;
 };
 
 type ListResponse<T> = {
