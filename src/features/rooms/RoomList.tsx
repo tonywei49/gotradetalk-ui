@@ -241,6 +241,38 @@ export function RoomList({
         })();
     }, [searchToken, searchHsUrl]);
 
+    useEffect(() => {
+        if (!showSearchModal || !searchToken) return undefined;
+        let alive = true;
+        const refreshRequests = async (): Promise<void> => {
+            try {
+                const requestItems = await listContactRequests(searchToken, searchHsUrl);
+                if (!alive) return;
+                setIncomingRequests(
+                    requestItems.map((item) => ({
+                        id: item.request_id,
+                        requesterId: item.requester_id,
+                        displayName: item.display_name,
+                        userLocalId: item.user_local_id,
+                        companyName: item.company_name,
+                        country: item.country,
+                        matrixUserId: item.matrix_user_id,
+                    })),
+                );
+            } catch {
+                // ignore refresh failures
+            }
+        };
+        void refreshRequests();
+        const timer = window.setInterval(() => {
+            void refreshRequests();
+        }, 6000);
+        return () => {
+            alive = false;
+            window.clearInterval(timer);
+        };
+    }, [showSearchModal, searchToken, searchHsUrl]);
+
     const onStartChat = async (matrixUserId: string | null): Promise<void> => {
         if (!client || !matrixUserId) return;
         const roomId = await getOrCreateDirectRoom(client, matrixUserId);
