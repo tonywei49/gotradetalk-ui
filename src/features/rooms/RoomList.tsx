@@ -35,6 +35,26 @@ type RoomListProps = {
 };
 
 const EMPTY_STATE: DirectRoomEntry[] = [];
+const STAFF_CUSTOMER_DOMAIN = "matrix.gotradetalk.com";
+
+function normalizeMatrixLocalpart(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    const withoutAt = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+    return withoutAt.split(":")[0].trim();
+}
+
+function normalizeMatrixDomain(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    const withoutScheme = trimmed.replace(/^https?:\/\//i, "");
+    return withoutScheme.split("/")[0].trim();
+}
+
+function buildMatrixUserId(localpart: string, domain: string): string | null {
+    if (!localpart || !domain) return null;
+    return `@${localpart}:${domain}`;
+}
 
 function getLastMessagePreview(room: Room): string {
     const events = room.getLiveTimeline().getEvents();
@@ -91,6 +111,10 @@ export function RoomList({
 }: RoomListProps) {
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
     const [query, setQuery] = useState("");
+    const [staffSearchMode, setStaffSearchMode] = useState<"customer" | "staff">("customer");
+    const [staffCustomerId, setStaffCustomerId] = useState("");
+    const [staffCompanyDomain, setStaffCompanyDomain] = useState("");
+    const [staffPersonId, setStaffPersonId] = useState("");
     const [searchBusy, setSearchBusy] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [searchResults, setSearchResults] = useState<
@@ -177,8 +201,10 @@ export function RoomList({
 
     const searchToken = hubAccessToken ?? matrixAccessToken;
     const searchHsUrl = hubAccessToken ? null : matrixHsUrl;
+    const isStaffSearch = !hubAccessToken && Boolean(matrixAccessToken);
 
     useEffect(() => {
+        if (isStaffSearch) return;
         if (!query.trim()) {
             setSearchResults([]);
             setSearchError(null);
@@ -214,8 +240,83 @@ export function RoomList({
             })();
         }, 350);
 
+            return () => window.clearTimeout(handler);
+    }, [isStaffSearch, query, searchToken, searchHsUrl]);
+
+    useEffect(() => {
+        if (!isStaffSearch) return;
+        if (!searchToken) {
+            setSearchError("Search requires access token.");
+            setSearchResults([]);
+            return;
+        }
+
+        const localpart = staffSearchMode === "customer"
+            ? normalizeMatrixLocalpart(staffCustomerId)
+            : normalizeMatrixLocalpart(staffPersonId);
+        const domain = staffSearchMode === "customer"
+            ? STAFF_CUSTOMER_DOMAIN
+            : (() => {
+                  const normalizedDomain = normalizeMatrixDomain(staffCompanyDomain);
+                  if (!normalizedDomain) return "";
+                  return normalizedDomain.startsWith("matrix.")
+                      ? normalizedDomain
+                      : `matrix.${normalizedDomain}`;
+              })();
+
+        if (!localpart || !domain) {
+            setSearchResults([]);
+            setSearchError(null);
+            return;
+        }
+
+        const matrixUserId = buildMatrixUserId(localpart, domain);
+        if (!matrixUserId) {
+            setSearchResults([]);
+            setSearchError("Invalid user id.");
+            return;
+        }
+
+        const handler = window.setTimeout(() => {
+            void (async () => {
+                setSearchBusy(true);
+                setSearchError(null);
+                try {
+                    const results = await searchDirectoryAll(matrixUserId, searchToken, searchHsUrl);
+                    const filtered = results.filter((item) => {
+                        if (item.matrix_user_id !== matrixUserId) return false;
+                        if (staffSearchMode === "customer") return item.user_type === "client";
+                        return item.user_type === "staff";
+                    });
+                    setSearchResults(
+                        filtered.map((item) => ({
+                            id: item.profile_id,
+                            displayName: item.display_name,
+                            userLocalId: item.user_local_id,
+                            companyName: item.company_name,
+                            country: item.country,
+                            matrixUserId: item.matrix_user_id ?? null,
+                        })),
+                    );
+                } catch (error) {
+                    setSearchError(error instanceof Error ? error.message : "Search failed");
+                    setSearchResults([]);
+                } finally {
+                    setSearchBusy(false);
+                }
+            })();
+        }, 350);
+
         return () => window.clearTimeout(handler);
-    }, [query, searchToken, searchHsUrl]);
+    }, [
+        isStaffSearch,
+        searchToken,
+        searchHsUrl,
+        staffSearchMode,
+        staffCustomerId,
+        staffCompanyDomain,
+        staffPersonId,
+    ]);
 
     useEffect(() => {
         if (!searchToken) return;
@@ -301,6 +402,9 @@ export function RoomList({
         onSelectRoom(roomId);
         setShowSearchModal(false);
         setQuery("");
+        setStaffCustomerId("");
+        setStaffCompanyDomain("");
+        setStaffPersonId("");
     };
 
     const onRequestContact = async (targetId: string): Promise<void> => {
@@ -465,23 +569,88 @@ export function RoomList({
                 <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Start a chat</h3>
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                                    Start a chat
+                                </h3>
+                                {isStaffSearch && (
+                                    <div className="flex items-center rounded-full border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
+                                        <button
+                                            type="button"
+                                            onClick={() => setStaffSearchMode("customer")}
+                                            className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                                                staffSearchMode === "customer"
+                                                    ? "bg-emerald-500 text-white"
+                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                            }`}
+                                        >
+                                            Customer
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setStaffSearchMode("staff")}
+                                            className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                                                staffSearchMode === "staff"
+                                                    ? "bg-emerald-500 text-white"
+                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                            }`}
+                                        >
+                                            Company staff
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 type="button"
-                                onClick={() => setShowSearchModal(false)}
+                                onClick={() => {
+                                    setShowSearchModal(false);
+                                    setQuery("");
+                                    setStaffCustomerId("");
+                                    setStaffCompanyDomain("");
+                                    setStaffPersonId("");
+                                }}
                                 className="rounded-full p-1 text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
                                 aria-label="Close"
                             >
                                 <XMarkIcon className="h-5 w-5" />
                             </button>
                         </div>
-                        <input
-                            type="text"
-                            value={query}
-                            onChange={(event) => setQuery(event.target.value)}
-                            placeholder="Search user..."
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        />
+                        {isStaffSearch ? (
+                            staffSearchMode === "customer" ? (
+                                <input
+                                    type="text"
+                                    value={staffCustomerId}
+                                    onChange={(event) => setStaffCustomerId(event.target.value)}
+                                    placeholder="Customer ID"
+                                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                />
+                            ) : (
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <input
+                                        type="text"
+                                        value={staffCompanyDomain}
+                                        onChange={(event) => setStaffCompanyDomain(event.target.value)}
+                                        placeholder="Company domain (e.g. hululucky.com)"
+                                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={staffPersonId}
+                                        onChange={(event) => setStaffPersonId(event.target.value)}
+                                        placeholder="Staff ID"
+                                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    />
+                                </div>
+                            )
+                        ) : (
+                            <input
+                                type="text"
+                                value={query}
+                                onChange={(event) => setQuery(event.target.value)}
+                                placeholder="Search user..."
+                                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            />
+                        )}
                         {incomingRequests.length > 0 && (
                             <div className="mt-4">
                                 <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
@@ -533,7 +702,12 @@ export function RoomList({
                         )}
                         {searchError && <div className="mt-3 text-xs text-rose-500">{searchError}</div>}
                         <div className="mt-4 max-h-72 overflow-y-auto">
-                            {searchResults.length === 0 && query.trim() ? (
+                            {searchResults.length === 0 &&
+                            (isStaffSearch
+                                ? staffSearchMode === "customer"
+                                    ? Boolean(staffCustomerId.trim())
+                                    : Boolean(staffCompanyDomain.trim() && staffPersonId.trim())
+                                : Boolean(query.trim())) ? (
                                 <div className="text-sm text-slate-500 dark:text-slate-400">No results.</div>
                             ) : (
                                 searchResults.map((item) => (
