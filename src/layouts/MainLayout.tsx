@@ -52,8 +52,10 @@ export const MainLayout: React.FC = () => {
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const hubAccessToken = useAuthStore((state) => state.hubSession?.access_token ?? null);
+    const hubSessionExpiresAt = useAuthStore((state) => state.hubSession?.expires_at ?? null);
     const matrixAccessToken = useAuthStore((state) => state.matrixCredentials?.access_token ?? null);
     const matrixHsUrl = useAuthStore((state) => state.matrixCredentials?.hs_url ?? null);
+    const userType = useAuthStore((state) => state.userType);
     const clearSession = useAuthStore((state) => state.clearSession);
     const navigate = useNavigate();
 
@@ -185,6 +187,8 @@ export const MainLayout: React.FC = () => {
                     hubAccessToken={hubAccessToken}
                     matrixAccessToken={matrixAccessToken}
                     matrixHsUrl={matrixHsUrl}
+                    userType={userType}
+                    hubSessionExpiresAt={hubSessionExpiresAt}
                     activeRoomId={activeRoomId}
                     onSelectRoom={(roomId) => setActiveRoomId(roomId)}
                     onInviteBadgeChange={setInviteBadgeCount}

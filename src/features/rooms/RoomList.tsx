@@ -28,6 +28,8 @@ type RoomListProps = {
     hubAccessToken: string | null;
     matrixAccessToken: string | null;
     matrixHsUrl: string | null;
+    userType: "client" | "staff" | null;
+    hubSessionExpiresAt: number | null;
     activeRoomId: string | null;
     onSelectRoom: (roomId: string) => void;
     onInviteBadgeChange?: (count: number) => void;
@@ -104,6 +106,8 @@ export function RoomList({
     hubAccessToken,
     matrixAccessToken,
     matrixHsUrl,
+    userType,
+    hubSessionExpiresAt,
     activeRoomId,
     onSelectRoom,
     onInviteBadgeChange,
@@ -199,9 +203,11 @@ export function RoomList({
         }
     }, [rooms, activeRoomId, onSelectRoom]);
 
-    const searchToken = hubAccessToken ?? matrixAccessToken;
-    const searchHsUrl = hubAccessToken ? null : matrixHsUrl;
-    const isStaffSearch = !hubAccessToken && Boolean(matrixAccessToken);
+    const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
+    const isStaffSearch = userType === "staff";
+    const useHubToken = !isStaffSearch && Boolean(hubAccessToken) && !hubTokenExpired;
+    const searchToken = useHubToken ? hubAccessToken : matrixAccessToken;
+    const searchHsUrl = useHubToken ? null : matrixHsUrl;
 
     useEffect(() => {
         if (isStaffSearch) return;
