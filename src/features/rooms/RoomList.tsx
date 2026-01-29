@@ -441,12 +441,15 @@ export function RoomList({
         setStaffPersonId("");
     };
 
-    const onRequestContact = async (targetId: string): Promise<void> => {
+    const onRequestContact = async (targetId: string, matrixUserId: string | null): Promise<void> => {
         if (!searchToken) return;
         try {
             const result = await requestContact(searchToken, targetId, searchHsUrl);
             if (result.status === "pending") {
                 setRequestedIds((prev) => new Set(prev).add(targetId));
+            }
+            if (matrixUserId) {
+                await onStartChat(matrixUserId);
             }
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : "Request failed");
@@ -759,7 +762,7 @@ export function RoomList({
                                     <button
                                         key={item.id}
                                         type="button"
-                                        onClick={() => void onRequestContact(item.id)}
+                                        onClick={() => void onRequestContact(item.id, item.matrixUserId)}
                                         disabled={requestedIds.has(item.id) || acceptedIds.has(item.id)}
                                         className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${
                                             requestedIds.has(item.id) || acceptedIds.has(item.id)

@@ -18,15 +18,17 @@ export async function getOrCreateDirectRoom(client: MatrixClient, userId: string
     const existing = getDirectRoomId(client, userId);
     if (existing) {
         const room = client.getRoom(existing);
-        if (room && room.getMyMembership() !== "join") {
-            try {
-                await client.joinRoom(existing);
-                return existing;
-            } catch {
-                // Fall back to creating a new direct room on the current homeserver.
+        if (room) {
+            const membership = room.getMyMembership();
+            if (membership === "join") return existing;
+            if (membership === "invite") {
+                try {
+                    await client.joinRoom(existing);
+                    return existing;
+                } catch {
+                    // Fall back to creating a new direct room on the current homeserver.
+                }
             }
-        } else {
-            return existing;
         }
     }
 
