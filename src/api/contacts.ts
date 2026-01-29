@@ -47,6 +47,12 @@ function withHsUrl(url: string, hsUrl?: string | null): string {
     return `${url}${separator}hs_url=${encodeURIComponent(hsUrl)}`;
 }
 
+function withAccessToken(url: string, accessToken?: string | null, hsUrl?: string | null): string {
+    if (!hsUrl || !accessToken) return url;
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`;
+}
+
 async function getJson<T>(url: string, accessToken: string, hsUrl?: string | null): Promise<T> {
     const response = await fetch(url, {
         method: "GET",
@@ -91,7 +97,7 @@ async function postJson<T>(
 
 export async function listContacts(accessToken: string, hsUrl?: string | null): Promise<ContactEntry[]> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withHsUrl(`${base}/contacts`, hsUrl);
+    const url = withAccessToken(withHsUrl(`${base}/contacts`, hsUrl), accessToken, hsUrl);
     const response = await getJson<ListResponse<ContactEntry>>(url, accessToken, hsUrl);
     return response.items;
 }
@@ -101,7 +107,7 @@ export async function listContactRequests(
     hsUrl?: string | null,
 ): Promise<ContactRequestEntry[]> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withHsUrl(`${base}/contacts/requests`, hsUrl);
+    const url = withAccessToken(withHsUrl(`${base}/contacts/requests`, hsUrl), accessToken, hsUrl);
     const response = await getJson<ListResponse<ContactRequestEntry>>(url, accessToken, hsUrl);
     return response.items;
 }
@@ -111,7 +117,7 @@ export async function listOutgoingContactRequests(
     hsUrl?: string | null,
 ): Promise<OutgoingContactRequestEntry[]> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withHsUrl(`${base}/contacts/requests/outgoing`, hsUrl);
+    const url = withAccessToken(withHsUrl(`${base}/contacts/requests/outgoing`, hsUrl), accessToken, hsUrl);
     const response = await getJson<ListResponse<OutgoingContactRequestEntry>>(url, accessToken, hsUrl);
     return response.items;
 }
