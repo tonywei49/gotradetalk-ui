@@ -28,6 +28,7 @@ type AuthState = {
 };
 
 const STORAGE_KEY = "gt_auth_session";
+const MATRIX_USER_ID_KEY = "gt_matrix_user_id";
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24;
 
 function loadPersistedState(): PersistedAuthState | null {
@@ -48,9 +49,11 @@ function persistState(state: PersistedAuthState | null): void {
     try {
         if (!state) {
             localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(MATRIX_USER_ID_KEY);
             return;
         }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        localStorage.setItem(MATRIX_USER_ID_KEY, state.matrixCredentials.user_id);
     } catch {
         // ignore persistence failures
     }

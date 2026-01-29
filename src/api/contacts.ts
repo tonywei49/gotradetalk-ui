@@ -53,6 +53,12 @@ function withAccessToken(url: string, accessToken?: string | null, hsUrl?: strin
     return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`;
 }
 
+function withMatrixUserId(url: string, matrixUserId?: string | null, hsUrl?: string | null): string {
+    if (!hsUrl || !matrixUserId) return url;
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}matrix_user_id=${encodeURIComponent(matrixUserId)}`;
+}
+
 async function getJson<T>(url: string, accessToken: string, hsUrl?: string | null): Promise<T> {
     const response = await fetch(url, {
         method: "GET",
@@ -97,7 +103,12 @@ async function postJson<T>(
 
 export async function listContacts(accessToken: string, hsUrl?: string | null): Promise<ContactEntry[]> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withAccessToken(withHsUrl(`${base}/contacts`, hsUrl), accessToken, hsUrl);
+    const matrixUserId = hsUrl ? localStorage.getItem("gt_matrix_user_id") : null;
+    const url = withMatrixUserId(
+        withAccessToken(withHsUrl(`${base}/contacts`, hsUrl), accessToken, hsUrl),
+        matrixUserId,
+        hsUrl,
+    );
     const response = await getJson<ListResponse<ContactEntry>>(url, accessToken, hsUrl);
     return response.items;
 }
@@ -107,7 +118,12 @@ export async function listContactRequests(
     hsUrl?: string | null,
 ): Promise<ContactRequestEntry[]> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withAccessToken(withHsUrl(`${base}/contacts/requests`, hsUrl), accessToken, hsUrl);
+    const matrixUserId = hsUrl ? localStorage.getItem("gt_matrix_user_id") : null;
+    const url = withMatrixUserId(
+        withAccessToken(withHsUrl(`${base}/contacts/requests`, hsUrl), accessToken, hsUrl),
+        matrixUserId,
+        hsUrl,
+    );
     const response = await getJson<ListResponse<ContactRequestEntry>>(url, accessToken, hsUrl);
     return response.items;
 }
@@ -117,7 +133,12 @@ export async function listOutgoingContactRequests(
     hsUrl?: string | null,
 ): Promise<OutgoingContactRequestEntry[]> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withAccessToken(withHsUrl(`${base}/contacts/requests/outgoing`, hsUrl), accessToken, hsUrl);
+    const matrixUserId = hsUrl ? localStorage.getItem("gt_matrix_user_id") : null;
+    const url = withMatrixUserId(
+        withAccessToken(withHsUrl(`${base}/contacts/requests/outgoing`, hsUrl), accessToken, hsUrl),
+        matrixUserId,
+        hsUrl,
+    );
     const response = await getJson<ListResponse<OutgoingContactRequestEntry>>(url, accessToken, hsUrl);
     return response.items;
 }
