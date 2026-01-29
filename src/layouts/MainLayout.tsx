@@ -114,7 +114,7 @@ export const MainLayout: React.FC = () => {
                     {showAccountMenu && (
                         <div
                             ref={accountMenuRef}
-                            className="absolute left-0 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-2 text-sm shadow-lg dark:border-slate-800 dark:bg-slate-900"
+                            className="absolute left-0 z-30 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-2 text-sm shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900"
                         >
                             <button
                                 type="button"

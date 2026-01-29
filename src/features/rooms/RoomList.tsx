@@ -155,6 +155,7 @@ export function RoomList({
         }[]
     >([]);
     const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
+    const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -343,41 +344,49 @@ export function RoomList({
         staffPersonId,
     ]);
 
+    const refreshContacts = async (): Promise<void> => {
+        if (!searchToken) return;
+        try {
+            const [contactItems, requestItems, outgoingItems] = await Promise.all([
+                listContacts(searchToken, searchHsUrl),
+                listContactRequests(searchToken, searchHsUrl),
+                listOutgoingContactRequests(searchToken, searchHsUrl),
+            ]);
+            setContacts(
+                contactItems.map((item) => ({
+                    id: item.user_id,
+                    displayName: item.display_name,
+                    userLocalId: item.user_local_id,
+                    companyName: item.company_name,
+                    country: item.country,
+                    matrixUserId: item.matrix_user_id,
+                })),
+            );
+            setAcceptedIds(new Set(contactItems.map((item) => item.user_id)));
+            setIncomingRequests(
+                requestItems.map((item) => ({
+                    id: item.request_id,
+                    requesterId: item.requester_id,
+                    displayName: item.display_name,
+                    userLocalId: item.user_local_id,
+                    companyName: item.company_name,
+                    country: item.country,
+                    matrixUserId: item.matrix_user_id,
+                })),
+            );
+            setRequestedIds(new Set(outgoingItems.map((item) => item.target_id)));
+        } catch {
+            // ignore list failures
+        }
+    };
+
     useEffect(() => {
         if (!searchToken) return;
-        void (async () => {
-            try {
-                const [contactItems, requestItems, outgoingItems] = await Promise.all([
-                    listContacts(searchToken, searchHsUrl),
-                    listContactRequests(searchToken, searchHsUrl),
-                    listOutgoingContactRequests(searchToken, searchHsUrl),
-                ]);
-                setContacts(
-                    contactItems.map((item) => ({
-                        id: item.user_id,
-                        displayName: item.display_name,
-                        userLocalId: item.user_local_id,
-                        companyName: item.company_name,
-                        country: item.country,
-                        matrixUserId: item.matrix_user_id,
-                    })),
-                );
-                setIncomingRequests(
-                    requestItems.map((item) => ({
-                        id: item.request_id,
-                        requesterId: item.requester_id,
-                        displayName: item.display_name,
-                        userLocalId: item.user_local_id,
-                        companyName: item.company_name,
-                        country: item.country,
-                        matrixUserId: item.matrix_user_id,
-                    })),
-                );
-                setRequestedIds(new Set(outgoingItems.map((item) => item.target_id)));
-            } catch {
-                // ignore list failures
-            }
-        })();
+        void refreshContacts();
+        const timer = window.setInterval(() => {
+            void refreshContacts();
+        }, 6000);
+        return () => window.clearInterval(timer);
     }, [searchToken, searchHsUrl]);
 
     useEffect(() => {
@@ -444,8 +453,13 @@ export function RoomList({
         }
     };
 
-    const getAccountIdLabel = (item: { matrixUserId: string | null; userLocalId: string | null }): string =>
-        item.matrixUserId || item.userLocalId || "-";
+    const getAccountIdLabel = (item: { matrixUserId: string | null; userLocalId: string | null }): string => {
+        if (item.matrixUserId) {
+            const withoutAt = item.matrixUserId.startsWith("@") ? item.matrixUserId.slice(1) : item.matrixUserId;
+            return withoutAt.split(":")[0] || "-";
+        }
+        return item.userLocalId || "-";
+    };
 
     const getMetaLabel = (item: { companyName: string | null; title: string | null; country: string | null }): string =>
         `${item.companyName || "-"} · ${item.title || "-"} · ${item.country || "-"}`;
@@ -746,9 +760,11 @@ export function RoomList({
                                         key={item.id}
                                         type="button"
                                         onClick={() => void onRequestContact(item.id)}
-                                        disabled={requestedIds.has(item.id)}
+                                        disabled={requestedIds.has(item.id) || acceptedIds.has(item.id)}
                                         className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${
-                                            requestedIds.has(item.id) ? "opacity-50 cursor-not-allowed" : ""
+                                            requestedIds.has(item.id) || acceptedIds.has(item.id)
+                                                ? "opacity-50 cursor-not-allowed"
+                                                : ""
                                         }`}
                                     >
                                         <div className="min-w-0">
@@ -760,7 +776,7 @@ export function RoomList({
                                             </div>
                                         </div>
                                         <span className="text-lg font-semibold text-emerald-500">
-                                            {requestedIds.has(item.id) ? "已邀請" : "+"}
+                                            {requestedIds.has(item.id) || acceptedIds.has(item.id) ? "已邀請" : "+"}
                                         </span>
                                     </button>
                                 ))

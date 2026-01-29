@@ -16,7 +16,13 @@ export function getDirectRoomId(client: MatrixClient, userId: string): string | 
 
 export async function getOrCreateDirectRoom(client: MatrixClient, userId: string): Promise<string> {
     const existing = getDirectRoomId(client, userId);
-    if (existing) return existing;
+    if (existing) {
+        const room = client.getRoom(existing);
+        if (room && room.getMyMembership() !== "join") {
+            await client.joinRoom(existing);
+        }
+        return existing;
+    }
 
     const created = await client.createRoom({
         invite: [userId],
