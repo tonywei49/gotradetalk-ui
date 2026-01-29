@@ -35,12 +35,13 @@ function withQuery(url: string, params: Record<string, string>): string {
     return `${url}?${search}`;
 }
 
-async function getJson<T>(url: string, accessToken?: string): Promise<T> {
+async function getJson<T>(url: string, accessToken?: string, hsUrl?: string | null): Promise<T> {
     const response = await fetch(url, {
         method: "GET",
         cache: "no-store",
         headers: {
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            ...(hsUrl ? { "x-hs-url": hsUrl } : {}),
         },
     });
 
@@ -69,7 +70,7 @@ export async function searchStaffDirectoryCustomers(
 ): Promise<DirectoryCustomer[]> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     const url = withQuery(`${hubBaseUrl}/staff/directory/customers/search`, { q: query, hs_url: hsUrl });
-    const response = await getJson<DirectoryResponse<DirectoryCustomer>>(url, accessToken);
+    const response = await getJson<DirectoryResponse<DirectoryCustomer>>(url, accessToken, hsUrl);
     return response.items;
 }
 
@@ -115,6 +116,6 @@ export async function searchDirectoryAll(
             matrix_user_id: string | null;
             user_type: string | null;
         }>
-    >(url, accessToken);
+    >(url, accessToken, hsUrl);
     return response.items;
 }

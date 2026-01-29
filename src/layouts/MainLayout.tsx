@@ -32,7 +32,7 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount }: NavBarItemProps
         <div className="relative">
             <Icon className="w-7 h-7" />
             {badgeCount && badgeCount > 0 && (
-                <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-semibold flex items-center justify-center ring-2 ring-gray-900">
                     {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
             )}
@@ -182,6 +182,7 @@ export const MainLayout: React.FC = () => {
                     activeRoomId={activeRoomId}
                     onSelectRoom={(roomId) => setActiveRoomId(roomId)}
                     onInviteBadgeChange={setInviteBadgeCount}
+                    view={activeTab === "contacts" ? "contacts" : "chat"}
                 />
             </aside>
 

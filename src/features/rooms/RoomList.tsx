@@ -31,6 +31,7 @@ type RoomListProps = {
     activeRoomId: string | null;
     onSelectRoom: (roomId: string) => void;
     onInviteBadgeChange?: (count: number) => void;
+    view?: "chat" | "contacts";
 };
 
 const EMPTY_STATE: DirectRoomEntry[] = [];
@@ -86,6 +87,7 @@ export function RoomList({
     activeRoomId,
     onSelectRoom,
     onInviteBadgeChange,
+    view = "chat",
 }: RoomListProps) {
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
     const [query, setQuery] = useState("");
@@ -340,7 +342,7 @@ export function RoomList({
         <div className="flex-1 overflow-y-auto">
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                 <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Direct Messages
+                    {view === "contacts" ? "Contacts" : "Direct Messages"}
                 </span>
                 <button
                     type="button"
@@ -351,66 +353,112 @@ export function RoomList({
                     <PlusIcon className="h-4 w-4" />
                 </button>
             </div>
-            {rooms.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
-                    No direct chats yet.
-                </div>
-            ) : (
-                rooms.map((entry) => (
-                    <button
-                        key={entry.roomId}
-                        type="button"
-                        onClick={() => onSelectRoom(entry.roomId)}
-                        className={`w-full text-left px-4 py-3 flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 ${
-                            entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
-                        }`}
-                    >
-                        <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
-                        <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex justify-between items-baseline">
-                                <span className="font-semibold text-slate-800 truncate dark:text-slate-100">
-                                    {entry.displayName}
-                                </span>
-                                <span className="text-xs text-gray-400 dark:text-slate-500">
-                                    {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
-                                </span>
-                            </div>
-                            <p className="text-sm text-gray-500 truncate dark:text-slate-400">
-                                {entry.lastMessage || " "}
-                            </p>
-                        </div>
-                    </button>
-                ))
-            )}
-            {contacts.length > 0 && (
-                <div className="px-4 py-4 border-t border-gray-100 dark:border-slate-800">
-                    <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
-                        Contacts
+            {view === "chat" ? (
+                rooms.length === 0 ? (
+                    <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
+                        No direct chats yet.
                     </div>
-                    <div className="space-y-2">
-                        {contacts.map((contact) => (
-                            <button
-                                key={contact.id}
-                                type="button"
-                                onClick={() => void onStartChat(contact.matrixUserId)}
-                                className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
-                            >
-                                <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                        {contact.displayName || contact.userLocalId || contact.id}
-                                    </div>
-                                    <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                        {(contact.userLocalId || "-") +
-                                            " · " +
-                                            (contact.companyName || "-") +
-                                            " · " +
-                                            (contact.country || "-")}
-                                    </div>
+                ) : (
+                    rooms.map((entry) => (
+                        <button
+                            key={entry.roomId}
+                            type="button"
+                            onClick={() => onSelectRoom(entry.roomId)}
+                            className={`w-full text-left px-4 py-3 flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 ${
+                                entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                            }`}
+                        >
+                            <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
+                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                <div className="flex justify-between items-baseline">
+                                    <span className="font-semibold text-slate-800 truncate dark:text-slate-100">
+                                        {entry.displayName}
+                                    </span>
+                                    <span className="text-xs text-gray-400 dark:text-slate-500">
+                                        {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
+                                    </span>
                                 </div>
-                                <span className="text-xs text-emerald-500">Chat</span>
-                            </button>
-                        ))}
-                    </div>
+                                <p className="text-sm text-gray-500 truncate dark:text-slate-400">
+                                    {entry.lastMessage || " "}
+                                </p>
+                            </div>
+                        </button>
+                    ))
+                )
+            ) : (
+                <div className="px-4 py-4">
+                    {incomingRequests.length > 0 && (
+                        <div className="mb-4">
+                            <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
+                                Requests
+                            </div>
+                            <div className="space-y-2">
+                                {incomingRequests.map((item) => (
+                                    <div
+                                        key={item.id}
+                                        className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
+                                    >
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                                {item.displayName || item.userLocalId || item.requesterId}
+                                            </div>
+                                            <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                                                {(item.userLocalId || "-") +
+                                                    " 路 " +
+                                                    (item.companyName || "-") +
+                                                    " 路 " +
+                                                    (item.country || "-")}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => void onAcceptRequest(item.requesterId, item.matrixUserId)}
+                                                className="text-xs text-emerald-500 hover:text-emerald-400"
+                                            >
+                                                Accept
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void onRejectRequest(item.requesterId)}
+                                                className="text-xs text-rose-400 hover:text-rose-300"
+                                            >
+                                                Reject
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {contacts.length === 0 ? (
+                        <div className="text-sm text-slate-500 dark:text-slate-400">No contacts yet.</div>
+                    ) : (
+                        <div className="space-y-2">
+                            {contacts.map((contact) => (
+                                <button
+                                    key={contact.id}
+                                    type="button"
+                                    onClick={() => void onStartChat(contact.matrixUserId)}
+                                    className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
+                                >
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                            {contact.displayName || contact.userLocalId || contact.id}
+                                        </div>
+                                        <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                                            {(contact.userLocalId || "-") +
+                                                " 路 " +
+                                                (contact.companyName || "-") +
+                                                " 路 " +
+                                                (contact.country || "-")}
+                                        </div>
+                                    </div>
+                                    <span className="text-xs text-emerald-500">Chat</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
             {showSearchModal && (
