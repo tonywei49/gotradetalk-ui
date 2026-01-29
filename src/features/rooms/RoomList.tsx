@@ -13,7 +13,7 @@ import {
     removeContact,
     requestContact,
 } from "../../api/contacts";
-import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../../matrix/direct";
+import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom, setDirectRoom } from "../../matrix/direct";
 
 type DirectRoomEntry = {
     userId: string;
@@ -489,7 +489,17 @@ export function RoomList({
         });
         if (!inviteRoom) return null;
         await client.joinRoom(inviteRoom.roomId);
+        await setDirectRoom(client, inviterUserId, inviteRoom.roomId);
         return inviteRoom.roomId;
+    };
+
+    const waitForInviteFromUser = async (inviterUserId: string): Promise<string | null> => {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            const roomId = await joinInviteFromUser(inviterUserId);
+            if (roomId) return roomId;
+            await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+        return null;
     };
 
     const sortedContacts = useMemo(() => {
@@ -524,7 +534,7 @@ export function RoomList({
                     onSelectRoom(roomId);
                     setShowSearchModal(false);
                 } else {
-                    const joinedRoomId = await joinInviteFromUser(matrixUserId);
+                    const joinedRoomId = await waitForInviteFromUser(matrixUserId);
                     if (joinedRoomId) {
                         onSelectRoom(joinedRoomId);
                         setShowSearchModal(false);
