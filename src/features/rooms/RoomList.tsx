@@ -4,7 +4,14 @@ import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import { searchDirectoryAll } from "../../api/directory";
-import { acceptContact, listContactRequests, listContacts, requestContact } from "../../api/contacts";
+import {
+    acceptContact,
+    listContactRequests,
+    listContacts,
+    listOutgoingContactRequests,
+    rejectContact,
+    requestContact,
+} from "../../api/contacts";
 import { getOrCreateDirectRoom } from "../../matrix/direct";
 
 type DirectRoomEntry = {
@@ -23,6 +30,7 @@ type RoomListProps = {
     matrixHsUrl: string | null;
     activeRoomId: string | null;
     onSelectRoom: (roomId: string) => void;
+    onInviteBadgeChange?: (count: number) => void;
 };
 
 const EMPTY_STATE: DirectRoomEntry[] = [];
@@ -77,6 +85,7 @@ export function RoomList({
     matrixHsUrl,
     activeRoomId,
     onSelectRoom,
+    onInviteBadgeChange,
 }: RoomListProps) {
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
     const [query, setQuery] = useState("");
@@ -210,9 +219,10 @@ export function RoomList({
         if (!searchToken) return;
         void (async () => {
             try {
-                const [contactItems, requestItems] = await Promise.all([
+                const [contactItems, requestItems, outgoingItems] = await Promise.all([
                     listContacts(searchToken, searchHsUrl),
                     listContactRequests(searchToken, searchHsUrl),
+                    listOutgoingContactRequests(searchToken, searchHsUrl),
                 ]);
                 setContacts(
                     contactItems.map((item) => ({
@@ -235,6 +245,7 @@ export function RoomList({
                         matrixUserId: item.matrix_user_id,
                     })),
                 );
+                setRequestedIds(new Set(outgoingItems.map((item) => item.target_id)));
             } catch {
                 // ignore list failures
             }
@@ -242,11 +253,19 @@ export function RoomList({
     }, [searchToken, searchHsUrl]);
 
     useEffect(() => {
+        if (!onInviteBadgeChange) return;
+        onInviteBadgeChange(incomingRequests.length);
+    }, [incomingRequests.length, onInviteBadgeChange]);
+
+    useEffect(() => {
         if (!showSearchModal || !searchToken) return undefined;
         let alive = true;
         const refreshRequests = async (): Promise<void> => {
             try {
-                const requestItems = await listContactRequests(searchToken, searchHsUrl);
+                const [requestItems, outgoingItems] = await Promise.all([
+                    listContactRequests(searchToken, searchHsUrl),
+                    listOutgoingContactRequests(searchToken, searchHsUrl),
+                ]);
                 if (!alive) return;
                 setIncomingRequests(
                     requestItems.map((item) => ({
@@ -259,6 +278,7 @@ export function RoomList({
                         matrixUserId: item.matrix_user_id,
                     })),
                 );
+                setRequestedIds(new Set(outgoingItems.map((item) => item.target_id)));
             } catch {
                 // ignore refresh failures
             }
@@ -303,6 +323,16 @@ export function RoomList({
             }
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : "Accept failed");
+        }
+    };
+
+    const onRejectRequest = async (requesterId: string): Promise<void> => {
+        if (!searchToken) return;
+        try {
+            await rejectContact(searchToken, requesterId, searchHsUrl);
+            setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
+        } catch (error) {
+            setSearchError(error instanceof Error ? error.message : "Reject failed");
         }
     };
 
@@ -427,13 +457,24 @@ export function RoomList({
                                                         (item.country || "-")}
                                                 </div>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => void onAcceptRequest(item.requesterId, item.matrixUserId)}
-                                                className="text-xs text-emerald-500 hover:text-emerald-400"
-                                            >
-                                                Accept
-                                            </button>
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        void onAcceptRequest(item.requesterId, item.matrixUserId)
+                                                    }
+                                                    className="text-xs text-emerald-500 hover:text-emerald-400"
+                                                >
+                                                    Accept
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void onRejectRequest(item.requesterId)}
+                                                    className="text-xs text-rose-400 hover:text-rose-300"
+                                                >
+                                                    Reject
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -452,7 +493,10 @@ export function RoomList({
                                         key={item.id}
                                         type="button"
                                         onClick={() => void onRequestContact(item.id)}
-                                        className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
+                                        disabled={requestedIds.has(item.id)}
+                                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${
+                                            requestedIds.has(item.id) ? "opacity-50 cursor-not-allowed" : ""
+                                        }`}
                                     >
                                         <div className="min-w-0">
                                             <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
@@ -467,7 +511,7 @@ export function RoomList({
                                             </div>
                                         </div>
                                         <span className="text-xs text-emerald-500">
-                                            {requestedIds.has(item.id) ? "Requested" : "+"}
+                                            {requestedIds.has(item.id) ? "已邀請" : "+"}
                                         </span>
                                     </button>
                                 ))

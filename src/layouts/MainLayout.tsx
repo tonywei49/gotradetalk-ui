@@ -18,9 +18,10 @@ type NavBarItemProps = {
     icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
     active?: boolean;
     onClick?: () => void;
+    badgeCount?: number;
 };
 
-const NavBarItem = ({ icon: Icon, active, onClick }: NavBarItemProps) => (
+const NavBarItem = ({ icon: Icon, active, onClick, badgeCount }: NavBarItemProps) => (
     <div
         onClick={onClick}
         className={`
@@ -30,6 +31,11 @@ const NavBarItem = ({ icon: Icon, active, onClick }: NavBarItemProps) => (
     >
         <div className="relative">
             <Icon className="w-7 h-7" />
+            {badgeCount && badgeCount > 0 && (
+                <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center">
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                </span>
+            )}
             {active && (
                 <div className="absolute -left-5 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#2F5C56] rounded-r-full" />
             )}
@@ -40,6 +46,7 @@ const NavBarItem = ({ icon: Icon, active, onClick }: NavBarItemProps) => (
 export const MainLayout: React.FC = () => {
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+    const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
     const themeMode = useThemeStore((state) => state.mode);
     const toggleMode = useThemeStore((state) => state.toggleMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
@@ -82,6 +89,7 @@ export const MainLayout: React.FC = () => {
                     <NavBarItem
                         icon={UserGroupIcon}
                         active={activeTab === "contacts"}
+                        badgeCount={inviteBadgeCount}
                         onClick={() => setActiveTab("contacts")}
                     />
                     <NavBarItem
@@ -173,6 +181,7 @@ export const MainLayout: React.FC = () => {
                     matrixHsUrl={matrixHsUrl}
                     activeRoomId={activeRoomId}
                     onSelectRoom={(roomId) => setActiveRoomId(roomId)}
+                    onInviteBadgeChange={setInviteBadgeCount}
                 />
             </aside>
 

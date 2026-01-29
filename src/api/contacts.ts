@@ -22,6 +22,17 @@ type ContactRequestEntry = {
     matrix_user_id: string | null;
 };
 
+type OutgoingContactRequestEntry = {
+    request_id: string;
+    target_id: string;
+    display_name: string | null;
+    user_local_id: string | null;
+    company_name: string | null;
+    country: string | null;
+    handle: string | null;
+    matrix_user_id: string | null;
+};
+
 type ListResponse<T> = {
     items: T[];
 };
@@ -86,6 +97,16 @@ export async function listContactRequests(
     const base = normalizeBaseUrl(hubApiBaseUrl);
     const url = `${base}/contacts/requests`;
     const response = await getJson<ListResponse<ContactRequestEntry>>(url, accessToken, hsUrl);
+    return response.items;
+}
+
+export async function listOutgoingContactRequests(
+    accessToken: string,
+    hsUrl?: string | null,
+): Promise<OutgoingContactRequestEntry[]> {
+    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const url = `${base}/contacts/requests/outgoing`;
+    const response = await getJson<ListResponse<OutgoingContactRequestEntry>>(url, accessToken, hsUrl);
     return response.items;
 }
 
