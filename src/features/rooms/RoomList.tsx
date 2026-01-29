@@ -164,8 +164,8 @@ export function RoomList({
         }
     }, [rooms, activeRoomId, onSelectRoom]);
 
-    const searchToken = matrixAccessToken || hubAccessToken;
-    const searchHsUrl = matrixAccessToken ? matrixHsUrl : null;
+    const searchToken = hubAccessToken ?? matrixAccessToken;
+    const searchHsUrl = hubAccessToken ? null : matrixHsUrl;
 
     useEffect(() => {
         if (!query.trim()) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import {
     ChatBubbleLeftRightIcon,
     UserGroupIcon,
@@ -47,6 +47,8 @@ export const MainLayout: React.FC = () => {
     const hubAccessToken = useAuthStore((state) => state.hubSession?.access_token ?? null);
     const matrixAccessToken = useAuthStore((state) => state.matrixCredentials?.access_token ?? null);
     const matrixHsUrl = useAuthStore((state) => state.matrixCredentials?.hs_url ?? null);
+    const clearSession = useAuthStore((state) => state.clearSession);
+    const navigate = useNavigate();
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -55,6 +57,11 @@ export const MainLayout: React.FC = () => {
             matrixClient.stopClient();
         };
     }, [matrixClient]);
+
+    const onLogout = (): void => {
+        clearSession();
+        navigate("/auth");
+    };
 
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -91,6 +98,13 @@ export const MainLayout: React.FC = () => {
                         active={activeTab === "settings"}
                         onClick={() => setActiveTab("settings")}
                     />
+                    <button
+                        type="button"
+                        onClick={onLogout}
+                        className="w-full h-12 flex items-center justify-center text-rose-400 hover:text-rose-300 transition-colors text-xs font-semibold"
+                    >
+                        Logout
+                    </button>
                     <button
                         type="button"
                         onClick={toggleMode}
