@@ -128,24 +128,39 @@ export const ChatRoom: React.FC = () => {
         return filtered;
     }, [events, room]);
 
+    // 自動滾動到底部並發送已讀回執
     useEffect(() => {
-        if (!room) return;
+        if (!room || !matrixClient) return;
         const container = timelineRef.current;
         if (!container) return;
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
         if (distanceFromBottom < 120) {
             container.scrollTop = container.scrollHeight;
+            // 在底部時發送已讀回執
+            const latestEvent = mergedEvents[mergedEvents.length - 1];
+            if (latestEvent) {
+                void matrixClient.sendReadReceipt(latestEvent);
+            }
         }
-    }, [mergedEvents.length, room]);
+    }, [mergedEvents.length, room, matrixClient, mergedEvents]);
 
-    // 進入房間時發送已讀回執
+    // 進入房間時如果在底部也發送已讀回執
     useEffect(() => {
         if (!matrixClient || !room || !activeRoomId) return;
-        const latestEvent = mergedEvents[mergedEvents.length - 1];
-        if (latestEvent) {
-            void matrixClient.sendReadReceipt(latestEvent);
-        }
-    }, [matrixClient, room, activeRoomId, mergedEvents]);
+        // 延遲執行以確保滾動位置已更新
+        const timer = setTimeout(() => {
+            const container = timelineRef.current;
+            if (!container) return;
+            const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+            if (distanceFromBottom < 120) {
+                const latestEvent = mergedEvents[mergedEvents.length - 1];
+                if (latestEvent) {
+                    void matrixClient.sendReadReceipt(latestEvent);
+                }
+            }
+        }, 100);
+        return () => clearTimeout(timer);
+    }, [activeRoomId]); // 只在切換房間時觸發
 
     if (!activeRoomId) {
         return <div className="flex-1" />;
@@ -167,6 +182,14 @@ export const ChatRoom: React.FC = () => {
         // 更新滾動到底部按鈕的顯示狀態
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
         setShowScrollToBottom(distanceFromBottom > 200);
+
+        // 當滾動到底部時發送已讀回執
+        if (distanceFromBottom < 50) {
+            const latestEvent = mergedEvents[mergedEvents.length - 1];
+            if (latestEvent) {
+                void matrixClient.sendReadReceipt(latestEvent);
+            }
+        }
 
         // 滾動加載更多消息
         if (container.scrollTop > 0) return;
