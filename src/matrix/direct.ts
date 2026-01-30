@@ -1,7 +1,38 @@
 import type { MatrixClient } from "matrix-js-sdk";
-import { EventType, Preset } from "matrix-js-sdk";
+import { EventType, Preset, SyncState, ClientEvent } from "matrix-js-sdk";
 
 type DirectAccountData = Record<string, string[]>;
+
+/**
+ * 等待 Matrix 客戶端完成初始同步。
+ * 這確保了在創建新房間前，所有現有房間數據都已加載。
+ * @param client Matrix 客戶端
+ * @param timeoutMs 超時時間（默認 10 秒）
+ * @returns 如果在超時前完成同步返回 true，否則返回 false
+ */
+export function waitForSync(client: MatrixClient, timeoutMs = 10000): Promise<boolean> {
+    // 如果已經完成初始同步，直接返回
+    if (client.isInitialSyncComplete()) {
+        return Promise.resolve(true);
+    }
+
+    return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+            client.removeListener(ClientEvent.Sync, onSync);
+            resolve(false);
+        }, timeoutMs);
+
+        const onSync = (state: SyncState): void => {
+            if (state === SyncState.Syncing || state === SyncState.Prepared) {
+                clearTimeout(timeout);
+                client.removeListener(ClientEvent.Sync, onSync);
+                resolve(true);
+            }
+        };
+
+        client.on(ClientEvent.Sync, onSync);
+    });
+}
 
 export function getDirectRoomId(client: MatrixClient, userId: string): string | null {
     const content = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as DirectAccountData;
@@ -63,7 +94,26 @@ export async function getOrCreateDirectRoom(client: MatrixClient, userId: string
         }
     }
 
-    // 3. 確實沒有現有房間，創建新房間
+    // 3. 等待 sync 完成後再次檢查，避免競態條件
+    const synced = await waitForSync(client);
+    if (synced) {
+        // sync 完成後重新檢查是否有現有房間
+        const existingAfterSync = getDirectRoomId(client, userId);
+        if (existingAfterSync && client.getRoom(existingAfterSync)?.getMyMembership() === "join") {
+            return existingAfterSync;
+        }
+        // 再次遍歷房間列表
+        const roomsAfterSync = client.getRooms().filter((r) => r.getMyMembership() === "join");
+        for (const room of roomsAfterSync) {
+            const members = room.getJoinedMembers();
+            if (members.length === 2 && members.some((m) => m.userId === userId)) {
+                await setDirectRoom(client, userId, room.roomId);
+                return room.roomId;
+            }
+        }
+    }
+
+    // 4. 確實沒有現有房間，創建新房間
     const created = await client.createRoom({
         invite: [userId],
         is_direct: true,
@@ -118,7 +168,31 @@ export async function createDirectRoomWithMessage(
         }
     }
 
-    // 3. 確實沒有現有房間，創建新房間
+    // 3. 等待 sync 完成後再次檢查，避免競態條件
+    const synced = await waitForSync(client);
+    if (synced) {
+        // sync 完成後重新檢查是否有現有房間
+        const existingAfterSync = getDirectRoomId(client, userId);
+        if (existingAfterSync) {
+            const roomAfterSync = client.getRoom(existingAfterSync);
+            if (roomAfterSync?.getMyMembership() === "join") {
+                await client.sendTextMessage(existingAfterSync, message);
+                return existingAfterSync;
+            }
+        }
+        // 再次遍歷房間列表
+        const roomsAfterSync = client.getRooms().filter((r) => r.getMyMembership() === "join");
+        for (const room of roomsAfterSync) {
+            const members = room.getJoinedMembers();
+            if (members.length === 2 && members.some((m) => m.userId === userId)) {
+                await setDirectRoom(client, userId, room.roomId);
+                await client.sendTextMessage(room.roomId, message);
+                return room.roomId;
+            }
+        }
+    }
+
+    // 4. 確實沒有現有房間，創建新房間
     const created = await client.createRoom({
         invite: [userId],
         is_direct: true,
