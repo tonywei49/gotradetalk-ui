@@ -20,9 +20,10 @@ type MessageBubbleProps = {
     status: EventStatus | null;
     onResend: (event: MatrixEvent) => void;
     mediaUrl: string | null;
+    senderLabel: string;
 };
 
-const MessageBubble = ({ event, isMe, status, onResend, mediaUrl }: MessageBubbleProps) => {
+const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }: MessageBubbleProps) => {
     const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
     const messageText = content?.body ?? "";
     const isSending =
@@ -31,24 +32,20 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl }: MessageBubbl
     const timeLabel = new Date(event.getTs()).toLocaleTimeString();
 
     return (
-        <div className={`flex w-full mb-4 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
+        <div className={`flex w-full mb-3 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
             {/* Avatar (Incoming only) */}
-            {!isMe && (
-                <div className="w-10 h-10 rounded-full bg-gray-300 mr-3 flex-shrink-0 self-start mt-1" />
-            )}
+            {!isMe && <div className="w-8 h-8 rounded-full bg-gray-300 mr-3 flex-shrink-0 self-start mt-1" />}
 
             <div className={`flex flex-col max-w-[70%] ${isMe ? "items-end" : "items-start"}`}>
                 {/* Sender Name (Incoming only) */}
                 {!isMe && (
-                    <span className="text-xs text-gray-500 mb-1 ml-1 dark:text-slate-400">
-                        {event.getSender()}
-                    </span>
+                    <span className="text-[11px] text-gray-500 mb-1 ml-1 dark:text-slate-400">{senderLabel}</span>
                 )}
 
                 <div className="flex items-end gap-2">
                     {/* Read Status & Time (Outgoing: Left of bubble) */}
                     {isMe && (
-                        <div className="flex flex-col items-end justify-end text-[10px] text-gray-400 min-w-[56px] mb-1">
+                        <div className="flex flex-col items-end justify-end text-[9px] text-gray-400 min-w-[56px] mb-1">
                             {isFailed && <span className="text-rose-500 font-medium">Failed</span>}
                             <span className="text-gray-400 dark:text-slate-500">{timeLabel}</span>
                         </div>
@@ -57,7 +54,7 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl }: MessageBubbl
                     {/* Bubble */}
                     <div
                         className={`
-              px-4 py-3 text-sm leading-relaxed shadow-sm relative
+              px-3 py-2 text-[13px] leading-relaxed shadow-sm relative
               ${
                   isMe
                       ? "bg-[#2F5C56] text-white rounded-2xl rounded-tr-sm"
@@ -74,15 +71,13 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl }: MessageBubbl
 
                     {/* Time (Incoming: Right of bubble) */}
                     {!isMe && (
-                        <span className="text-[10px] text-gray-400 self-end mb-1 dark:text-slate-500">
-                            {timeLabel}
-                        </span>
+                        <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
                     )}
                 </div>
                 {isFailed && (
                     <button
                         type="button"
-                        className="mt-2 text-xs text-rose-500 hover:text-rose-400"
+                        className="mt-2 text-[11px] text-rose-500 hover:text-rose-400"
                         onClick={() => onResend(event)}
                     >
                         Resend
@@ -109,6 +104,13 @@ export const ChatRoom: React.FC = () => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
         return trimmed.split(":")[0] || "";
+    };
+    const getUserLabel = (userId: string | null | undefined, displayName?: string | null): string => {
+        const localpart = getLocalPart(userId);
+        if (localpart && displayName && displayName !== localpart) {
+            return `${localpart} (${displayName})`;
+        }
+        return localpart || displayName || userId || "Unknown";
     };
 
     const mergedEvents = useMemo(() => {
@@ -180,12 +182,7 @@ export const ChatRoom: React.FC = () => {
     const otherMember = room
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
-    const otherLocalPart = getLocalPart(otherMember?.userId);
-    const otherDisplayName = otherMember?.name || "";
-    const headerName =
-        otherLocalPart && otherDisplayName && otherDisplayName !== otherLocalPart
-            ? `${otherLocalPart} (${otherDisplayName})`
-            : otherLocalPart || otherDisplayName || room.name || "Chat";
+    const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room.name || "Chat";
 
     return (
         <div className="flex flex-col h-full w-full">
@@ -231,6 +228,8 @@ export const ChatRoom: React.FC = () => {
                         content?.url && matrixClient
                             ? matrixClient.mxcUrlToHttp(content.url, 800, 800, "scale")
                             : null;
+                    const sender = event.getSender();
+                    const senderLabel = getUserLabel(sender, room?.getMember(sender)?.name);
                     return (
                         <MessageBubble
                             key={event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`}
@@ -239,6 +238,7 @@ export const ChatRoom: React.FC = () => {
                             status={status}
                             mediaUrl={mediaUrl}
                             onResend={onResend}
+                            senderLabel={senderLabel}
                         />
                     );
                 })}
@@ -264,6 +264,12 @@ export const ChatRoom: React.FC = () => {
                     <textarea
                         value={composerText}
                         onChange={(event) => setComposerText(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" && !event.ctrlKey) {
+                                event.preventDefault();
+                                void onSend();
+                            }
+                        }}
                         className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none h-12 max-h-32 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400"
                         placeholder="Type a message..."
                         rows={1}

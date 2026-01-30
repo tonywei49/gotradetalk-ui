@@ -10,7 +10,6 @@ import {
     listContacts,
     listOutgoingContactRequests,
     rejectContact,
-    removeContact,
     requestContact,
 } from "../../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
@@ -24,6 +23,20 @@ type DirectRoomEntry = {
     lastActive: number;
 };
 
+export type ContactSummary = {
+    id: string;
+    initiatedByMe: boolean;
+    userType: string | null;
+    displayName: string | null;
+    userLocalId: string | null;
+    companyName: string | null;
+    country: string | null;
+    matrixUserId: string | null;
+    gender: string | null;
+    locale: string | null;
+    translationLocale: string | null;
+};
+
 type RoomListProps = {
     client: MatrixClient | null;
     hubAccessToken: string | null;
@@ -35,6 +48,9 @@ type RoomListProps = {
     onSelectRoom: (roomId: string) => void;
     onInviteBadgeChange?: (count: number) => void;
     view?: "chat" | "contacts";
+    onSelectContact?: (contact: ContactSummary | null) => void;
+    activeContactId?: string | null;
+    contactsRefreshToken?: number;
 };
 
 const EMPTY_STATE: DirectRoomEntry[] = [];
@@ -122,6 +138,9 @@ export function RoomList({
     onSelectRoom,
     onInviteBadgeChange,
     view = "chat",
+    onSelectContact,
+    activeContactId,
+    contactsRefreshToken,
 }: RoomListProps) {
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
     const [query, setQuery] = useState("");
@@ -143,18 +162,7 @@ export function RoomList({
         }[]
     >([]);
     const [showSearchModal, setShowSearchModal] = useState(false);
-    const [contacts, setContacts] = useState<
-        {
-            id: string;
-            initiatedByMe: boolean;
-            userType: string | null;
-            displayName: string | null;
-            userLocalId: string | null;
-            companyName: string | null;
-            country: string | null;
-            matrixUserId: string | null;
-        }[]
-    >([]);
+    const [contacts, setContacts] = useState<ContactSummary[]>([]);
     const [incomingRequests, setIncomingRequests] = useState<
         {
             id: string;
@@ -377,18 +385,21 @@ export function RoomList({
                 listContactRequests(searchToken, searchHsUrl),
                 listOutgoingContactRequests(searchToken, searchHsUrl),
             ]);
-            setContacts(
-                contactItems.map((item) => ({
-                    id: item.user_id,
-                    initiatedByMe: item.initiated_by_me,
-                    userType: item.user_type,
-                    displayName: item.display_name,
-                    userLocalId: item.user_local_id,
-                    companyName: item.company_name,
-                    country: item.country,
-                    matrixUserId: item.matrix_user_id,
-                })),
-            );
+              setContacts(
+                  contactItems.map((item) => ({
+                      id: item.user_id,
+                      initiatedByMe: item.initiated_by_me,
+                      userType: item.user_type,
+                      displayName: item.display_name,
+                      userLocalId: item.user_local_id,
+                      companyName: item.company_name,
+                      country: item.country,
+                      matrixUserId: item.matrix_user_id,
+                      gender: item.gender,
+                      locale: item.locale,
+                      translationLocale: item.translation_locale,
+                  })),
+              );
             setAcceptedIds(new Set(contactItems.map((item) => item.user_id)));
             setAcceptedMatrixUserIds(
                 new Set(contactItems.map((item) => item.matrix_user_id).filter((value): value is string => Boolean(value))),
@@ -420,7 +431,7 @@ export function RoomList({
             void refreshContacts();
         }, 6000);
         return () => window.clearInterval(timer);
-    }, [searchToken, searchHsUrl]);
+    }, [searchToken, searchHsUrl, contactsRefreshToken]);
 
     useEffect(() => {
         if (!onInviteBadgeChange) return;
@@ -465,17 +476,6 @@ export function RoomList({
             window.clearInterval(timer);
         };
     }, [showSearchModal, searchToken, searchHsUrl]);
-
-    const onStartChat = async (matrixUserId: string | null): Promise<void> => {
-        if (!client || !matrixUserId) return;
-        const roomId = await getOrCreateDirectRoom(client, matrixUserId);
-        onSelectRoom(roomId);
-        setShowSearchModal(false);
-        setQuery("");
-        setStaffCustomerId("");
-        setStaffCompanyDomain("");
-        setStaffPersonId("");
-    };
 
     const onRequestContact = async (targetId: string, targetMatrixUserId: string | null, initialMessage: string): Promise<void> => {
         if (!searchToken || !client || !targetMatrixUserId) return;
@@ -609,23 +609,6 @@ export function RoomList({
         }
     };
 
-    const onRemoveContact = async (targetId: string, matrixUserId: string | null, userLocalId: string | null): Promise<void> => {
-        if (!searchToken) return;
-        try {
-            await removeContact(searchToken, targetId, searchHsUrl);
-            const resolvedMatrixUserId = matrixUserId || (userLocalId && matrixHost ? `@${userLocalId}:${matrixHost}` : null);
-            if (client && resolvedMatrixUserId) {
-                const roomId = getDirectRoomId(client, resolvedMatrixUserId);
-                if (roomId) {
-                    await hideDirectRoom(client, resolvedMatrixUserId, roomId);
-                }
-            }
-            await refreshContacts();
-        } catch (error) {
-            setSearchError(error instanceof Error ? error.message : "Remove failed");
-        }
-    };
-
     const onHideRoom = async (entry: DirectRoomEntry): Promise<void> => {
         if (!client) return;
         try {
@@ -696,14 +679,16 @@ export function RoomList({
                 <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     {view === "contacts" ? "Contacts" : "Direct Messages"}
                 </span>
-                <button
-                    type="button"
-                    onClick={() => setShowSearchModal(true)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-100"
-                    aria-label="Start chat"
-                >
-                    <PlusIcon className="h-5 w-5" />
-                </button>
+                {view === "contacts" ? (
+                    <button
+                        type="button"
+                        onClick={() => setShowSearchModal(true)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-100"
+                        aria-label="Add contact"
+                    >
+                        <PlusIcon className="h-5 w-5" />
+                    </button>
+                ) : null}
             </div>
             {view === "chat" ? (
                 visibleRooms.length === 0 ? (
@@ -714,7 +699,7 @@ export function RoomList({
                     visibleRooms.map((entry) => (
                         <div
                             key={entry.roomId}
-                            className={`group w-full px-4 py-3 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                            className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
                                 }`}
                         >
                             <button
@@ -722,17 +707,17 @@ export function RoomList({
                                 onClick={() => onSelectRoom(entry.roomId)}
                                 className="flex-1 min-w-0 flex items-center gap-3 text-left"
                             >
-                                <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
+                                <div className="w-10 h-10 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
                                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                                     <div className="flex justify-between items-baseline">
-                                        <span className="font-semibold text-slate-800 truncate dark:text-slate-100">
+                                        <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
                                             {entry.displayName}
                                         </span>
-                                        <span className="text-xs text-gray-400 dark:text-slate-500">
+                                        <span className="text-[10px] text-gray-400 dark:text-slate-500">
                                             {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
                                         </span>
                                     </div>
-                                    <p className="text-sm text-gray-500 truncate dark:text-slate-400">
+                                    <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
                                         {entry.lastMessage || " "}
                                     </p>
                                 </div>
@@ -830,22 +815,18 @@ export function RoomList({
                                 </button>
                             </div>
                             {sortedContacts.map((contact) => (
-                                <div
+                                <button
                                     key={contact.id}
-                                    className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800"
+                                    type="button"
+                                    onClick={() => {
+                                        onSelectContact?.(contact);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${activeContactId === contact.id
+                                        ? "bg-emerald-50 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:ring-emerald-700"
+                                        : ""
+                                        }`}
                                 >
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            void onStartChat(
-                                                contact.matrixUserId ||
-                                                (contact.userLocalId && matrixHost
-                                                    ? `@${contact.userLocalId}:${matrixHost}`
-                                                    : null),
-                                            )
-                                        }
-                                        className="min-w-0 text-left"
-                                    >
+                                    <div className="min-w-0 text-left">
                                         <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
                                             {getAccountIdLabel({
                                                 matrixUserId: contact.matrixUserId,
@@ -859,33 +840,8 @@ export function RoomList({
                                                 country: contact.country,
                                             })}
                                         </div>
-                                    </button>
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                void onStartChat(
-                                                    contact.matrixUserId ||
-                                                    (contact.userLocalId && matrixHost
-                                                        ? `@${contact.userLocalId}:${matrixHost}`
-                                                        : null),
-                                                )
-                                            }
-                                            className="text-xs text-emerald-500"
-                                        >
-                                            Chat
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                void onRemoveContact(contact.id, contact.matrixUserId, contact.userLocalId)
-                                            }
-                                            className="text-xs text-rose-400 hover:text-rose-300"
-                                        >
-                                            Remove
-                                        </button>
                                     </div>
-                                </div>
+                                </button>
                             ))}
                         </div>
                     )}

@@ -11,8 +11,12 @@ import {
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
+import type { ContactSummary } from "../features/rooms/RoomList";
 import { hubGetMe } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
+import { removeContact } from "../api/contacts";
+import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
+import { translationLanguageOptions } from "../constants/translationLanguages";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -49,6 +53,11 @@ export const MainLayout: React.FC = () => {
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
+    const [activeContact, setActiveContact] = useState<ContactSummary | null>(null);
+    const [showContactMenu, setShowContactMenu] = useState(false);
+    const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
+    const contactMenuRef = useRef<HTMLDivElement | null>(null);
+    const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
     const toggleMode = useThemeStore((state) => state.toggleMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
@@ -123,9 +132,105 @@ export const MainLayout: React.FC = () => {
         };
     }, [showAccountMenu]);
 
+    useEffect(() => {
+        if (activeTab !== "contacts") {
+            setActiveContact(null);
+            setShowContactMenu(false);
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
+        const onClickOutside = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (contactMenuRef.current?.contains(target) || contactMenuButtonRef.current?.contains(target)) return;
+            setShowContactMenu(false);
+        };
+        if (showContactMenu) {
+            document.addEventListener("click", onClickOutside);
+        }
+        return () => {
+            document.removeEventListener("click", onClickOutside);
+        };
+    }, [showContactMenu]);
+
     const onLogout = (): void => {
         clearSession();
         navigate("/auth");
+    };
+
+    const getLocalPart = (value: string | null | undefined): string => {
+        if (!value) return "";
+        const trimmed = value.startsWith("@") ? value.slice(1) : value;
+        return trimmed.split(":")[0] || "";
+    };
+
+    const getContactLabel = (contact: ContactSummary | null): string => {
+        if (!contact) return "Contact";
+        const localpart = contact.userLocalId || getLocalPart(contact.matrixUserId);
+        if (localpart && contact.displayName && contact.displayName !== localpart) {
+            return `${localpart} (${contact.displayName})`;
+        }
+        return localpart || contact.displayName || "Contact";
+    };
+
+    const getGenderLabel = (value: string | null): string => {
+        if (!value) return "—";
+        if (value === "male") return "Male";
+        if (value === "female") return "Female";
+        return value;
+    };
+
+    const getLanguageLabel = (contact: ContactSummary | null): string => {
+        if (!contact) return "—";
+        const locale = contact.translationLocale || contact.locale;
+        if (!locale) return "—";
+        const match = translationLanguageOptions.find((option) => option.value === locale);
+        return match?.label ?? locale;
+    };
+
+    const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 < Date.now() : false;
+    const useHubToken = Boolean(hubAccessToken) && !hubTokenExpired;
+    const actionToken = useHubToken ? hubAccessToken : matrixAccessToken;
+    const actionHsUrl = useHubToken ? null : matrixHsUrl;
+    const matrixHost = (() => {
+        if (!matrixHsUrl) return null;
+        try {
+            return new URL(matrixHsUrl).host;
+        } catch {
+            return null;
+        }
+    })();
+
+    const onStartContactChat = async (): Promise<void> => {
+        if (!matrixClient || !activeContact) return;
+        const matrixUserId =
+            activeContact.matrixUserId ||
+            (activeContact.userLocalId && matrixHost ? `@${activeContact.userLocalId}:${matrixHost}` : null);
+        if (!matrixUserId) return;
+        const roomId = await getOrCreateDirectRoom(matrixClient, matrixUserId);
+        setActiveRoomId(roomId);
+        setActiveTab("chat");
+    };
+
+    const onRemoveActiveContact = async (): Promise<void> => {
+        if (!actionToken || !activeContact) return;
+        try {
+            await removeContact(actionToken, activeContact.id, actionHsUrl);
+            const matrixUserId =
+                activeContact.matrixUserId ||
+                (activeContact.userLocalId && matrixHost ? `@${activeContact.userLocalId}:${matrixHost}` : null);
+            if (matrixClient && matrixUserId) {
+                const roomId = getDirectRoomId(matrixClient, matrixUserId);
+                if (roomId) {
+                    await hideDirectRoom(matrixClient, matrixUserId, roomId);
+                }
+            }
+            setActiveContact(null);
+            setShowContactMenu(false);
+            setContactsRefreshToken((prev) => prev + 1);
+        } catch {
+            setShowContactMenu(false);
+        }
     };
 
     return (
@@ -268,13 +373,123 @@ export const MainLayout: React.FC = () => {
                     onSelectRoom={(roomId) => setActiveRoomId(roomId)}
                     onInviteBadgeChange={setInviteBadgeCount}
                     view={activeTab === "contacts" ? "contacts" : "chat"}
+                    onSelectContact={(contact) => setActiveContact(contact)}
+                    activeContactId={activeContact?.id ?? null}
+                    contactsRefreshToken={contactsRefreshToken}
                 />
             </aside>
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
             <main className="flex-1 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950">
                 {/* Render nested routes (ChatRoom) here */}
-                <Outlet context={{ activeRoomId }} />
+                {activeTab === "contacts" ? (
+                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
+                        {activeContact ? (
+                            <div className="flex-1 flex flex-col">
+                                <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-semibold dark:bg-emerald-900/40 dark:text-emerald-200">
+                                            {getContactLabel(activeContact).charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <div className="text-xl font-semibold text-slate-800 dark:text-slate-100">
+                                                {getContactLabel(activeContact)}
+                                            </div>
+                                            <div className="text-sm text-slate-500 dark:text-slate-400">
+                                                {activeContact.companyName || "—"}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <button
+                                            ref={contactMenuButtonRef}
+                                            type="button"
+                                            onClick={() => setShowContactMenu((prev) => !prev)}
+                                            className="h-10 w-10 rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                            aria-label="Contact actions"
+                                        >
+                                            ...
+                                        </button>
+                                        {showContactMenu && (
+                                            <div
+                                                ref={contactMenuRef}
+                                                className="absolute right-0 mt-2 w-40 rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-xl dark:border-slate-800 dark:bg-slate-900"
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void onRemoveActiveContact()}
+                                                    className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
+                                                >
+                                                    刪除好友
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 px-8 py-6">
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                                                ID
+                                            </div>
+                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                {activeContact.userLocalId || getLocalPart(activeContact.matrixUserId) || "—"}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                                                Name
+                                            </div>
+                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                {activeContact.displayName || "—"}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                                                Gender
+                                            </div>
+                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                {getGenderLabel(activeContact.gender)}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                                                Country
+                                            </div>
+                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                {activeContact.country || "—"}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                                                Language
+                                            </div>
+                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                {getLanguageLabel(activeContact)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="px-8 pb-8">
+                                    <button
+                                        type="button"
+                                        onClick={() => void onStartContactChat()}
+                                        className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                                    >
+                                        Chat
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                                Select a contact to view details.
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <Outlet context={{ activeRoomId }} />
+                )}
 
                 {/* Placeholder for when no chat is selected (if Outlet is empty) */}
                 {/* <div className="flex-1 flex items-center justify-center text-gray-400">Select a chat to start messaging</div> */}

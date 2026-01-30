@@ -11,6 +11,9 @@ type ContactEntry = {
     handle: string | null;
     matrix_user_id: string | null;
     user_type: string | null;
+    gender: string | null;
+    locale: string | null;
+    translation_locale: string | null;
 };
 
 type ContactRequestEntry = {
