@@ -232,7 +232,7 @@ export const ChatRoom: React.FC = () => {
     const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room.name || "Chat";
 
     return (
-        <div className="flex flex-col h-full w-full">
+        <div className="flex flex-col h-full w-full min-h-0">
             {/* 4. Header */}
             <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 shadow-sm z-10 dark:bg-slate-900 dark:border-slate-800">
                 <div className="flex items-center gap-3">
@@ -272,7 +272,7 @@ export const ChatRoom: React.FC = () => {
             <div
                 ref={timelineRef}
                 onScroll={() => void onScroll()}
-                className="flex-1 overflow-y-auto p-6 bg-[#F2F4F7] dark:bg-slate-950"
+                className="flex-1 min-h-0 overflow-y-auto p-6 bg-[#F2F4F7] dark:bg-slate-950"
             >
                 {scrollLoading && (
                     <div className="text-center text-xs text-slate-400 dark:text-slate-500 mb-4">
