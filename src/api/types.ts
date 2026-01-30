@@ -26,3 +26,22 @@ export type HubClientSignupPayload = {
     gender?: string;
     job_title?: string;
 };
+
+export type HubProfileSummary = {
+    id: string;
+    display_name: string | null;
+    company_name: string | null;
+    job_title: string | null;
+    country: string | null;
+    user_local_id: string | null;
+    matrix_user_id: string | null;
+    user_type: string | null;
+};
+
+export type HubMeResponse = {
+    user_id: string;
+    is_employee: boolean;
+    memberships: Array<{ company_id: string; role: string }>;
+    employee_persons: Array<{ company_id: string; person_id: string }>;
+    profile: HubProfileSummary | null;
+};

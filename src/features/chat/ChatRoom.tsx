@@ -105,6 +105,11 @@ export const ChatRoom: React.FC = () => {
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const [composerText, setComposerText] = useState("");
     const [scrollLoading, setScrollLoading] = useState(false);
+    const getLocalPart = (value: string | null | undefined): string => {
+        if (!value) return "";
+        const trimmed = value.startsWith("@") ? value.slice(1) : value;
+        return trimmed.split(":")[0] || "";
+    };
 
     const mergedEvents = useMemo(() => {
         if (!room) return [];
@@ -132,11 +137,7 @@ export const ChatRoom: React.FC = () => {
     }, [mergedEvents.length, room]);
 
     if (!activeRoomId) {
-        return (
-            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                Select a chat to start messaging
-            </div>
-        );
+        return <div className="flex-1" />;
     }
 
     if (!room) {
@@ -176,12 +177,15 @@ export const ChatRoom: React.FC = () => {
         await matrixClient.resendEvent(event, room);
     };
 
-    const headerName = room
-        ? room
-              .getJoinedMembers()
-              .filter((member) => member.userId !== userId)
-              .map((member) => member.name || member.userId)[0] || room.name
-        : "Chat";
+    const otherMember = room
+        ? room.getJoinedMembers().find((member) => member.userId !== userId)
+        : undefined;
+    const otherLocalPart = getLocalPart(otherMember?.userId);
+    const otherDisplayName = otherMember?.name || "";
+    const headerName =
+        otherLocalPart && otherDisplayName && otherDisplayName !== otherLocalPart
+            ? `${otherLocalPart} (${otherDisplayName})`
+            : otherLocalPart || otherDisplayName || room.name || "Chat";
 
     return (
         <div className="flex flex-col h-full w-full">

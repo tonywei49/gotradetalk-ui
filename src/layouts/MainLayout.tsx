@@ -11,6 +11,8 @@ import {
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
+import { hubGetMe } from "../api/hub";
+import type { HubProfileSummary } from "../api/types";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -61,7 +63,14 @@ export const MainLayout: React.FC = () => {
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const accountButtonRef = useRef<HTMLButtonElement | null>(null);
-    const accountInitial = (matrixCredentials?.user_id || "U").replace(/^@/, "").charAt(0).toUpperCase() || "U";
+    const [meProfile, setMeProfile] = useState<HubProfileSummary | null>(null);
+    const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
+    const accountId = meProfile?.user_local_id || fallbackAccountId;
+    const accountInitial = accountId.charAt(0).toUpperCase() || "U";
+    const accountSubtitleParts = [meProfile?.display_name, meProfile?.company_name].filter(
+        (value): value is string => Boolean(value),
+    );
+    const accountSubtitle = accountSubtitleParts.length ? accountSubtitleParts.join(" · ") : "Account";
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -76,6 +85,29 @@ export const MainLayout: React.FC = () => {
             localStorage.setItem("gt_matrix_user_id", matrixCredentials.user_id);
         }
     }, [matrixCredentials?.user_id]);
+
+    useEffect(() => {
+        const accessToken = hubAccessToken || matrixAccessToken;
+        if (!accessToken) return;
+        let isActive = true;
+        void (async () => {
+            try {
+                const response = await hubGetMe({
+                    accessToken,
+                    hsUrl: matrixHsUrl,
+                    matrixUserId: matrixCredentials?.user_id,
+                });
+                if (!isActive) return;
+                setMeProfile(response.profile);
+            } catch {
+                if (!isActive) return;
+                setMeProfile(null);
+            }
+        })();
+        return () => {
+            isActive = false;
+        };
+    }, [hubAccessToken, matrixAccessToken, matrixHsUrl, matrixCredentials?.user_id]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -193,9 +225,9 @@ export const MainLayout: React.FC = () => {
                         <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
                         <div className="min-w-0">
                             <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                {matrixCredentials?.user_id ?? "User"}
+                                {accountId}
                             </div>
-                            <div className="text-xs text-slate-500 truncate dark:text-slate-400">Account</div>
+                            <div className="text-xs text-slate-500 truncate dark:text-slate-400">{accountSubtitle}</div>
                         </div>
                     </div>
                 </div>
