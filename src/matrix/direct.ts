@@ -54,6 +54,7 @@ export async function getOrCreateDirectRoom(client: MatrixClient, userId: string
         invite: [userId],
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
+        room_version: "11",
     });
 
     const content = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as DirectAccountData;
@@ -89,11 +90,12 @@ export async function createDirectRoomWithMessage(
         }
     }
 
-    // 創建新房間
+    // 創建新房間（使用最新版本避免升級問題）
     const created = await client.createRoom({
         invite: [userId],
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
+        room_version: "11",
     });
 
     // 更新 m.direct account data
