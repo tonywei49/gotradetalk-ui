@@ -229,7 +229,8 @@ export const ChatRoom: React.FC = () => {
                             ? matrixClient.mxcUrlToHttp(content.url, 800, 800, "scale")
                             : null;
                     const sender = event.getSender();
-                    const senderLabel = getUserLabel(sender, room?.getMember(sender)?.name);
+                    const senderMember = sender ? room?.getMember(sender) : null;
+                    const senderLabel = getUserLabel(sender, senderMember?.name);
                     return (
                         <MessageBubble
                             key={event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`}
