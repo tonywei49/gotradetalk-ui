@@ -33,6 +33,7 @@ export async function setDirectRoom(client: MatrixClient, userId: string, roomId
 }
 
 export async function getOrCreateDirectRoom(client: MatrixClient, userId: string): Promise<string> {
+    // 1. 優先從 m.direct 查找
     const existing = getDirectRoomId(client, userId);
     if (existing) {
         const room = client.getRoom(existing);
@@ -50,6 +51,19 @@ export async function getOrCreateDirectRoom(client: MatrixClient, userId: string
         }
     }
 
+    // 2. 備用邏輯：遍歷所有已加入的房間，找到與對方的 DM（可能 m.direct 未正確記錄）
+    const joinedRooms = client.getRooms().filter((r) => r.getMyMembership() === "join");
+    for (const room of joinedRooms) {
+        const members = room.getJoinedMembers();
+        // DM 房間通常只有 2 個成員
+        if (members.length === 2 && members.some((m) => m.userId === userId)) {
+            // 找到了，同步更新 m.direct
+            await setDirectRoom(client, userId, room.roomId);
+            return room.roomId;
+        }
+    }
+
+    // 3. 確實沒有現有房間，創建新房間
     const created = await client.createRoom({
         invite: [userId],
         is_direct: true,
@@ -76,7 +90,7 @@ export async function createDirectRoomWithMessage(
     userId: string,
     message: string,
 ): Promise<string> {
-    // 檢查是否已有現有房間可複用
+    // 1. 優先從 m.direct 查找
     const existing = getDirectRoomId(client, userId);
     if (existing) {
         const room = client.getRoom(existing);
@@ -90,7 +104,21 @@ export async function createDirectRoomWithMessage(
         }
     }
 
-    // 創建新房間（使用最新版本避免升級問題）
+    // 2. 備用邏輯：遍歷所有已加入的房間，找到與對方的 DM（可能 m.direct 未正確記錄）
+    const joinedRooms = client.getRooms().filter((r) => r.getMyMembership() === "join");
+    for (const room of joinedRooms) {
+        const members = room.getJoinedMembers();
+        // DM 房間通常只有 2 個成員
+        if (members.length === 2 && members.some((m) => m.userId === userId)) {
+            // 找到了，同步更新 m.direct
+            await setDirectRoom(client, userId, room.roomId);
+            // 發送消息並返回
+            await client.sendTextMessage(room.roomId, message);
+            return room.roomId;
+        }
+    }
+
+    // 3. 確實沒有現有房間，創建新房間
     const created = await client.createRoom({
         invite: [userId],
         is_direct: true,
