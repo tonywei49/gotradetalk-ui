@@ -59,6 +59,15 @@ function buildMatrixUserId(localpart: string, domain: string): string | null {
     return `@${localpart}:${domain}`;
 }
 
+function getMatrixHost(hsUrl: string | null): string | null {
+    if (!hsUrl) return null;
+    try {
+        return new URL(hsUrl).host;
+    } catch {
+        return null;
+    }
+}
+
 function getLastMessagePreview(room: Room): string {
     const events = room.getLiveTimeline().getEvents();
     for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -216,6 +225,7 @@ export function RoomList({
     const useHubToken = !isStaffSearch && Boolean(hubAccessToken) && !hubTokenExpired;
     const searchToken = useHubToken ? hubAccessToken : matrixAccessToken;
     const searchHsUrl = useHubToken ? null : matrixHsUrl;
+    const matrixHost = getMatrixHost(matrixHsUrl);
 
     useEffect(() => {
         if (isStaffSearch) return;
@@ -557,14 +567,15 @@ export function RoomList({
         }
     };
 
-    const onRemoveContact = async (targetId: string, matrixUserId: string | null): Promise<void> => {
+    const onRemoveContact = async (targetId: string, matrixUserId: string | null, userLocalId: string | null): Promise<void> => {
         if (!searchToken) return;
         try {
             await removeContact(searchToken, targetId, searchHsUrl);
-            if (client && matrixUserId) {
-                const roomId = getDirectRoomId(client, matrixUserId);
+            const resolvedMatrixUserId = matrixUserId || (userLocalId && matrixHost ? `@${userLocalId}:${matrixHost}` : null);
+            if (client && resolvedMatrixUserId) {
+                const roomId = getDirectRoomId(client, resolvedMatrixUserId);
                 if (roomId) {
-                    await hideDirectRoom(client, matrixUserId, roomId);
+                    await hideDirectRoom(client, resolvedMatrixUserId, roomId);
                 }
             }
             await refreshContacts();
@@ -583,18 +594,36 @@ export function RoomList({
         }
     };
 
+    const resolveContactMatrixUserId = (contact: {
+        matrixUserId: string | null;
+        userLocalId: string | null;
+    }): string | null => {
+        if (contact.matrixUserId) return contact.matrixUserId;
+        if (contact.userLocalId && matrixHost) {
+            return `@${contact.userLocalId}:${matrixHost}`;
+        }
+        return null;
+    };
+
     const shouldCreateRoomForContact = (contact: {
         initiatedByMe: boolean;
         userType: string | null;
         matrixUserId: string | null;
+        userLocalId: string | null;
     }): boolean => {
-        if (!contact.matrixUserId) return false;
+        const contactMatrixUserId = resolveContactMatrixUserId(contact);
+        if (!contactMatrixUserId) return false;
         if (userType === "staff") {
             if (contact.userType === "client") return true;
             if (contact.userType === "staff") return contact.initiatedByMe;
+            return contact.initiatedByMe;
         }
         if (userType === "client") {
             if (contact.userType === "client") return contact.initiatedByMe;
+            if (!contact.userType) {
+                const domain = contactMatrixUserId.split(":")[1] || "";
+                return contact.initiatedByMe && Boolean(matrixHost) && domain === matrixHost;
+            }
             return false;
         }
         return false;
@@ -604,11 +633,12 @@ export function RoomList({
         if (!client) return;
         void (async (): Promise<void> => {
             for (const contact of contacts) {
-                if (!contact.matrixUserId) continue;
+                const contactMatrixUserId = resolveContactMatrixUserId(contact);
+                if (!contactMatrixUserId) continue;
                 if (!shouldCreateRoomForContact(contact)) continue;
-                const existing = getDirectRoomId(client, contact.matrixUserId);
+                const existing = getDirectRoomId(client, contactMatrixUserId);
                 if (!existing) {
-                    await getOrCreateDirectRoom(client, contact.matrixUserId);
+                    await getOrCreateDirectRoom(client, contactMatrixUserId);
                 }
             }
         })();
@@ -766,7 +796,14 @@ export function RoomList({
                                 >
                                     <button
                                         type="button"
-                                        onClick={() => void onStartChat(contact.matrixUserId)}
+                                        onClick={() =>
+                                            void onStartChat(
+                                                contact.matrixUserId ||
+                                                    (contact.userLocalId && matrixHost
+                                                        ? `@${contact.userLocalId}:${matrixHost}`
+                                                        : null),
+                                            )
+                                        }
                                         className="min-w-0 text-left"
                                     >
                                         <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
@@ -786,14 +823,23 @@ export function RoomList({
                                     <div className="flex items-center gap-3">
                                         <button
                                             type="button"
-                                            onClick={() => void onStartChat(contact.matrixUserId)}
+                                            onClick={() =>
+                                                void onStartChat(
+                                                    contact.matrixUserId ||
+                                                        (contact.userLocalId && matrixHost
+                                                            ? `@${contact.userLocalId}:${matrixHost}`
+                                                            : null),
+                                                )
+                                            }
                                             className="text-xs text-emerald-500"
                                         >
                                             Chat
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => void onRemoveContact(contact.id, contact.matrixUserId)}
+                                            onClick={() =>
+                                                void onRemoveContact(contact.id, contact.matrixUserId, contact.userLocalId)
+                                            }
                                             className="text-xs text-rose-400 hover:text-rose-300"
                                         >
                                             Remove
