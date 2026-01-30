@@ -53,6 +53,7 @@ export const MainLayout: React.FC = () => {
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
+    const [unreadBadgeCount, setUnreadBadgeCount] = useState(0);
     const [activeContact, setActiveContact] = useState<ContactSummary | null>(null);
     const [showContactMenu, setShowContactMenu] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
@@ -94,6 +95,16 @@ export const MainLayout: React.FC = () => {
             localStorage.setItem("gt_matrix_user_id", matrixCredentials.user_id);
         }
     }, [matrixCredentials?.user_id]);
+
+    // 更新瀏覽器標籤顯示未讀數
+    useEffect(() => {
+        const baseTitle = "GoTradeTalk";
+        if (unreadBadgeCount > 0) {
+            document.title = `(${unreadBadgeCount > 99 ? "99+" : unreadBadgeCount}) ${baseTitle}`;
+        } else {
+            document.title = baseTitle;
+        }
+    }, [unreadBadgeCount]);
 
     useEffect(() => {
         const accessToken = hubAccessToken || matrixAccessToken;
@@ -279,6 +290,7 @@ export const MainLayout: React.FC = () => {
                     <NavBarItem
                         icon={ChatBubbleLeftRightIcon}
                         active={activeTab === "chat"}
+                        badgeCount={unreadBadgeCount}
                         onClick={() => setActiveTab("chat")}
                     />
                     <NavBarItem
@@ -372,6 +384,7 @@ export const MainLayout: React.FC = () => {
                     activeRoomId={activeRoomId}
                     onSelectRoom={(roomId) => setActiveRoomId(roomId)}
                     onInviteBadgeChange={setInviteBadgeCount}
+                    onUnreadBadgeChange={setUnreadBadgeCount}
                     view={activeTab === "contacts" ? "contacts" : "chat"}
                     onSelectContact={(contact) => setActiveContact(contact)}
                     activeContactId={activeContact?.id ?? null}

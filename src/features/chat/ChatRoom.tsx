@@ -8,7 +8,7 @@ import {
     PaperClipIcon,
     MicrophoneIcon,
 } from "@heroicons/react/24/outline";
-import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
+import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
 import { EventStatus, EventType, MsgType } from "matrix-js-sdk";
 import { useAuthStore } from "../../stores/AuthStore";
@@ -55,11 +55,10 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
                     <div
                         className={`
               px-3 py-2 text-[13px] leading-relaxed shadow-sm relative
-              ${
-                  isMe
-                      ? "bg-[#2F5C56] text-white rounded-2xl rounded-tr-sm"
-                        : "bg-white text-slate-800 rounded-2xl rounded-tl-sm border border-gray-100 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
-              }
+              ${isMe
+                                ? "bg-[#2F5C56] text-white rounded-2xl rounded-tr-sm"
+                                : "bg-white text-slate-800 rounded-2xl rounded-tl-sm border border-gray-100 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
+                            }
             `}
                     >
                         {content?.msgtype === MsgType.Image && mediaUrl ? (
@@ -100,6 +99,7 @@ export const ChatRoom: React.FC = () => {
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const [composerText, setComposerText] = useState("");
     const [scrollLoading, setScrollLoading] = useState(false);
+    const [showScrollToBottom, setShowScrollToBottom] = useState(false);
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -138,6 +138,15 @@ export const ChatRoom: React.FC = () => {
         }
     }, [mergedEvents.length, room]);
 
+    // 進入房間時發送已讀回執
+    useEffect(() => {
+        if (!matrixClient || !room || !activeRoomId) return;
+        const latestEvent = mergedEvents[mergedEvents.length - 1];
+        if (latestEvent) {
+            void matrixClient.sendReadReceipt(latestEvent);
+        }
+    }, [matrixClient, room, activeRoomId, mergedEvents]);
+
     if (!activeRoomId) {
         return <div className="flex-1" />;
     }
@@ -154,12 +163,25 @@ export const ChatRoom: React.FC = () => {
         if (!matrixClient || scrollLoading) return;
         const container = timelineRef.current;
         if (!container) return;
+
+        // 更新滾動到底部按鈕的顯示狀態
+        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        setShowScrollToBottom(distanceFromBottom > 200);
+
+        // 滾動加載更多消息
         if (container.scrollTop > 0) return;
         setScrollLoading(true);
         try {
             await matrixClient.scrollback(room, 30);
         } finally {
             setScrollLoading(false);
+        }
+    };
+
+    const scrollToBottom = (): void => {
+        const container = timelineRef.current;
+        if (container) {
+            container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
         }
     };
 
@@ -244,6 +266,18 @@ export const ChatRoom: React.FC = () => {
                     );
                 })}
             </div>
+
+            {/* 滾動到底部按鈕 */}
+            {showScrollToBottom && (
+                <button
+                    type="button"
+                    onClick={scrollToBottom}
+                    className="absolute bottom-32 right-8 w-10 h-10 bg-white dark:bg-slate-800 rounded-full shadow-lg border border-gray-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors z-20"
+                    aria-label="Scroll to bottom"
+                >
+                    <ChevronDownIcon className="w-5 h-5" />
+                </button>
+            )}
 
             {/* Composer */}
             <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800">

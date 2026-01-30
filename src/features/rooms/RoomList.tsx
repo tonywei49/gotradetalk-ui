@@ -13,6 +13,7 @@ import {
     requestContact,
 } from "../../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
+import { playNotificationSound } from "../../utils/notificationSound";
 
 type DirectRoomEntry = {
     userId: string;
@@ -21,6 +22,7 @@ type DirectRoomEntry = {
     displayName: string;
     lastMessage: string;
     lastActive: number;
+    unreadCount: number;
 };
 
 export type ContactSummary = {
@@ -47,6 +49,7 @@ type RoomListProps = {
     activeRoomId: string | null;
     onSelectRoom: (roomId: string) => void;
     onInviteBadgeChange?: (count: number) => void;
+    onUnreadBadgeChange?: (count: number) => void;
     view?: "chat" | "contacts";
     onSelectContact?: (contact: ContactSummary | null) => void;
     activeContactId?: string | null;
@@ -109,6 +112,7 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
             const room = client.getRoom(roomId);
             if (!room) return;
             const lastActive = room.getLastActiveTimestamp();
+            const unreadCount = room.getUnreadNotificationCount() ?? 0;
             const entry: DirectRoomEntry = {
                 userId,
                 roomId,
@@ -116,6 +120,7 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
                 displayName: room.getMember(userId)?.name ?? userId,
                 lastMessage: getLastMessagePreview(room),
                 lastActive,
+                unreadCount,
             };
             const existing = byUser.get(userId);
             if (!existing || entry.lastActive > existing.lastActive) {
@@ -137,6 +142,7 @@ export function RoomList({
     activeRoomId,
     onSelectRoom,
     onInviteBadgeChange,
+    onUnreadBadgeChange,
     view = "chat",
     onSelectContact,
     activeContactId,
@@ -205,7 +211,7 @@ export function RoomList({
         refresh();
 
         const onTimeline = (
-            _event: MatrixEvent,
+            event: MatrixEvent,
             room: Room | undefined,
             toStartOfTimeline: boolean | undefined,
             removed: boolean,
@@ -213,6 +219,15 @@ export function RoomList({
             if (!room || removed) return;
             if (toStartOfTimeline) return;
             refresh();
+
+            // 在非活動房間收到新消息時播放提示音
+            if (room.roomId !== activeRoomId && event.getType() === EventType.RoomMessage) {
+                // 檢查是否是自己發送的消息
+                const myUserId = client.getUserId();
+                if (event.getSender() !== myUserId) {
+                    playNotificationSound();
+                }
+            }
         };
 
         const onAccountData = (event: MatrixEvent): void => {
@@ -236,6 +251,12 @@ export function RoomList({
             onSelectRoom(rooms[0].roomId);
         }
     }, [rooms, activeRoomId, onSelectRoom]);
+
+    // 計算總未讀數並通知父組件
+    useEffect(() => {
+        const totalUnread = rooms.reduce((sum, room) => sum + room.unreadCount, 0);
+        onUnreadBadgeChange?.(totalUnread);
+    }, [rooms, onUnreadBadgeChange]);
 
     const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const isStaffSearch = userType === "staff";
@@ -385,21 +406,21 @@ export function RoomList({
                 listContactRequests(searchToken, searchHsUrl),
                 listOutgoingContactRequests(searchToken, searchHsUrl),
             ]);
-              setContacts(
-                  contactItems.map((item) => ({
-                      id: item.user_id,
-                      initiatedByMe: item.initiated_by_me,
-                      userType: item.user_type,
-                      displayName: item.display_name,
-                      userLocalId: item.user_local_id,
-                      companyName: item.company_name,
-                      country: item.country,
-                      matrixUserId: item.matrix_user_id,
-                      gender: item.gender,
-                      locale: item.locale,
-                      translationLocale: item.translation_locale,
-                  })),
-              );
+            setContacts(
+                contactItems.map((item) => ({
+                    id: item.user_id,
+                    initiatedByMe: item.initiated_by_me,
+                    userType: item.user_type,
+                    displayName: item.display_name,
+                    userLocalId: item.user_local_id,
+                    companyName: item.company_name,
+                    country: item.country,
+                    matrixUserId: item.matrix_user_id,
+                    gender: item.gender,
+                    locale: item.locale,
+                    translationLocale: item.translation_locale,
+                })),
+            );
             setAcceptedIds(new Set(contactItems.map((item) => item.user_id)));
             setAcceptedMatrixUserIds(
                 new Set(contactItems.map((item) => item.matrix_user_id).filter((value): value is string => Boolean(value))),
@@ -707,7 +728,14 @@ export function RoomList({
                                 onClick={() => onSelectRoom(entry.roomId)}
                                 className="flex-1 min-w-0 flex items-center gap-3 text-left"
                             >
-                                <div className="w-10 h-10 rounded-full bg-gray-200 flex-shrink-0 dark:bg-slate-700" />
+                                <div className="relative w-10 h-10 flex-shrink-0">
+                                    <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
+                                    {entry.unreadCount > 0 && (
+                                        <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                                            {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                                     <div className="flex justify-between items-baseline">
                                         <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
