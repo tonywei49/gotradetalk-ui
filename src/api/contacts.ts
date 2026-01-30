@@ -23,6 +23,8 @@ type ContactRequestEntry = {
     handle: string | null;
     matrix_user_id: string | null;
     user_type: string | null;
+    matrix_room_id: string | null;
+    initial_message: string | null;
 };
 
 type OutgoingContactRequestEntry = {
@@ -152,21 +154,28 @@ export async function listOutgoingContactRequests(
 export async function requestContact(
     accessToken: string,
     targetId: string,
+    initialMessage: string,
+    matrixRoomId: string,
     hsUrl?: string | null,
 ): Promise<{ status: string }> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
     const url = `${base}/contacts/request`;
-    return postJson<{ status: string }>(url, accessToken, { target_id: targetId }, hsUrl);
+    return postJson<{ status: string }>(
+        url,
+        accessToken,
+        { target_id: targetId, initial_message: initialMessage, matrix_room_id: matrixRoomId },
+        hsUrl,
+    );
 }
 
 export async function acceptContact(
     accessToken: string,
     requesterId: string,
     hsUrl?: string | null,
-): Promise<{ status: string }> {
+): Promise<{ status: string; matrix_room_id: string | null }> {
     const base = normalizeBaseUrl(hubApiBaseUrl);
     const url = `${base}/contacts/accept`;
-    return postJson<{ status: string }>(url, accessToken, { requester_id: requesterId }, hsUrl);
+    return postJson<{ status: string; matrix_room_id: string | null }>(url, accessToken, { requester_id: requesterId }, hsUrl);
 }
 
 export async function rejectContact(

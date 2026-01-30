@@ -13,7 +13,7 @@ import {
     removeContact,
     requestContact,
 } from "../../api/contacts";
-import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom, setDirectRoom } from "../../matrix/direct";
+import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
 
 type DirectRoomEntry = {
     userId: string;
@@ -165,12 +165,21 @@ export function RoomList({
             companyName: string | null;
             country: string | null;
             matrixUserId: string | null;
+            matrixRoomId: string | null;
+            initialMessage: string | null;
         }[]
     >([]);
     const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
     const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
     const [acceptedMatrixUserIds, setAcceptedMatrixUserIds] = useState<Set<string>>(new Set());
     const [contactSort, setContactSort] = useState<"company" | "name">("company");
+    // 選中的搜索結果和初始消息（用於發送好友請求）
+    const [selectedSearchItem, setSelectedSearchItem] = useState<{
+        id: string;
+        matrixUserId: string | null;
+        displayName: string | null;
+    } | null>(null);
+    const [initialMessage, setInitialMessage] = useState("");
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -265,7 +274,7 @@ export function RoomList({
             })();
         }, 350);
 
-            return () => window.clearTimeout(handler);
+        return () => window.clearTimeout(handler);
     }, [isStaffSearch, query, searchToken, searchHsUrl]);
 
     useEffect(() => {
@@ -394,6 +403,8 @@ export function RoomList({
                     companyName: item.company_name,
                     country: item.country,
                     matrixUserId: item.matrix_user_id,
+                    matrixRoomId: item.matrix_room_id,
+                    initialMessage: item.initial_message,
                 })),
             );
             setRequestedIds(new Set(outgoingItems.map((item) => item.target_id)));
@@ -436,6 +447,8 @@ export function RoomList({
                         companyName: item.company_name,
                         country: item.country,
                         matrixUserId: item.matrix_user_id,
+                        matrixRoomId: item.matrix_room_id,
+                        initialMessage: item.initial_message,
                     })),
                 );
                 setRequestedIds(new Set(outgoingItems.map((item) => item.target_id)));
@@ -464,14 +477,30 @@ export function RoomList({
         setStaffPersonId("");
     };
 
-    const onRequestContact = async (targetId: string): Promise<void> => {
-        if (!searchToken) return;
+    const onRequestContact = async (targetId: string, targetMatrixUserId: string | null, initialMessage: string): Promise<void> => {
+        if (!searchToken || !client || !targetMatrixUserId) return;
+        if (!initialMessage.trim()) {
+            setSearchError("請輸入打招呼消息");
+            return;
+        }
         try {
-            const result = await requestContact(searchToken, targetId, searchHsUrl);
+            // 1. 創建房間並發送初始消息
+            const roomId = await createDirectRoomWithMessage(client, targetMatrixUserId, initialMessage.trim());
+
+            // 2. 將房間 ID 傳給 Hub API
+            const result = await requestContact(searchToken, targetId, initialMessage.trim(), roomId, searchHsUrl);
             if (result.status === "pending") {
                 setRequestedIds((prev) => new Set(prev).add(targetId));
             }
             await refreshContacts();
+
+            // 3. 選擇新創建的房間
+            onSelectRoom(roomId);
+            setShowSearchModal(false);
+            setQuery("");
+            setStaffCustomerId("");
+            setStaffCompanyDomain("");
+            setStaffPersonId("");
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : "Request failed");
         }
@@ -532,18 +561,31 @@ export function RoomList({
         requesterId: string,
         matrixUserId: string | null,
         requesterUserType: string | null,
+        matrixRoomId: string | null,
     ): Promise<void> => {
         if (!searchToken) return;
         try {
-            await acceptContact(searchToken, requesterId, searchHsUrl);
+            // 調用 Hub API 接受請求並獲取房間 ID
+            const result = await acceptContact(searchToken, requesterId, searchHsUrl);
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
             await refreshContacts();
-            if (matrixUserId && client) {
-                if (userType === "staff" && requesterUserType === "client") {
+
+            if (client && matrixUserId) {
+                // 優先使用請求中保存的房間 ID
+                const roomIdToJoin = matrixRoomId || result.matrix_room_id;
+
+                if (roomIdToJoin) {
+                    // 加入請求方創建的房間
+                    await joinDirectRoom(client, roomIdToJoin, matrixUserId);
+                    onSelectRoom(roomIdToJoin);
+                    setShowSearchModal(false);
+                } else if (userType === "staff" && requesterUserType === "client") {
+                    // 備用邏輯：Staff 對 Client 的情況
                     const roomId = await getOrCreateDirectRoom(client, matrixUserId);
                     onSelectRoom(roomId);
                     setShowSearchModal(false);
                 } else {
+                    // 備用邏輯：等待邀請
                     const joinedRoomId = await waitForInviteFromUser(matrixUserId);
                     if (joinedRoomId) {
                         onSelectRoom(joinedRoomId);
@@ -672,9 +714,8 @@ export function RoomList({
                     visibleRooms.map((entry) => (
                         <div
                             key={entry.roomId}
-                            className={`group w-full px-4 py-3 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${
-                                entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
-                            }`}
+                            className={`group w-full px-4 py-3 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                                }`}
                         >
                             <button
                                 type="button"
@@ -742,6 +783,7 @@ export function RoomList({
                                                         item.requesterId,
                                                         item.matrixUserId,
                                                         item.requesterUserType,
+                                                        item.matrixRoomId,
                                                     )
                                                 }
                                                 className="text-xs text-emerald-500 hover:text-emerald-400"
@@ -769,22 +811,20 @@ export function RoomList({
                                 <button
                                     type="button"
                                     onClick={() => setContactSort("company")}
-                                    className={`text-xs px-2 py-1 rounded-full border ${
-                                        contactSort === "company"
-                                            ? "border-emerald-400 text-emerald-600"
-                                            : "border-gray-200 text-slate-500"
-                                    }`}
+                                    className={`text-xs px-2 py-1 rounded-full border ${contactSort === "company"
+                                        ? "border-emerald-400 text-emerald-600"
+                                        : "border-gray-200 text-slate-500"
+                                        }`}
                                 >
                                     By company
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setContactSort("name")}
-                                    className={`text-xs px-2 py-1 rounded-full border ${
-                                        contactSort === "name"
-                                            ? "border-emerald-400 text-emerald-600"
-                                            : "border-gray-200 text-slate-500"
-                                    }`}
+                                    className={`text-xs px-2 py-1 rounded-full border ${contactSort === "name"
+                                        ? "border-emerald-400 text-emerald-600"
+                                        : "border-gray-200 text-slate-500"
+                                        }`}
                                 >
                                     By name
                                 </button>
@@ -799,9 +839,9 @@ export function RoomList({
                                         onClick={() =>
                                             void onStartChat(
                                                 contact.matrixUserId ||
-                                                    (contact.userLocalId && matrixHost
-                                                        ? `@${contact.userLocalId}:${matrixHost}`
-                                                        : null),
+                                                (contact.userLocalId && matrixHost
+                                                    ? `@${contact.userLocalId}:${matrixHost}`
+                                                    : null),
                                             )
                                         }
                                         className="min-w-0 text-left"
@@ -826,9 +866,9 @@ export function RoomList({
                                             onClick={() =>
                                                 void onStartChat(
                                                     contact.matrixUserId ||
-                                                        (contact.userLocalId && matrixHost
-                                                            ? `@${contact.userLocalId}:${matrixHost}`
-                                                            : null),
+                                                    (contact.userLocalId && matrixHost
+                                                        ? `@${contact.userLocalId}:${matrixHost}`
+                                                        : null),
                                                 )
                                             }
                                             className="text-xs text-emerald-500"
@@ -864,22 +904,20 @@ export function RoomList({
                                         <button
                                             type="button"
                                             onClick={() => setStaffSearchMode("customer")}
-                                            className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                                                staffSearchMode === "customer"
-                                                    ? "bg-emerald-500 text-white"
-                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                                            }`}
+                                            className={`px-3 py-1 text-xs font-semibold rounded-full ${staffSearchMode === "customer"
+                                                ? "bg-emerald-500 text-white"
+                                                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                                }`}
                                         >
                                             Customer
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setStaffSearchMode("staff")}
-                                            className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                                                staffSearchMode === "staff"
-                                                    ? "bg-emerald-500 text-white"
-                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                                            }`}
+                                            className={`px-3 py-1 text-xs font-semibold rounded-full ${staffSearchMode === "staff"
+                                                ? "bg-emerald-500 text-white"
+                                                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                                }`}
                                         >
                                             Company staff
                                         </button>
@@ -971,6 +1009,7 @@ export function RoomList({
                                                             item.requesterId,
                                                             item.matrixUserId,
                                                             item.requesterUserType,
+                                                            item.matrixRoomId,
                                                         )
                                                     }
                                                     className="text-xs text-emerald-500 hover:text-emerald-400"
@@ -995,25 +1034,83 @@ export function RoomList({
                         )}
                         {searchError && <div className="mt-3 text-xs text-rose-500">{searchError}</div>}
                         <div className="mt-4 max-h-72 overflow-y-auto">
+                            {/* 已選中用戶的消息輸入框 */}
+                            {selectedSearchItem && (
+                                <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg border border-emerald-200 dark:border-emerald-700">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                                            發送好友請求給：{selectedSearchItem.displayName || selectedSearchItem.id}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedSearchItem(null);
+                                                setInitialMessage("");
+                                                setSearchError(null);
+                                            }}
+                                            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                                        >
+                                            取消
+                                        </button>
+                                    </div>
+                                    <textarea
+                                        placeholder="請輸入打招呼消息（必填）..."
+                                        value={initialMessage}
+                                        onChange={(e) => setInitialMessage(e.target.value)}
+                                        className="w-full px-2 py-1 text-sm rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                        rows={2}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void onRequestContact(
+                                                selectedSearchItem.id,
+                                                selectedSearchItem.matrixUserId,
+                                                initialMessage,
+                                            ).then(() => {
+                                                setSelectedSearchItem(null);
+                                                setInitialMessage("");
+                                            });
+                                        }}
+                                        disabled={!initialMessage.trim()}
+                                        className={`mt-2 w-full py-1.5 text-sm font-medium rounded ${initialMessage.trim()
+                                            ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                                            : "bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-600"
+                                            }`}
+                                    >
+                                        發送請求
+                                    </button>
+                                </div>
+                            )}
                             {searchResults.length === 0 &&
-                            (isStaffSearch
-                                ? staffSearchMode === "customer"
-                                    ? Boolean(staffCustomerId.trim())
-                                    : Boolean(staffCompanyDomain.trim() && staffPersonId.trim())
-                                : Boolean(query.trim())) ? (
+                                (isStaffSearch
+                                    ? staffSearchMode === "customer"
+                                        ? Boolean(staffCustomerId.trim())
+                                        : Boolean(staffCompanyDomain.trim() && staffPersonId.trim())
+                                    : Boolean(query.trim())) ? (
                                 <div className="text-sm text-slate-500 dark:text-slate-400">No results.</div>
                             ) : (
                                 searchResults.map((item) => (
                                     <button
                                         key={item.id}
                                         type="button"
-                                        onClick={() => void onRequestContact(item.id)}
+                                        onClick={() => {
+                                            if (!requestedIds.has(item.id) && !acceptedIds.has(item.id)) {
+                                                setSelectedSearchItem({
+                                                    id: item.id,
+                                                    matrixUserId: item.matrixUserId,
+                                                    displayName: item.displayName,
+                                                });
+                                                setSearchError(null);
+                                            }
+                                        }}
                                         disabled={requestedIds.has(item.id) || acceptedIds.has(item.id)}
-                                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${
-                                            requestedIds.has(item.id) || acceptedIds.has(item.id)
-                                                ? "opacity-50 cursor-not-allowed"
+                                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${requestedIds.has(item.id) || acceptedIds.has(item.id)
+                                            ? "opacity-50 cursor-not-allowed"
+                                            : selectedSearchItem?.id === item.id
+                                                ? "bg-emerald-50 dark:bg-emerald-900/20 ring-1 ring-emerald-300"
                                                 : ""
-                                        }`}
+                                            }`}
                                     >
                                         <div className="min-w-0">
                                             <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
