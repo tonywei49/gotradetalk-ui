@@ -57,6 +57,7 @@ export const MainLayout: React.FC = () => {
     const [activeContact, setActiveContact] = useState<ContactSummary | null>(null);
     const [showContactMenu, setShowContactMenu] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
+    const [mobileView, setMobileView] = useState<"list" | "detail">("list");
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
     const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
@@ -148,6 +149,7 @@ export const MainLayout: React.FC = () => {
             setActiveContact(null);
             setShowContactMenu(false);
         }
+        setMobileView("list");
     }, [activeTab]);
 
     useEffect(() => {
@@ -221,6 +223,7 @@ export const MainLayout: React.FC = () => {
         const roomId = await getOrCreateDirectRoom(matrixClient, matrixUserId);
         setActiveRoomId(roomId);
         setActiveTab("chat");
+        setMobileView("detail");
     };
 
     const onRemoveActiveContact = async (): Promise<void> => {
@@ -245,11 +248,11 @@ export const MainLayout: React.FC = () => {
     };
 
     return (
-        <div className="flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <div className="flex h-screen w-screen flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
             {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
-            <nav className="w-16 bg-gray-900 flex flex-col items-center py-4 flex-shrink-0 z-20 dark:bg-slate-900">
+            <nav className="w-full bg-gray-900 flex items-center justify-between px-4 py-2 flex-shrink-0 z-20 dark:bg-slate-900 lg:w-16 lg:flex-col lg:justify-start lg:py-4">
                 {/* App Logo Placeholder */}
-                <div className="relative mb-8">
+                <div className="relative lg:mb-8">
                     <button
                         ref={accountButtonRef}
                         type="button"
@@ -286,7 +289,7 @@ export const MainLayout: React.FC = () => {
                 </div>
 
                 {/* Nav Items */}
-                <div className="flex-1 w-full flex flex-col gap-2">
+                <div className="flex-1 w-full flex items-center justify-center gap-2 lg:flex-col">
                     <NavBarItem
                         icon={ChatBubbleLeftRightIcon}
                         active={activeTab === "chat"}
@@ -307,7 +310,7 @@ export const MainLayout: React.FC = () => {
                 </div>
 
                 {/* Bottom Actions */}
-                <div className="w-full flex flex-col gap-2 mb-4">
+                <div className="hidden w-full flex-col gap-2 mb-4 lg:flex">
                     <NavBarItem
                         icon={Cog6ToothIcon}
                         active={activeTab === "settings"}
@@ -335,7 +338,11 @@ export const MainLayout: React.FC = () => {
             </nav>
 
             {/* 2. List Panel (w-80, bg-white) */}
-            <aside className="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800">
+            <aside
+                className={`w-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${
+                    mobileView === "detail" ? "hidden lg:flex" : "flex"
+                }`}
+            >
                 {/* Header */}
                 <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                     <div className="flex items-center gap-3 min-w-0">
@@ -382,25 +389,43 @@ export const MainLayout: React.FC = () => {
                     userType={userType}
                     hubSessionExpiresAt={hubSessionExpiresAt}
                     activeRoomId={activeRoomId}
-                    onSelectRoom={(roomId) => setActiveRoomId(roomId)}
+                    onSelectRoom={(roomId) => {
+                        setActiveRoomId(roomId);
+                        setMobileView("detail");
+                    }}
                     onInviteBadgeChange={setInviteBadgeCount}
                     onUnreadBadgeChange={setUnreadBadgeCount}
                     view={activeTab === "contacts" ? "contacts" : "chat"}
-                    onSelectContact={(contact) => setActiveContact(contact)}
+                    onSelectContact={(contact) => {
+                        setActiveContact(contact);
+                        setMobileView("detail");
+                    }}
                     activeContactId={activeContact?.id ?? null}
                     contactsRefreshToken={contactsRefreshToken}
                 />
             </aside>
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
-            <main className="flex-1 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950">
+            <main
+                className={`flex-1 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${
+                    mobileView === "list" ? "hidden lg:flex" : "flex"
+                }`}
+            >
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
                         {activeContact ? (
                             <div className="flex-1 flex flex-col">
-                                <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100 dark:border-slate-800">
-                                    <div className="flex items-center gap-4">
+                                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-slate-800 sm:px-8 sm:py-6">
+                                    <div className="flex items-center gap-3 sm:gap-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileView("list")}
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                            aria-label="Back to list"
+                                        >
+                                            &lt;
+                                        </button>
                                         <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-semibold dark:bg-emerald-900/40 dark:text-emerald-200">
                                             {getContactLabel(activeContact).charAt(0).toUpperCase()}
                                         </div>
@@ -440,7 +465,7 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <div className="flex-1 px-8 py-6">
+                                <div className="flex-1 px-6 py-6 sm:px-8">
                                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                         <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                                             <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
@@ -484,7 +509,7 @@ export const MainLayout: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="px-8 pb-8">
+                                <div className="px-6 pb-8 sm:px-8">
                                     <button
                                         type="button"
                                         onClick={() => void onStartContactChat()}
@@ -501,7 +526,12 @@ export const MainLayout: React.FC = () => {
                         )}
                     </div>
                 ) : (
-                    <Outlet context={{ activeRoomId }} />
+                    <Outlet
+                        context={{
+                            activeRoomId,
+                            onMobileBack: () => setMobileView("list"),
+                        }}
+                    />
                 )}
 
                 {/* Placeholder for when no chat is selected (if Outlet is empty) */}

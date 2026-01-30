@@ -7,6 +7,7 @@ import {
     FaceSmileIcon,
     PaperClipIcon,
     MicrophoneIcon,
+    ChevronLeftIcon,
 } from "@heroicons/react/24/outline";
 import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
@@ -89,10 +90,11 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
 
 type ChatRoomContext = {
     activeRoomId: string | null;
+    onMobileBack?: () => void;
 };
 
 export const ChatRoom: React.FC = () => {
-    const { activeRoomId } = useOutletContext<ChatRoomContext>();
+    const { activeRoomId, onMobileBack } = useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const userId = useAuthStore((state) => state.matrixCredentials?.user_id ?? null);
     const { events, room } = useRoomTimeline(matrixClient, activeRoomId, { limit: 200 });
@@ -232,13 +234,25 @@ export const ChatRoom: React.FC = () => {
     return (
         <div className="flex flex-col h-full w-full">
             {/* 4. Header */}
-            <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0 shadow-sm z-10 dark:bg-slate-900 dark:border-slate-800">
-                <div className="flex flex-col">
+            <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 shadow-sm z-10 dark:bg-slate-900 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                    {onMobileBack && (
+                        <button
+                            type="button"
+                            onClick={onMobileBack}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                            aria-label="Back to list"
+                        >
+                            <ChevronLeftIcon className="h-5 w-5" />
+                        </button>
+                    )}
+                    <div className="flex flex-col">
                     <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{headerName}</h2>
                     <span className="text-xs text-green-600 flex items-center gap-1 dark:text-emerald-400">
                         <span className="w-2 h-2 bg-green-500 rounded-full dark:bg-emerald-400"></span>
                         Online
                     </span>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-4 text-gray-500 dark:text-slate-400">
