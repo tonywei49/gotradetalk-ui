@@ -236,14 +236,21 @@ export function RoomList({
             }
         };
 
+        // 監聽已讀回執事件，更新未讀計數
+        const onReceipt = (): void => {
+            refresh();
+        };
+
         client.on(RoomEvent.Timeline, onTimeline);
         client.on(ClientEvent.AccountData, onAccountData);
+        client.on(RoomEvent.Receipt, onReceipt);
 
         return () => {
             client.off(RoomEvent.Timeline, onTimeline);
             client.off(ClientEvent.AccountData, onAccountData);
+            client.off(RoomEvent.Receipt, onReceipt);
         };
-    }, [client, refresh]);
+    }, [client, refresh, activeRoomId]);
 
     useEffect(() => {
         if (!rooms.length) return;
