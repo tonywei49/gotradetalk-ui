@@ -1,4 +1,5 @@
 import type { MatrixClient } from "matrix-js-sdk";
+import { EventType } from "matrix-js-sdk";
 import { useAuthStore } from "../stores/AuthStore";
 
 type PowerLevelContent = {
@@ -26,13 +27,13 @@ export async function updateRoomInvitePermission(roomId: string, allowMembersToI
     let content: PowerLevelContent | null = null;
     const room = client.getRoom(roomId);
     if (room) {
-        const event = room.currentState.getStateEvents("m.room.power_levels", "");
+        const event = room.currentState.getStateEvents(EventType.RoomPowerLevels, "");
         content = (event?.getContent() ?? null) as PowerLevelContent | null;
     }
     if (!content) {
         const eventContent = (await client.getStateEvent(
             roomId,
-            "m.room.power_levels",
+            EventType.RoomPowerLevels,
             "",
         )) as PowerLevelContent;
         content = eventContent ?? {};
@@ -46,5 +47,5 @@ export async function updateRoomInvitePermission(roomId: string, allowMembersToI
 
     nextContent.invite = allowMembersToInvite ? 0 : 50;
 
-    await client.sendStateEvent(roomId, "m.room.power_levels", nextContent);
+    await client.sendStateEvent(roomId, EventType.RoomPowerLevels, nextContent);
 }

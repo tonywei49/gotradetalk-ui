@@ -211,6 +211,8 @@ export const ChatRoom: React.FC = () => {
     }, [matrixClient, activeRoomId]);
 
     const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom;
+    const groupMembers = room?.getJoinedMembers() ?? [];
+    const memberCount = groupMembers.length;
     const powerLevels = useMemo((): PowerLevelContent | null => {
         if (!room) return null;
         const event = room.currentState.getStateEvents("m.room.power_levels", "");
@@ -381,8 +383,6 @@ export const ChatRoom: React.FC = () => {
         : undefined;
     const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room.name || t("chat.headerFallback");
     const groupName = room?.name || t("chat.groupNameFallback");
-    const groupMembers = room?.getJoinedMembers() ?? [];
-    const memberCount = groupMembers.length;
     const memberEntries = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;
         return groupMembers
