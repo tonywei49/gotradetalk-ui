@@ -57,14 +57,14 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
     if (unique.length === 0) return 0;
     const results = await Promise.allSettled(unique.map((userId) => client.invite(roomId, userId)));
     console.log("[inviteUsersToRoom] Invite results:", results);
-    const forbidden = results.find(
-        (result) =>
-            result.status === "rejected" &&
-            result.reason &&
-            typeof result.reason === "object" &&
-            "httpStatus" in result.reason &&
-            result.reason.httpStatus === 403,
-    );
+    const forbidden = results.find((result) => {
+        if (result.status !== "rejected") return false;
+        const reason = result.reason as { httpStatus?: number; errcode?: string } | null;
+        if (!reason) return false;
+        if (reason.httpStatus === 403) return true;
+        if (reason.errcode === "M_FORBIDDEN") return true;
+        return false;
+    });
     if (forbidden) {
         throw new Error("您沒有權限邀請成員 (You are not allowed to invite users)");
     }
