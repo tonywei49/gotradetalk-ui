@@ -253,7 +253,8 @@
         "hide": "隐藏",
         "pin": "置顶",
         "unpin": "取消置顶",
-        "actionsMenu": "聊天操作"
+        "actionsMenu": "聊天操作",
+        "leaveGroup": "退出群聊"
     },
     "group": {
         "createTitle": "创建群聊",

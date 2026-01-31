@@ -253,7 +253,8 @@
         "hide": "Hide",
         "pin": "Pin",
         "unpin": "Unpin",
-        "actionsMenu": "Chat actions"
+        "actionsMenu": "Chat actions",
+        "leaveGroup": "Leave group"
     },
     "group": {
         "createTitle": "Create Group",

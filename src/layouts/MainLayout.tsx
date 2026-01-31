@@ -5,6 +5,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
+import { EventType } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -262,11 +263,22 @@ export const MainLayout: React.FC = () => {
         if (!matrixClient || !activeRoomId) return;
         const room = matrixClient.getRoom(activeRoomId);
         if (!room) return;
-        const currentUserId = matrixCredentials?.user_id ?? null;
-        const otherMember = room.getJoinedMembers().find((member) => member.userId !== currentUserId);
-        if (!otherMember) return;
         try {
-            await hideDirectRoom(matrixClient, otherMember.userId, activeRoomId);
+            const accountData = matrixClient.getAccountData(EventType.Direct);
+            const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
+            const directRoomIds = new Set<string>();
+            Object.values(directContent).forEach((roomIds) => {
+                roomIds.forEach((roomId) => directRoomIds.add(roomId));
+            });
+
+            if (directRoomIds.has(activeRoomId)) {
+                const currentUserId = matrixCredentials?.user_id ?? null;
+                const otherMember = room.getJoinedMembers().find((member) => member.userId !== currentUserId);
+                if (!otherMember) return;
+                await hideDirectRoom(matrixClient, otherMember.userId, activeRoomId);
+            } else if (!room.isSpaceRoom()) {
+                await matrixClient.leave(activeRoomId);
+            }
             setPinnedRoomIds((prev) => prev.filter((roomId) => roomId !== activeRoomId));
             setActiveRoomId(null);
             setMobileView("list");

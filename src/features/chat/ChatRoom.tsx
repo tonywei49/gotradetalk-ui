@@ -157,6 +157,15 @@ export const ChatRoom: React.FC = () => {
         return Boolean(eventId && eventId.startsWith("$"));
     };
 
+    const isDirectRoom = useMemo(() => {
+        if (!matrixClient || !activeRoomId) return false;
+        const accountData = matrixClient.getAccountData(EventType.Direct);
+        const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
+        return Object.values(directContent).some((roomIds) => roomIds.includes(activeRoomId));
+    }, [matrixClient, activeRoomId]);
+
+    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom;
+
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
         if (!room || !matrixClient) return;
@@ -312,7 +321,7 @@ export const ChatRoom: React.FC = () => {
                                     }}
                                     className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
                                 >
-                                    {t("chat.hide")}
+                                    {isGroupChat ? t("chat.leaveGroup") : t("chat.hide")}
                                 </button>
                                 <button
                                     type="button"
