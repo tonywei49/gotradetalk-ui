@@ -92,6 +92,15 @@ export const MainLayout: React.FC = () => {
         { value: "zh-CN", label: "简体中文" },
     ];
     const text = (en: string, zh: string): string => (displayLanguage === "en" ? en : zh);
+    const localeTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
+    const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : matrixAccessToken;
+    const meUpdateOptions =
+        hubAccessToken && !localeTokenExpired
+            ? undefined
+            : {
+                  hsUrl: matrixHsUrl,
+                  matrixUserId: matrixCredentials?.user_id ?? null,
+              };
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
@@ -99,8 +108,8 @@ export const MainLayout: React.FC = () => {
             setLanguage(value);
         }
         try {
-            if (userType === "client" && hubAccessToken) {
-                await hubMeUpdateLocale(hubAccessToken, value);
+            if (userType === "client" && meUpdateToken) {
+                await hubMeUpdateLocale(meUpdateToken, value, meUpdateOptions);
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
                 await updateStaffLanguage(matrixAccessToken, matrixHsUrl, value);
             }
@@ -116,8 +125,8 @@ export const MainLayout: React.FC = () => {
         const previous = chatReceiveLanguage;
         setChatReceiveLanguage(value);
         try {
-            if (userType === "client" && hubAccessToken) {
-                await hubMeUpdateTranslationLocale(hubAccessToken, value);
+            if (userType === "client" && meUpdateToken) {
+                await hubMeUpdateTranslationLocale(meUpdateToken, value, meUpdateOptions);
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
                 await updateStaffTranslationLanguage(matrixAccessToken, matrixHsUrl, value);
             }

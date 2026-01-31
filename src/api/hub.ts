@@ -181,18 +181,37 @@ export async function hubGetMe(params: {
     return getJson<HubMeResponse>(url, params.accessToken);
 }
 
-export async function hubMeUpdateLocale(accessToken: string, locale: string): Promise<{ locale: string | null }> {
+export async function hubMeUpdateLocale(
+    accessToken: string,
+    locale: string,
+    options?: { hsUrl?: string | null; matrixUserId?: string | null },
+): Promise<{ locale: string | null }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withQuery(joinUrl(hubBaseUrl, "/me/locale"), { locale });
+    const query: Record<string, string> = { locale };
+    if (options?.hsUrl) {
+        query.hs_url = options.hsUrl;
+    }
+    if (options?.matrixUserId) {
+        query.matrix_user_id = options.matrixUserId;
+    }
+    const url = withQuery(joinUrl(hubBaseUrl, "/me/locale"), query);
     return postJson<{ locale: string | null }>(url, { locale }, accessToken);
 }
 
 export async function hubMeUpdateTranslationLocale(
     accessToken: string,
     translationLocale: string,
+    options?: { hsUrl?: string | null; matrixUserId?: string | null },
 ): Promise<{ translation_locale: string | null }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withQuery(joinUrl(hubBaseUrl, "/me/translation-locale"), { translation_locale: translationLocale });
+    const query: Record<string, string> = { translation_locale: translationLocale };
+    if (options?.hsUrl) {
+        query.hs_url = options.hsUrl;
+    }
+    if (options?.matrixUserId) {
+        query.matrix_user_id = options.matrixUserId;
+    }
+    const url = withQuery(joinUrl(hubBaseUrl, "/me/translation-locale"), query);
     return postJson<{ translation_locale: string | null }>(
         url,
         { translation_locale: translationLocale },
