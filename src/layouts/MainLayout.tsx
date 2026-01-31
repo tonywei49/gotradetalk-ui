@@ -9,18 +9,13 @@ import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
 import type { ContactSummary } from "../features/rooms/RoomList";
-import { hubGetMe } from "../api/hub";
+import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
-import {
-    updateClientLanguage,
-    updateClientTranslationLanguage,
-    updateStaffLanguage,
-    updateStaffTranslationLanguage,
-} from "../api/profile";
+import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
 import { setLanguage } from "../i18n";
 
 // Placeholder for RoomList and ChatArea to be implemented later
@@ -104,8 +99,8 @@ export const MainLayout: React.FC = () => {
             setLanguage(value);
         }
         try {
-            if (userType === "client" && hubSession) {
-                await updateClientLanguage(hubSession, value);
+            if (userType === "client" && hubAccessToken) {
+                await hubMeUpdateLocale(hubAccessToken, value);
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
                 await updateStaffLanguage(matrixAccessToken, matrixHsUrl, value);
             }
@@ -121,8 +116,8 @@ export const MainLayout: React.FC = () => {
         const previous = chatReceiveLanguage;
         setChatReceiveLanguage(value);
         try {
-            if (userType === "client" && hubSession) {
-                await updateClientTranslationLanguage(hubSession, value);
+            if (userType === "client" && hubAccessToken) {
+                await hubMeUpdateTranslationLocale(hubAccessToken, value);
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
                 await updateStaffTranslationLanguage(matrixAccessToken, matrixHsUrl, value);
             }
