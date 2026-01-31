@@ -48,7 +48,7 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount }: NavBarItemProps
 );
 
 export const MainLayout: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings">("chat");
+    const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings" | "account">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
     const [unreadBadgeCount, setUnreadBadgeCount] = useState(0);
@@ -56,6 +56,9 @@ export const MainLayout: React.FC = () => {
     const [showContactMenu, setShowContactMenu] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+    const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language">("none");
+    const [displayLanguage, setDisplayLanguage] = useState<string>("en");
+    const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
     const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
@@ -83,6 +86,10 @@ export const MainLayout: React.FC = () => {
         (value): value is string => Boolean(value),
     );
     const accountSubtitle = accountSubtitleParts.length ? accountSubtitleParts.join(" · ") : "Account";
+    const displayLangOptions = [
+        { value: "en", label: "English" },
+        { value: "zh-CN", label: "简体中文" },
+    ];
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -121,6 +128,9 @@ export const MainLayout: React.FC = () => {
                 });
                 if (!isActive) return;
                 setMeProfile(response.profile);
+                if (response.profile?.locale) {
+                    setDisplayLanguage(response.profile.locale);
+                }
             } catch {
                 if (!isActive) return;
                 setMeProfile(null);
@@ -165,6 +175,7 @@ export const MainLayout: React.FC = () => {
             setShowContactMenu(false);
         }
         setMobileView("list");
+        setSettingsDetail("none");
     }, [activeTab]);
 
     useEffect(() => {
@@ -300,7 +311,7 @@ export const MainLayout: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setActiveTab("settings");
+                                    setActiveTab("account");
                                     setShowAccountMenu(false);
                                 }}
                                 className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -353,20 +364,49 @@ export const MainLayout: React.FC = () => {
                         {showSettingsMenu && (
                             <div
                                 ref={settingsMenuRef}
-                                className="absolute bottom-16 left-1/2 z-30 w-48 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900"
+                                className="absolute bottom-12 left-1/2 z-30 w-48 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900 lg:bottom-16"
                             >
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        setActiveTab("orders");
+                                        setActiveTab("settings");
+                                        setSettingsDetail("none");
                                         setShowSettingsMenu(false);
                                     }}
                                     className="w-full px-2 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
                                 >
-                                    工單
+                                    設定
                                 </button>
-                                <div className="mt-2 flex items-center justify-between px-2 py-2">
-                                    <div className="text-slate-700 dark:text-slate-100">深色模式</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </nav>
+
+            {/* 2. List Panel (w-80, bg-white) */}
+            <aside
+                className={`w-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${
+                    mobileView === "detail" ? "hidden lg:flex" : "flex"
+                }`}
+            >
+                {activeTab === "settings" ? (
+                    <>
+                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
+                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">設定</div>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSettingsDetail("none");
+                                }}
+                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                工單
+                            </button>
+                            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm text-slate-700 dark:text-slate-100">深色模式</div>
                                     <button
                                         type="button"
                                         onClick={toggleMode}
@@ -383,77 +423,120 @@ export const MainLayout: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                        )}
-                    </div>
-                </div>
-            </nav>
-
-            {/* 2. List Panel (w-80, bg-white) */}
-            <aside
-                className={`w-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${
-                    mobileView === "detail" ? "hidden lg:flex" : "flex"
-                }`}
-            >
-                {/* Header */}
-                <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
-                        <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                {accountId}
+                            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
+                                <div className="text-sm text-slate-700 dark:text-slate-100 mb-2">顯示語言</div>
+                                <select
+                                    value={displayLanguage}
+                                    onChange={(event) => setDisplayLanguage(event.target.value)}
+                                    className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                >
+                                    {displayLangOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
-                            <div className="text-xs text-slate-500 truncate dark:text-slate-400">{accountSubtitle}</div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSettingsDetail("chat-language");
+                                    setMobileView("detail");
+                                }}
+                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                聊天接收語言
+                            </button>
                         </div>
-                    </div>
-                </div>
+                    </>
+                ) : activeTab === "account" ? (
+                    <>
+                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
+                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">賬號設定</div>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <label className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800">
+                                上傳頭像
+                                <input type="file" accept="image/*" className="hidden" />
+                            </label>
+                            <button
+                                type="button"
+                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                修改密碼
+                            </button>
+                            <button
+                                type="button"
+                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                修改名稱（姓名）
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        {/* Header */}
+                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
+                                <div className="min-w-0">
+                                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                        {accountId}
+                                    </div>
+                                    <div className="text-xs text-slate-500 truncate dark:text-slate-400">{accountSubtitle}</div>
+                                </div>
+                            </div>
+                        </div>
 
-                {/* Search Bar */}
-                <div className="p-3">
-                    <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
-                        <svg
-                            className="w-5 h-5 text-gray-400 dark:text-slate-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                            />
-                        </svg>
-                        <input
-                            type="text"
-                            placeholder="Search"
-                            className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
+                        {/* Search Bar */}
+                        <div className="p-3">
+                            <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
+                                <svg
+                                    className="w-5 h-5 text-gray-400 dark:text-slate-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                    />
+                                </svg>
+                                <input
+                                    type="text"
+                                    placeholder="Search"
+                                    className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Room List Content (Placeholder) */}
+                        <RoomList
+                            client={matrixClient}
+                            hubAccessToken={hubAccessToken}
+                            matrixAccessToken={matrixAccessToken}
+                            matrixHsUrl={matrixHsUrl}
+                            userType={userType}
+                            hubSessionExpiresAt={hubSessionExpiresAt}
+                            activeRoomId={activeRoomId}
+                            onSelectRoom={(roomId) => {
+                                setActiveRoomId(roomId);
+                                setMobileView("detail");
+                            }}
+                            onInviteBadgeChange={setInviteBadgeCount}
+                            onUnreadBadgeChange={setUnreadBadgeCount}
+                            view={activeTab === "contacts" ? "contacts" : "chat"}
+                            onSelectContact={(contact) => {
+                                setActiveContact(contact);
+                                setMobileView("detail");
+                            }}
+                            activeContactId={activeContact?.id ?? null}
+                            contactsRefreshToken={contactsRefreshToken}
                         />
-                    </div>
-                </div>
-
-                {/* Room List Content (Placeholder) */}
-                <RoomList
-                    client={matrixClient}
-                    hubAccessToken={hubAccessToken}
-                    matrixAccessToken={matrixAccessToken}
-                    matrixHsUrl={matrixHsUrl}
-                    userType={userType}
-                    hubSessionExpiresAt={hubSessionExpiresAt}
-                    activeRoomId={activeRoomId}
-                    onSelectRoom={(roomId) => {
-                        setActiveRoomId(roomId);
-                        setMobileView("detail");
-                    }}
-                    onInviteBadgeChange={setInviteBadgeCount}
-                    onUnreadBadgeChange={setUnreadBadgeCount}
-                    view={activeTab === "contacts" ? "contacts" : "chat"}
-                    onSelectContact={(contact) => {
-                        setActiveContact(contact);
-                        setMobileView("detail");
-                    }}
-                    activeContactId={activeContact?.id ?? null}
-                    contactsRefreshToken={contactsRefreshToken}
-                />
+                    </>
+                )}
             </aside>
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
@@ -575,6 +658,45 @@ export const MainLayout: React.FC = () => {
                                 Select a contact to view details.
                             </div>
                         )}
+                    </div>
+                ) : activeTab === "settings" || activeTab === "account" ? (
+                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
+                        <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                            Select an item to view details.
+                        </div>
+                        {activeTab === "settings" && settingsDetail === "chat-language" ? (
+                            <div className="border-t border-gray-100 p-6 dark:border-slate-800">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setMobileView("list")}
+                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                        aria-label="Back to list"
+                                    >
+                                        &lt;
+                                    </button>
+                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                        聊天接收語言
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                    {translationLanguageOptions.map((option) => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => setChatReceiveLanguage(option.value)}
+                                            className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${
+                                                chatReceiveLanguage === option.value
+                                                    ? "border-emerald-400 text-emerald-600"
+                                                    : "border-gray-200"
+                                            }`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
                     </div>
                 ) : (
                     <Outlet
