@@ -78,6 +78,7 @@ export async function createGroupChat(
         power_level_content_override: powerLevelContentOverride,
     };
 
+    console.log("[createGroupChat] Creating room with options:", JSON.stringify(createRoomOpts, null, 2));
     const result = await client.createRoom(createRoomOpts);
 
     // 確保房間不在目錄中可見

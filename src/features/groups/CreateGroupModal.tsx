@@ -90,9 +90,11 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         setCreating(true);
         setError(null);
         try {
+            const inviteesList = Array.from(selectedMembers);
+            console.log("[CreateGroupModal] Creating group with invitees:", inviteesList);
             const roomId = await createGroupChat(matrixClient, {
                 name: groupName.trim(),
-                invitees: Array.from(selectedMembers),
+                invitees: inviteesList,
                 historyVisibility,
             });
 
