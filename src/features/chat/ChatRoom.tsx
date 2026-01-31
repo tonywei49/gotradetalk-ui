@@ -316,18 +316,6 @@ export const ChatRoom: React.FC = () => {
         return () => clearTimeout(timer);
     }, [activeRoomId]); // 只在切換房間時觸發
 
-    if (!activeRoomId) {
-        return <div className="flex-1" />;
-    }
-
-    if (!room) {
-        return (
-            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                {t("chat.loading")}
-            </div>
-        );
-    }
-
     const onScroll = async (): Promise<void> => {
         if (!matrixClient || scrollLoading) return;
         const container = timelineRef.current;
@@ -396,6 +384,18 @@ export const ChatRoom: React.FC = () => {
                 return a.name.localeCompare(b.name);
             });
     }, [groupMembers, powerLevels]);
+
+    if (!activeRoomId) {
+        return <div className="flex-1" />;
+    }
+
+    if (!room) {
+        return (
+            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                {t("chat.loading")}
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col h-full w-full min-h-0">
