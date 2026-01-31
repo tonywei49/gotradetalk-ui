@@ -15,7 +15,7 @@ import { EventStatus, EventType, MsgType } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../../stores/AuthStore";
 import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
-import { updateRoomInvitePermission } from "../../services/matrix";
+import { inviteUsersToRoom, updateRoomInvitePermission } from "../../services/matrix";
 import { listContacts, type ContactEntry } from "../../api/contacts";
 
 type MessageBubbleProps = {
@@ -799,11 +799,15 @@ export const ChatRoom: React.FC = () => {
                                 type="button"
                                 disabled={inviteMemberBusy || selectedInviteIds.size === 0}
                                 onClick={() => {
-                                    if (!matrixClient || !room) return;
                                     setInviteMemberBusy(true);
                                     setInviteMemberError(null);
                                     const targets = Array.from(selectedInviteIds);
-                                    void Promise.all(targets.map((target) => matrixClient.invite(room.roomId, target)))
+                                    if (!room) {
+                                        setInviteMemberError(t("chat.inviteMemberFailed"));
+                                        setInviteMemberBusy(false);
+                                        return;
+                                    }
+                                    void inviteUsersToRoom(room.roomId, targets)
                                         .then(() => {
                                             setSelectedInviteIds(new Set());
                                             setShowInviteMembersModal(false);
