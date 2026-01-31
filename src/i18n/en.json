@@ -6,7 +6,7 @@
     "language": {
         "label": "Language",
         "english": "English",
-        "chineseSimplified": "简体中文"
+        "chineseSimplified": "Simplified Chinese"
     },
     "auth": {
         "tabs": {
@@ -97,11 +97,11 @@
             "missingTranslationLocale": "Please select a chat language.",
             "missingSupabaseSession": "Supabase session not available.",
             "invalidCompanySlug": "Company slug format is invalid.",
-        "invalidCompanyTld": "Top-level domain format is invalid.",
-        "invalidUserLocalId": "User ID format is invalid.",
-        "missingCompanyName": "Please enter your company name.",
-        "invalidCredentials": "Invalid credentials.",
-        "emptyPassword": "Please enter your current and new password.",
+            "invalidCompanyTld": "Top-level domain format is invalid.",
+            "invalidUserLocalId": "User ID format is invalid.",
+            "missingCompanyName": "Please enter your company name.",
+            "invalidCredentials": "Invalid credentials.",
+            "emptyPassword": "Please enter your current and new password.",
             "passwordMismatch": "Passwords do not match.",
             "passwordWeak": "Password must be at least 10 characters and include letters and numbers."
         }
@@ -144,5 +144,109 @@
             "placeholder": "Type a message...",
             "send": "Send"
         }
+    },
+    "common": {
+        "placeholder": "—",
+        "unknown": "Unknown",
+        "online": "Online",
+        "loading": "Loading...",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "search": "Search",
+        "close": "Close"
+    },
+    "layout": {
+        "accountMenu": "Account menu",
+        "accountSettings": "Account settings",
+        "logout": "Logout",
+        "settings": "Settings",
+        "tickets": "Tickets",
+        "appearance": "Appearance",
+        "dark": "Dark",
+        "light": "Light",
+        "displayLanguage": "Display language",
+        "chatReceiveLanguage": "Chat receive language",
+        "uploadAvatar": "Upload avatar",
+        "changePassword": "Change password",
+        "changeName": "Change name",
+        "searchPlaceholder": "Search",
+        "selectItem": "Select an item to view details.",
+        "selectContact": "Select a contact to view details.",
+        "contactActions": "Contact actions",
+        "removeContact": "Remove contact",
+        "backToList": "Back to list",
+        "openSettings": "Open settings",
+        "accountSubtitleFallback": "Account",
+        "contactFallback": "Contact",
+        "chatAction": "Chat",
+        "details": {
+            "id": "ID",
+            "name": "Name",
+            "gender": "Gender",
+            "country": "Country",
+            "language": "Language"
+        }
+    },
+    "profile": {
+        "gender": {
+            "male": "Male",
+            "female": "Female",
+            "unknown": "Not specified"
+        }
+    },
+    "roomList": {
+        "sections": {
+            "contacts": "Contacts",
+            "directMessages": "Direct Messages",
+            "requests": "Requests"
+        },
+        "actions": {
+            "addContact": "Add contact",
+            "accept": "Accept",
+            "reject": "Reject",
+            "hide": "Hide"
+        },
+        "empty": {
+            "directChats": "No direct chats yet.",
+            "contacts": "No contacts yet.",
+            "results": "No results."
+        },
+        "sorting": {
+            "byCompany": "By company",
+            "byName": "By name"
+        },
+        "search": {
+            "startChat": "Start a chat",
+            "customer": "Customer",
+            "companyStaff": "Company staff",
+            "customerIdPlaceholder": "Customer ID",
+            "companyDomainPlaceholder": "Company domain (e.g. hululucky.com)",
+            "staffIdPlaceholder": "Staff ID",
+            "userPlaceholder": "Search user...",
+            "searching": "Searching...",
+            "sendRequestTo": "Send request to: ",
+            "greetingPlaceholder": "Please enter a greeting message (required)...",
+            "sendRequest": "Send request",
+            "invited": "Invited"
+        },
+        "errors": {
+            "searchRequiresToken": "Search requires access token.",
+            "searchFailed": "Search failed.",
+            "missingHomeserver": "Missing homeserver URL.",
+            "invalidUserId": "Invalid user id.",
+            "greetingRequired": "Please enter a greeting message.",
+            "requestFailed": "Request failed.",
+            "acceptFailed": "Accept failed.",
+            "rejectFailed": "Reject failed."
+        }
+    },
+    "chat": {
+        "failed": "Failed",
+        "resend": "Resend",
+        "loading": "Loading chat...",
+        "placeholder": "Type a message...",
+        "scrollToBottom": "Scroll to bottom",
+        "imageAlt": "image",
+        "headerFallback": "Chat"
     }
 }

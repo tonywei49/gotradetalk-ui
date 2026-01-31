@@ -2,6 +2,7 @@
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { useTranslation } from "react-i18next";
 
 import { searchDirectoryAll, searchStaffDirectoryCustomers, searchStaffDirectoryEmployees } from "../../api/directory";
 import {
@@ -148,6 +149,7 @@ export function RoomList({
     activeContactId,
     contactsRefreshToken,
 }: RoomListProps) {
+    const { t } = useTranslation();
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
     const [query, setQuery] = useState("");
     const [staffSearchMode, setStaffSearchMode] = useState<"customer" | "staff">("customer");
@@ -281,7 +283,7 @@ export function RoomList({
             return;
         }
         if (!searchToken) {
-            setSearchError("Search requires access token.");
+            setSearchError(t("roomList.errors.searchRequiresToken"));
             setSearchResults([]);
             return;
         }
@@ -303,7 +305,7 @@ export function RoomList({
                         })),
                     );
                 } catch (error) {
-                    setSearchError(error instanceof Error ? error.message : "Search failed");
+                    setSearchError(error instanceof Error ? error.message : t("roomList.errors.searchFailed"));
                     setSearchResults([]);
                 } finally {
                     setSearchBusy(false);
@@ -317,12 +319,12 @@ export function RoomList({
     useEffect(() => {
         if (!isStaffSearch) return;
         if (!searchToken) {
-            setSearchError("Search requires access token.");
+            setSearchError(t("roomList.errors.searchRequiresToken"));
             setSearchResults([]);
             return;
         }
         if (!searchHsUrl) {
-            setSearchError("Missing homeserver URL.");
+            setSearchError(t("roomList.errors.missingHomeserver"));
             setSearchResults([]);
             return;
         }
@@ -342,7 +344,7 @@ export function RoomList({
                         const matrixUserId = buildMatrixUserId(localpart, STAFF_CUSTOMER_DOMAIN);
                         if (!matrixUserId) {
                             setSearchResults([]);
-                            setSearchError("Invalid user id.");
+                            setSearchError(t("roomList.errors.invalidUserId"));
                             return;
                         }
                         const results = await searchStaffDirectoryCustomers(matrixUserId, searchHsUrl, searchToken);
@@ -387,7 +389,7 @@ export function RoomList({
                         })),
                     );
                 } catch (error) {
-                    setSearchError(error instanceof Error ? error.message : "Search failed");
+                    setSearchError(error instanceof Error ? error.message : t("roomList.errors.searchFailed"));
                     setSearchResults([]);
                 } finally {
                     setSearchBusy(false);
@@ -509,7 +511,7 @@ export function RoomList({
     const onRequestContact = async (targetId: string, targetMatrixUserId: string | null, initialMessage: string): Promise<void> => {
         if (!searchToken || !client || !targetMatrixUserId) return;
         if (!initialMessage.trim()) {
-            setSearchError("請輸入打招呼消息");
+            setSearchError(t("roomList.errors.greetingRequired"));
             return;
         }
         try {
@@ -531,7 +533,7 @@ export function RoomList({
             setStaffCompanyDomain("");
             setStaffPersonId("");
         } catch (error) {
-            setSearchError(error instanceof Error ? error.message : "Request failed");
+            setSearchError(error instanceof Error ? error.message : t("roomList.errors.requestFailed"));
         }
     };
 
@@ -623,7 +625,7 @@ export function RoomList({
                 }
             }
         } catch (error) {
-            setSearchError(error instanceof Error ? error.message : "Accept failed");
+            setSearchError(error instanceof Error ? error.message : t("roomList.errors.acceptFailed"));
         }
     };
 
@@ -634,7 +636,7 @@ export function RoomList({
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
             await refreshContacts();
         } catch (error) {
-            setSearchError(error instanceof Error ? error.message : "Reject failed");
+            setSearchError(error instanceof Error ? error.message : t("roomList.errors.rejectFailed"));
         }
     };
 
@@ -706,14 +708,14 @@ export function RoomList({
         <div className="flex-1 overflow-y-auto">
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                 <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    {view === "contacts" ? "Contacts" : "Direct Messages"}
+                    {view === "contacts" ? t("roomList.sections.contacts") : t("roomList.sections.directMessages")}
                 </span>
                 {view === "contacts" ? (
                     <button
                         type="button"
                         onClick={() => setShowSearchModal(true)}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-100"
-                        aria-label="Add contact"
+                        aria-label={t("roomList.actions.addContact")}
                     >
                         <PlusIcon className="h-5 w-5" />
                     </button>
@@ -721,9 +723,7 @@ export function RoomList({
             </div>
             {view === "chat" ? (
                 visibleRooms.length === 0 ? (
-                    <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
-                        No direct chats yet.
-                    </div>
+                    <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.directChats")}</div>
                 ) : (
                     visibleRooms.map((entry) => (
                         <div
@@ -763,7 +763,7 @@ export function RoomList({
                                 onClick={() => void onHideRoom(entry)}
                                 className="text-xs text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
                             >
-                                Hide
+                                {t("roomList.actions.hide")}
                             </button>
                         </div>
                     ))
@@ -773,7 +773,7 @@ export function RoomList({
                     {incomingRequests.length > 0 && (
                         <div className="mb-4">
                             <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
-                                Requests
+                                {t("roomList.sections.requests")}
                             </div>
                             <div className="space-y-2">
                                 {incomingRequests.map((item) => (
@@ -808,16 +808,12 @@ export function RoomList({
                                                     )
                                                 }
                                                 className="text-xs text-emerald-500 hover:text-emerald-400"
-                                            >
-                                                Accept
-                                            </button>
+                                            >{t("roomList.actions.accept")}</button>
                                             <button
                                                 type="button"
                                                 onClick={() => void onRejectRequest(item.requesterId)}
                                                 className="text-xs text-rose-400 hover:text-rose-300"
-                                            >
-                                                Reject
-                                            </button>
+                                            >{t("roomList.actions.reject")}</button>
                                         </div>
                                     </div>
                                 ))}
@@ -825,7 +821,7 @@ export function RoomList({
                         </div>
                     )}
                     {contacts.length === 0 ? (
-                        <div className="text-sm text-slate-500 dark:text-slate-400">No contacts yet.</div>
+                        <div className="text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.contacts")}</div>
                     ) : (
                         <div className="space-y-2">
                             <div className="flex items-center gap-2">
@@ -836,9 +832,7 @@ export function RoomList({
                                         ? "border-emerald-400 text-emerald-600"
                                         : "border-gray-200 text-slate-500"
                                         }`}
-                                >
-                                    By company
-                                </button>
+                                >{t("roomList.sorting.byCompany")}</button>
                                 <button
                                     type="button"
                                     onClick={() => setContactSort("name")}
@@ -846,9 +840,7 @@ export function RoomList({
                                         ? "border-emerald-400 text-emerald-600"
                                         : "border-gray-200 text-slate-500"
                                         }`}
-                                >
-                                    By name
-                                </button>
+                                >{t("roomList.sorting.byName")}</button>
                             </div>
                             {sortedContacts.map((contact) => (
                                 <button
@@ -888,9 +880,7 @@ export function RoomList({
                     <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
-                                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                                    Start a chat
-                                </h3>
+                                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{t("roomList.search.startChat")}</h3>
                                 {isStaffSearch && (
                                     <div className="flex items-center rounded-full border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
                                         <button
@@ -900,9 +890,7 @@ export function RoomList({
                                                 ? "bg-emerald-500 text-white"
                                                 : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                                                 }`}
-                                        >
-                                            Customer
-                                        </button>
+                                        >{t("roomList.search.customer")}</button>
                                         <button
                                             type="button"
                                             onClick={() => setStaffSearchMode("staff")}
@@ -910,9 +898,7 @@ export function RoomList({
                                                 ? "bg-emerald-500 text-white"
                                                 : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                                                 }`}
-                                        >
-                                            Company staff
-                                        </button>
+                                        >{t("roomList.search.companyStaff")}</button>
                                     </div>
                                 )}
                             </div>
@@ -926,7 +912,7 @@ export function RoomList({
                                     setStaffPersonId("");
                                 }}
                                 className="rounded-full p-1 text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
-                                aria-label="Close"
+                                aria-label={t("common.close")}
                             >
                                 <XMarkIcon className="h-5 w-5" />
                             </button>
@@ -937,7 +923,7 @@ export function RoomList({
                                     type="text"
                                     value={staffCustomerId}
                                     onChange={(event) => setStaffCustomerId(event.target.value)}
-                                    placeholder="Customer ID"
+                                    placeholder={t("roomList.search.customerIdPlaceholder")}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                 />
                             ) : (
@@ -946,14 +932,14 @@ export function RoomList({
                                         type="text"
                                         value={staffCompanyDomain}
                                         onChange={(event) => setStaffCompanyDomain(event.target.value)}
-                                        placeholder="Company domain (e.g. hululucky.com)"
+                                        placeholder={t("roomList.search.companyDomainPlaceholder")}
                                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                     />
                                     <input
                                         type="text"
                                         value={staffPersonId}
                                         onChange={(event) => setStaffPersonId(event.target.value)}
-                                        placeholder="Staff ID"
+                                        placeholder={t("roomList.search.staffIdPlaceholder")}
                                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                     />
                                 </div>
@@ -963,15 +949,13 @@ export function RoomList({
                                 type="text"
                                 value={query}
                                 onChange={(event) => setQuery(event.target.value)}
-                                placeholder="Search user..."
+                                placeholder={t("roomList.search.userPlaceholder")}
                                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                             />
                         )}
                         {incomingRequests.length > 0 && (
                             <div className="mt-4">
-                                <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
-                                    Requests
-                                </div>
+                                <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">{t("roomList.sections.requests")}</div>
                                 <div className="space-y-2">
                                     {incomingRequests.map((item) => (
                                         <div
@@ -1005,16 +989,12 @@ export function RoomList({
                                                         )
                                                     }
                                                     className="text-xs text-emerald-500 hover:text-emerald-400"
-                                                >
-                                                    Accept
-                                                </button>
+                                                >{t("roomList.actions.accept")}</button>
                                                 <button
                                                     type="button"
                                                     onClick={() => void onRejectRequest(item.requesterId)}
                                                     className="text-xs text-rose-400 hover:text-rose-300"
-                                                >
-                                                    Reject
-                                                </button>
+                                                >{t("roomList.actions.reject")}</button>
                                             </div>
                                         </div>
                                     ))}
@@ -1022,7 +1002,7 @@ export function RoomList({
                             </div>
                         )}
                         {searchBusy && (
-                            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">Searching...</div>
+                            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">{t("roomList.search.searching")}</div>
                         )}
                         {searchError && <div className="mt-3 text-xs text-rose-500">{searchError}</div>}
                         <div className="mt-4 max-h-72 overflow-y-auto">
@@ -1031,7 +1011,7 @@ export function RoomList({
                                 <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg border border-emerald-200 dark:border-emerald-700">
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                                            發送好友請求給：{selectedSearchItem.displayName || selectedSearchItem.id}
+                                            {t("roomList.search.sendRequestTo")}{selectedSearchItem.displayName || selectedSearchItem.id}
                                         </span>
                                         <button
                                             type="button"
@@ -1041,12 +1021,10 @@ export function RoomList({
                                                 setSearchError(null);
                                             }}
                                             className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400"
-                                        >
-                                            取消
-                                        </button>
+                                        >{t("common.cancel")}</button>
                                     </div>
                                     <textarea
-                                        placeholder="請輸入打招呼消息（必填）..."
+                                        placeholder={t("roomList.search.greetingPlaceholder")}
                                         value={initialMessage}
                                         onChange={(e) => setInitialMessage(e.target.value)}
                                         className="w-full px-2 py-1 text-sm rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -1069,9 +1047,7 @@ export function RoomList({
                                             ? "bg-emerald-500 text-white hover:bg-emerald-600"
                                             : "bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-600"
                                             }`}
-                                    >
-                                        發送請求
-                                    </button>
+                                    >{t("roomList.search.sendRequest")}</button>
                                 </div>
                             )}
                             {searchResults.length === 0 &&
@@ -1080,7 +1056,7 @@ export function RoomList({
                                         ? Boolean(staffCustomerId.trim())
                                         : Boolean(staffCompanyDomain.trim() && staffPersonId.trim())
                                     : Boolean(query.trim())) ? (
-                                <div className="text-sm text-slate-500 dark:text-slate-400">No results.</div>
+                                <div className="text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.results")}</div>
                             ) : (
                                 searchResults.map((item) => (
                                     <button
@@ -1113,7 +1089,7 @@ export function RoomList({
                                             </div>
                                         </div>
                                         <span className="text-lg font-semibold text-emerald-500">
-                                            {requestedIds.has(item.id) || acceptedIds.has(item.id) ? "已邀請" : "+"}
+                                            {requestedIds.has(item.id) || acceptedIds.has(item.id) ? t("roomList.search.invited") : "+"}
                                         </span>
                                     </button>
                                 ))

@@ -5,6 +5,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
+import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
@@ -50,6 +51,7 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount }: NavBarItemProps
 );
 
 export const MainLayout: React.FC = () => {
+    const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings" | "account">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
@@ -86,12 +88,13 @@ export const MainLayout: React.FC = () => {
     const accountSubtitleParts = [meProfile?.display_name, meProfile?.company_name].filter(
         (value): value is string => Boolean(value),
     );
-    const accountSubtitle = accountSubtitleParts.length ? accountSubtitleParts.join(" · ") : "Account";
+    const accountSubtitle = accountSubtitleParts.length
+        ? accountSubtitleParts.join(" · ")
+        : t("layout.accountSubtitleFallback");
     const displayLangOptions = [
-        { value: "en", label: "English" },
-        { value: "zh-CN", label: "简体中文" },
+        { value: "en", label: t("language.english") },
+        { value: "zh-CN", label: t("language.chineseSimplified") },
     ];
-    const text = (en: string, zh: string): string => (displayLanguage === "en" ? en : zh);
     const localeTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : matrixAccessToken;
     const meUpdateOptions =
@@ -256,25 +259,25 @@ export const MainLayout: React.FC = () => {
     };
 
     const getContactLabel = (contact: ContactSummary | null): string => {
-        if (!contact) return "Contact";
+        if (!contact) return t("layout.contactFallback");
         const localpart = contact.userLocalId || getLocalPart(contact.matrixUserId);
         if (localpart && contact.displayName && contact.displayName !== localpart) {
             return `${localpart} (${contact.displayName})`;
         }
-        return localpart || contact.displayName || "Contact";
+        return localpart || contact.displayName || t("layout.contactFallback");
     };
 
     const getGenderLabel = (value: string | null): string => {
-        if (!value) return "—";
-        if (value === "male") return "Male";
-        if (value === "female") return "Female";
+        if (!value) return t("common.placeholder");
+        if (value === "male") return t("profile.gender.male");
+        if (value === "female") return t("profile.gender.female");
         return value;
     };
 
     const getLanguageLabel = (contact: ContactSummary | null): string => {
-        if (!contact) return "—";
+        if (!contact) return t("common.placeholder");
         const locale = contact.translationLocale || contact.locale;
-        if (!locale) return "—";
+        if (!locale) return t("common.placeholder");
         const match = translationLanguageOptions.find((option) => option.value === locale);
         return match?.label ?? locale;
     };
@@ -336,7 +339,7 @@ export const MainLayout: React.FC = () => {
                         type="button"
                         onClick={() => setShowAccountMenu((prev) => !prev)}
                         className="w-10 h-10 bg-[#2F5C56] rounded-xl flex items-center justify-center text-white font-bold text-sm"
-                        aria-label="Account menu"
+                        aria-label={t("layout.accountMenu")}
                     >
                         {accountInitial}
                     </button>
@@ -353,14 +356,14 @@ export const MainLayout: React.FC = () => {
                                 }}
                                 className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                賬號設定
+                                {t("layout.accountSettings")}
                             </button>
                             <button
                                 type="button"
                                 onClick={onLogout}
                                 className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
                             >
-                                Logout
+                                {t("layout.logout")}
                             </button>
                         </div>
                     )}
@@ -396,7 +399,7 @@ export const MainLayout: React.FC = () => {
                                 ? "text-[#2F5C56] bg-gray-800"
                                 : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                         }`}
-                        aria-label="Open settings"
+                        aria-label={t("layout.openSettings")}
                     >
                         <Cog6ToothIcon className="w-7 h-7" />
                     </button>
@@ -413,7 +416,7 @@ export const MainLayout: React.FC = () => {
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                             <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {text("Settings", "設定")}
+                                {t("layout.settings")}
                             </div>
                         </div>
                         <div className="p-4 space-y-3">
@@ -424,14 +427,14 @@ export const MainLayout: React.FC = () => {
                                 }}
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                {text("Tickets", "工單")}
+                                {t("layout.tickets")}
                             </button>
                             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
                                 <div className="flex items-center justify-between">
                                     <div className="text-sm text-slate-700 dark:text-slate-100">
-                                        {text("Appearance", "外觀")}
+                                        {t("layout.appearance")}
                                         <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                                            {themeMode === "dark" ? text("Dark", "深色") : text("Light", "淺色")}
+                                            {themeMode === "dark" ? t("layout.dark") : t("layout.light")}
                                         </span>
                                     </div>
                                     <div className="flex items-center rounded-full border border-gray-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -443,7 +446,7 @@ export const MainLayout: React.FC = () => {
                                                     ? "bg-emerald-500 text-white"
                                                     : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
                                             }`}
-                                            aria-label="Light mode"
+                                            aria-label={t("layout.light")}
                                         >
                                             <span aria-hidden="true">☀</span>
                                         </button>
@@ -455,7 +458,7 @@ export const MainLayout: React.FC = () => {
                                                     ? "bg-emerald-500 text-white"
                                                     : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
                                             }`}
-                                            aria-label="Dark mode"
+                                            aria-label={t("layout.dark")}
                                         >
                                             <span aria-hidden="true">🌙</span>
                                         </button>
@@ -464,7 +467,7 @@ export const MainLayout: React.FC = () => {
                             </div>
                             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
                                 <div className="text-sm text-slate-700 dark:text-slate-100 mb-2">
-                                    {text("Display language", "顯示語言")}
+                                    {t("layout.displayLanguage")}
                                 </div>
                                 <select
                                     value={displayLanguage}
@@ -487,7 +490,7 @@ export const MainLayout: React.FC = () => {
                                 }}
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                {text("Chat receive language", "聊天接收語言")}
+                                {t("layout.chatReceiveLanguage")}
                             </button>
                         </div>
                     </>
@@ -495,25 +498,25 @@ export const MainLayout: React.FC = () => {
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                             <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {text("Account settings", "賬號設定")}
+                                {t("layout.accountSettings")}
                             </div>
                         </div>
                         <div className="p-4 space-y-3">
                             <label className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800">
-                                {text("Upload avatar", "上傳頭像")}
+                                {t("layout.uploadAvatar")}
                                 <input type="file" accept="image/*" className="hidden" />
                             </label>
                             <button
                                 type="button"
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                {text("Change password", "修改密碼")}
+                                {t("layout.changePassword")}
                             </button>
                             <button
                                 type="button"
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                {text("Change name", "修改名稱（姓名）")}
+                                {t("layout.changeName")}
                             </button>
                         </div>
                     </>
@@ -550,7 +553,7 @@ export const MainLayout: React.FC = () => {
                                 </svg>
                                 <input
                                     type="text"
-                                    placeholder="Search"
+                                    placeholder={t("layout.searchPlaceholder")}
                                     className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
                                 />
                             </div>
@@ -600,7 +603,7 @@ export const MainLayout: React.FC = () => {
                                             type="button"
                                             onClick={() => setMobileView("list")}
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label="Back to list"
+                                            aria-label={t("layout.backToList")}
                                         >
                                             &lt;
                                         </button>
@@ -612,7 +615,7 @@ export const MainLayout: React.FC = () => {
                                                 {getContactLabel(activeContact)}
                                             </div>
                                             <div className="text-sm text-slate-500 dark:text-slate-400">
-                                                {activeContact.companyName || "—"}
+                                                {activeContact.companyName || t("common.placeholder")}
                                             </div>
                                         </div>
                                     </div>
@@ -622,7 +625,7 @@ export const MainLayout: React.FC = () => {
                                             type="button"
                                             onClick={() => setShowContactMenu((prev) => !prev)}
                                             className="h-10 w-10 rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                            aria-label="Contact actions"
+                                            aria-label={t("layout.contactActions")}
                                         >
                                             ...
                                         </button>
@@ -636,7 +639,7 @@ export const MainLayout: React.FC = () => {
                                                     onClick={() => void onRemoveActiveContact()}
                                                     className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
                                                 >
-                                                    刪除好友
+                                                    {t("layout.removeContact")}
                                                 </button>
                                             </div>
                                         )}
@@ -647,23 +650,23 @@ export const MainLayout: React.FC = () => {
                                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                         <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                                             <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                ID
+                                                {t("layout.details.id")}
                                             </div>
                                             <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {activeContact.userLocalId || getLocalPart(activeContact.matrixUserId) || "—"}
+                                                {activeContact.userLocalId || getLocalPart(activeContact.matrixUserId) || t("common.placeholder")}
                                             </div>
                                         </div>
                                         <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                                             <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                Name
+                                                {t("layout.details.name")}
                                             </div>
                                             <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {activeContact.displayName || "—"}
+                                                {activeContact.displayName || t("common.placeholder")}
                                             </div>
                                         </div>
                                         <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                                             <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                Gender
+                                                {t("layout.details.gender")}
                                             </div>
                                             <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                                                 {getGenderLabel(activeContact.gender)}
@@ -671,15 +674,15 @@ export const MainLayout: React.FC = () => {
                                         </div>
                                         <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                                             <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                Country
+                                                {t("layout.details.country")}
                                             </div>
                                             <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {activeContact.country || "—"}
+                                                {activeContact.country || t("common.placeholder")}
                                             </div>
                                         </div>
                                         <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                                             <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                Language
+                                                {t("layout.details.language")}
                                             </div>
                                             <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                                                 {getLanguageLabel(activeContact)}
@@ -693,13 +696,13 @@ export const MainLayout: React.FC = () => {
                                         onClick={() => void onStartContactChat()}
                                         className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
                                     >
-                                        Chat
+                                        {t("layout.chatAction")}
                                     </button>
                                 </div>
                             </div>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                                Select a contact to view details.
+                                {t("layout.selectContact")}
                             </div>
                         )}
                     </div>
@@ -708,7 +711,7 @@ export const MainLayout: React.FC = () => {
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (
                             <>
                                 <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    {text("Select an item to view details.", "請從左側選擇項目")}
+                                    {t("layout.selectItem")}
                                 </div>
                                 <div className="px-6">
                                     <div className="flex items-center gap-3 mb-4">
@@ -716,12 +719,12 @@ export const MainLayout: React.FC = () => {
                                             type="button"
                                             onClick={() => setMobileView("list")}
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label="Back to list"
+                                            aria-label={t("layout.backToList")}
                                         >
                                             &lt;
                                         </button>
                                         <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            {text("Chat receive language", "聊天接收語言")}
+                                            {t("layout.chatReceiveLanguage")}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -752,13 +755,13 @@ export const MainLayout: React.FC = () => {
                                         }
                                         className="w-full rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
                                     >
-                                        {text("Confirm", "確認")}
+                                        {t("common.confirm")}
                                     </button>
                                 </div>
                             </>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                                {text("Select an item to view details.", "請從左側選擇項目")}
+                                {t("layout.selectItem")}
                             </div>
                         )}
                     </div>

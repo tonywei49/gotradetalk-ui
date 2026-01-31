@@ -71,14 +71,14 @@
             "companyNamePlaceholder": "公司名称",
             "countryLabel": "国家",
             "countryPlaceholder": "国家",
-            "jobTitleLabel": "公司职位",
-            "jobTitlePlaceholder": "公司职位",
+            "jobTitleLabel": "职位",
+            "jobTitlePlaceholder": "职位",
             "genderLabel": "性别",
-            "genderUnknown": "不填写",
+            "genderUnknown": "未指定",
             "genderMale": "男",
             "genderFemale": "女",
-            "translationLocaleLabel": "聊天语种",
-            "translationLocalePlaceholder": "请选择语种",
+            "translationLocaleLabel": "聊天语言",
+            "translationLocalePlaceholder": "请选择语言",
             "languageLabel": "界面语言",
             "currentPasswordLabel": "当前密码",
             "newPasswordLabel": "新密码",
@@ -94,14 +94,14 @@
             "missingRegisterLanguage": "请选择语言。",
             "missingResetEmail": "请输入邮箱。",
             "missingCountry": "请输入国家。",
-            "missingTranslationLocale": "请选择聊天语种。",
+            "missingTranslationLocale": "请选择聊天语言。",
             "missingSupabaseSession": "Supabase 会话不可用。",
             "invalidCompanySlug": "公司标识格式不正确。",
-        "invalidCompanyTld": "顶级域名格式不正确。",
-        "invalidUserLocalId": "用户 ID 格式不正确。",
-        "missingCompanyName": "请输入公司名称。",
-        "invalidCredentials": "账号或密码错误。",
-        "emptyPassword": "请输入当前密码和新密码。",
+            "invalidCompanyTld": "顶级域名格式不正确。",
+            "invalidUserLocalId": "用户 ID 格式不正确。",
+            "missingCompanyName": "请输入公司名称。",
+            "invalidCredentials": "账号或密码错误。",
+            "emptyPassword": "请输入当前密码和新密码。",
             "passwordMismatch": "两次输入的密码不一致。",
             "passwordWeak": "密码至少 10 位且包含字母和数字。"
         }
@@ -109,7 +109,7 @@
     "oauth": {
         "title": "Google 账号设置",
         "subtitle": "设置密码以完成账号创建。",
-        "loginSubtitle": "请输入密码以继续。",
+        "loginSubtitle": "请输入密码继续。",
         "confirm": "确认",
         "cancel": "取消",
         "busy": "创建中...",
@@ -123,7 +123,7 @@
         "subtitle": "仅影响界面文字显示。",
         "save": "保存",
         "saving": "保存中...",
-        "required": "请选择一个语言。"
+        "required": "请选择一种语言。"
     },
     "main": {
         "sidebar": {
@@ -144,5 +144,109 @@
             "placeholder": "输入消息...",
             "send": "发送"
         }
+    },
+    "common": {
+        "placeholder": "—",
+        "unknown": "未知",
+        "online": "在线",
+        "loading": "加载中...",
+        "confirm": "确认",
+        "cancel": "取消",
+        "search": "搜索",
+        "close": "关闭"
+    },
+    "layout": {
+        "accountMenu": "账号菜单",
+        "accountSettings": "账号设置",
+        "logout": "退出登录",
+        "settings": "设置",
+        "tickets": "工单",
+        "appearance": "外观",
+        "dark": "深色",
+        "light": "浅色",
+        "displayLanguage": "显示语言",
+        "chatReceiveLanguage": "聊天接收语言",
+        "uploadAvatar": "上传头像",
+        "changePassword": "修改密码",
+        "changeName": "修改名称（姓名）",
+        "searchPlaceholder": "搜索",
+        "selectItem": "请选择左侧项目查看详情。",
+        "selectContact": "请选择联系人查看详情。",
+        "contactActions": "联系人操作",
+        "removeContact": "删除好友",
+        "backToList": "返回列表",
+        "openSettings": "打开设置",
+        "accountSubtitleFallback": "账号",
+        "contactFallback": "联系人",
+        "chatAction": "聊天",
+        "details": {
+            "id": "ID",
+            "name": "姓名",
+            "gender": "性别",
+            "country": "国家",
+            "language": "语言"
+        }
+    },
+    "profile": {
+        "gender": {
+            "male": "男",
+            "female": "女",
+            "unknown": "未指定"
+        }
+    },
+    "roomList": {
+        "sections": {
+            "contacts": "联系人",
+            "directMessages": "私聊",
+            "requests": "请求"
+        },
+        "actions": {
+            "addContact": "添加好友",
+            "accept": "接受",
+            "reject": "拒绝",
+            "hide": "隐藏"
+        },
+        "empty": {
+            "directChats": "暂无私聊。",
+            "contacts": "暂无联系人。",
+            "results": "暂无结果。"
+        },
+        "sorting": {
+            "byCompany": "按公司",
+            "byName": "按名称"
+        },
+        "search": {
+            "startChat": "发起聊天",
+            "customer": "客户",
+            "companyStaff": "公司员工",
+            "customerIdPlaceholder": "客户ID",
+            "companyDomainPlaceholder": "公司域名（例如 hululucky.com）",
+            "staffIdPlaceholder": "员工ID",
+            "userPlaceholder": "搜索用户...",
+            "searching": "搜索中...",
+            "sendRequestTo": "发送好友请求给：",
+            "greetingPlaceholder": "请输入打招呼消息（必填）...",
+            "sendRequest": "发送请求",
+            "invited": "已邀请"
+        },
+        "errors": {
+            "searchRequiresToken": "搜索需要访问令牌。",
+            "searchFailed": "搜索失败。",
+            "missingHomeserver": "缺少 homeserver URL。",
+            "invalidUserId": "用户 ID 无效。",
+            "greetingRequired": "请输入打招呼消息。",
+            "requestFailed": "请求失败。",
+            "acceptFailed": "接受失败。",
+            "rejectFailed": "拒绝失败。"
+        }
+    },
+    "chat": {
+        "failed": "发送失败",
+        "resend": "重发",
+        "loading": "加载聊天中...",
+        "placeholder": "输入消息...",
+        "scrollToBottom": "回到底部",
+        "imageAlt": "图片",
+        "headerFallback": "聊天"
     }
 }

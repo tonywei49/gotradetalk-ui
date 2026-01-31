@@ -12,6 +12,7 @@ import {
 import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
 import { EventStatus, EventType, MsgType } from "matrix-js-sdk";
+import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../../stores/AuthStore";
 import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
 
@@ -25,6 +26,7 @@ type MessageBubbleProps = {
 };
 
 const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }: MessageBubbleProps) => {
+    const { t } = useTranslation();
     const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
     const messageText = content?.body ?? "";
     const isSending =
@@ -47,7 +49,7 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
                     {/* Read Status & Time (Outgoing: Left of bubble) */}
                     {isMe && (
                         <div className="flex flex-col items-end justify-end text-[9px] text-gray-400 min-w-[56px] mb-1">
-                            {isFailed && <span className="text-rose-500 font-medium">Failed</span>}
+                            {isFailed && <span className="text-rose-500 font-medium">{t("chat.failed")}</span>}
                             <span className="text-gray-400 dark:text-slate-500">{timeLabel}</span>
                         </div>
                     )}
@@ -63,7 +65,7 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
             `}
                     >
                         {content?.msgtype === MsgType.Image && mediaUrl ? (
-                            <img src={mediaUrl} alt={messageText || "image"} className="max-w-[280px] rounded-lg" />
+                            <img src={mediaUrl} alt={messageText || t("chat.imageAlt")} className="max-w-[280px] rounded-lg" />
                         ) : (
                             messageText
                         )}
@@ -80,7 +82,7 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
                         className="mt-2 text-[11px] text-rose-500 hover:text-rose-400"
                         onClick={() => onResend(event)}
                     >
-                        Resend
+                        {t("chat.resend")}
                     </button>
                 )}
             </div>
@@ -94,6 +96,7 @@ type ChatRoomContext = {
 };
 
 export const ChatRoom: React.FC = () => {
+    const { t } = useTranslation();
     const { activeRoomId, onMobileBack } = useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const userId = useAuthStore((state) => state.matrixCredentials?.user_id ?? null);
@@ -112,7 +115,7 @@ export const ChatRoom: React.FC = () => {
         if (localpart && displayName && displayName !== localpart) {
             return `${localpart} (${displayName})`;
         }
-        return localpart || displayName || userId || "Unknown";
+        return localpart || displayName || userId || t("common.unknown");
     };
 
     const mergedEvents = useMemo(() => {
@@ -171,7 +174,7 @@ export const ChatRoom: React.FC = () => {
     if (!room) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                Loading chat...
+                {t("chat.loading")}
             </div>
         );
     }
@@ -229,7 +232,7 @@ export const ChatRoom: React.FC = () => {
     const otherMember = room
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
-    const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room.name || "Chat";
+    const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room.name || t("chat.headerFallback");
 
     return (
         <div className="flex flex-col h-full w-full min-h-0">
@@ -241,17 +244,17 @@ export const ChatRoom: React.FC = () => {
                             type="button"
                             onClick={onMobileBack}
                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                            aria-label="Back to list"
+                            aria-label={t("layout.backToList")}
                         >
                             <ChevronLeftIcon className="h-5 w-5" />
                         </button>
                     )}
                     <div className="flex flex-col">
-                    <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{headerName}</h2>
-                    <span className="text-xs text-green-600 flex items-center gap-1 dark:text-emerald-400">
-                        <span className="w-2 h-2 bg-green-500 rounded-full dark:bg-emerald-400"></span>
-                        Online
-                    </span>
+                        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{headerName}</h2>
+                        <span className="text-xs text-green-600 flex items-center gap-1 dark:text-emerald-400">
+                            <span className="w-2 h-2 bg-green-500 rounded-full dark:bg-emerald-400"></span>
+                            {t("common.online")}
+                        </span>
                     </div>
                 </div>
 
@@ -276,7 +279,7 @@ export const ChatRoom: React.FC = () => {
             >
                 {scrollLoading && (
                     <div className="text-center text-xs text-slate-400 dark:text-slate-500 mb-4">
-                        Loading...
+                        {t("common.loading")}
                     </div>
                 )}
                 {mergedEvents.map((event) => {
@@ -310,7 +313,7 @@ export const ChatRoom: React.FC = () => {
                     type="button"
                     onClick={scrollToBottom}
                     className="absolute bottom-32 right-8 w-10 h-10 bg-white dark:bg-slate-800 rounded-full shadow-lg border border-gray-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors z-20"
-                    aria-label="Scroll to bottom"
+                    aria-label={t("chat.scrollToBottom")}
                 >
                     <ChevronDownIcon className="w-5 h-5" />
                 </button>
@@ -343,7 +346,7 @@ export const ChatRoom: React.FC = () => {
                             }
                         }}
                         className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none h-12 max-h-32 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400"
-                        placeholder="Type a message..."
+                        placeholder={t("chat.placeholder")}
                         rows={1}
                     />
                     <button
