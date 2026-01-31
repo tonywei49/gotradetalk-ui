@@ -317,7 +317,7 @@ export const ChatRoom: React.FC = () => {
     }, [activeRoomId]); // 只在切換房間時觸發
 
     const onScroll = async (): Promise<void> => {
-        if (!matrixClient || scrollLoading) return;
+        if (!matrixClient || scrollLoading || !room) return;
         const container = timelineRef.current;
         if (!container) return;
 
@@ -369,7 +369,7 @@ export const ChatRoom: React.FC = () => {
     const otherMember = room
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
-    const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room.name || t("chat.headerFallback");
+    const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room?.name || t("chat.headerFallback");
     const groupName = room?.name || t("chat.groupNameFallback");
     const memberEntries = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;
