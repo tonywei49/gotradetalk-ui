@@ -199,7 +199,8 @@
         "sections": {
             "contacts": "Contacts",
             "directMessages": "Direct Messages",
-            "requests": "Requests"
+            "requests": "Requests",
+            "groupChats": "Group Chats"
         },
         "actions": {
             "addContact": "Add contact",

@@ -308,11 +308,19 @@ export function RoomList({
     }, [client, refresh, activeRoomId]);
 
     useEffect(() => {
-        if (!rooms.length) return;
-        if (!activeRoomId || !rooms.some((room) => room.roomId === activeRoomId)) {
-            onSelectRoom(rooms[0].roomId);
+        if (!rooms.length && !groupRooms.length) return;
+        const hasActive =
+            Boolean(activeRoomId) &&
+            (rooms.some((room) => room.roomId === activeRoomId) ||
+                groupRooms.some((room) => room.roomId === activeRoomId));
+        if (!hasActive) {
+            if (rooms.length > 0) {
+                onSelectRoom(rooms[0].roomId);
+            } else if (groupRooms.length > 0) {
+                onSelectRoom(groupRooms[0].roomId);
+            }
         }
-    }, [rooms, activeRoomId, onSelectRoom]);
+    }, [rooms, groupRooms, activeRoomId, onSelectRoom]);
 
     // 計算總未讀數並通知父組件
     useEffect(() => {
@@ -904,7 +912,7 @@ export function RoomList({
                             <>
                                 <div className="px-4 py-2 mt-2 border-t border-gray-100 dark:border-slate-800">
                                     <span className="text-xs uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-400">
-                                        {t("roomList.sections.groupChats", "Group Chats")} ({groupRooms.length})
+                                        {t("roomList.sections.groupChats")} ({groupRooms.length})
                                     </span>
                                 </div>
                                 {groupRooms.map((group) => (

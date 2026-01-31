@@ -199,7 +199,8 @@
         "sections": {
             "contacts": "联系人",
             "directMessages": "私聊",
-            "requests": "请求"
+            "requests": "请求",
+            "groupChats": "群聊"
         },
         "actions": {
             "addContact": "添加好友",
