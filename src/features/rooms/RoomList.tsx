@@ -910,7 +910,7 @@ export function RoomList({
                                 {groupRooms.map((group) => (
                                     <div
                                         key={group.roomId}
-                                        className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${group.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                                        className={`w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${group.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
                                             }`}
                                     >
                                         <button
