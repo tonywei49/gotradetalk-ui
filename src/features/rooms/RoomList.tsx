@@ -134,6 +134,54 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
     return Array.from(byUser.values()).sort((a, b) => b.lastActive - a.lastActive);
 }
 
+/**
+ * 群組房間類型 - 獨立於私聊邏輯
+ */
+type GroupRoomEntry = {
+    roomId: string;
+    room: Room;
+    name: string;
+    lastMessage: string;
+    lastActive: number;
+    unreadCount: number;
+    memberCount: number;
+    isGroup: true;
+};
+
+const EMPTY_GROUP_STATE: GroupRoomEntry[] = [];
+
+/**
+ * 構建群組房間列表 - 不影響私聊邏輯
+ */
+function buildGroupRooms(client: MatrixClient): GroupRoomEntry[] {
+    const directRoomIds = new Set<string>();
+    const accountData = client.getAccountData(EventType.Direct);
+    const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
+    Object.values(directContent).forEach((roomIds) => {
+        roomIds.forEach((roomId) => directRoomIds.add(roomId));
+    });
+
+    return client
+        .getRooms()
+        .filter((room) => {
+            if (room.getMyMembership() !== "join") return false;
+            if (directRoomIds.has(room.roomId)) return false;
+            if (room.isSpaceRoom()) return false;
+            return true;
+        })
+        .map((room) => ({
+            roomId: room.roomId,
+            room,
+            name: room.name || "Group",
+            lastMessage: getLastMessagePreview(room),
+            lastActive: room.getLastActiveTimestamp(),
+            unreadCount: room.getUnreadNotificationCount() ?? 0,
+            memberCount: room.getJoinedMemberCount() ?? 0,
+            isGroup: true as const,
+        }))
+        .sort((a, b) => b.lastActive - a.lastActive);
+}
+
 export function RoomList({
     client,
     hubAccessToken,
@@ -153,6 +201,7 @@ export function RoomList({
 }: RoomListProps) {
     const { t } = useTranslation();
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
+    const [groupRooms, setGroupRooms] = useState<GroupRoomEntry[]>(EMPTY_GROUP_STATE);
     const [query, setQuery] = useState("");
     const [staffSearchMode, setStaffSearchMode] = useState<"customer" | "staff">("customer");
     const [staffCustomerId, setStaffCustomerId] = useState("");
@@ -203,6 +252,7 @@ export function RoomList({
         if (!client) return null;
         return () => {
             setRooms(buildDirectRooms(client));
+            setGroupRooms(buildGroupRooms(client));
         };
     }, [client]);
 
@@ -848,6 +898,56 @@ export function RoomList({
                                 </button>
                             </div>
                         ))}
+
+                        {/* 群組房間 - 獨立於私聊列表 */}
+                        {groupRooms.length > 0 && (
+                            <>
+                                <div className="px-4 py-2 mt-2 border-t border-gray-100 dark:border-slate-800">
+                                    <span className="text-xs uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-400">
+                                        {t("roomList.sections.groupChats", "Group Chats")} ({groupRooms.length})
+                                    </span>
+                                </div>
+                                {groupRooms.map((group) => (
+                                    <div
+                                        key={group.roomId}
+                                        className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${group.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                                            }`}
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => onSelectRoom(group.roomId)}
+                                            className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                                        >
+                                            <div className="relative w-10 h-10 flex-shrink-0">
+                                                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                                    <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
+                                                        {group.name[0]?.toUpperCase() || "G"}
+                                                    </span>
+                                                </div>
+                                                {group.unreadCount > 0 && (
+                                                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                                                        {group.unreadCount > 99 ? "99+" : group.unreadCount}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                <div className="flex justify-between items-baseline">
+                                                    <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                                                        {group.name}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                                        {group.lastActive > 0 ? new Date(group.lastActive).toLocaleTimeString() : ""}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
+                                                    {group.lastMessage || " "}
+                                                </p>
+                                            </div>
+                                        </button>
+                                    </div>
+                                ))}
+                            </>
+                        )}
                     </>
                 )
             ) : (
