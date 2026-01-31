@@ -3,10 +3,7 @@ import { Outlet, useNavigate } from "react-router-dom";
 import {
     ChatBubbleLeftRightIcon,
     UserGroupIcon,
-    ClipboardDocumentListIcon,
     Cog6ToothIcon,
-    MoonIcon,
-    SunIcon,
 } from "@heroicons/react/24/outline";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -17,6 +14,7 @@ import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { translationLanguageOptions } from "../constants/translationLanguages";
+import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -74,6 +72,9 @@ export const MainLayout: React.FC = () => {
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const accountButtonRef = useRef<HTMLButtonElement | null>(null);
+    const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+    const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+    const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
     const [meProfile, setMeProfile] = useState<HubProfileSummary | null>(null);
     const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
     const accountId = meProfile?.user_local_id || fallbackAccountId;
@@ -145,6 +146,20 @@ export const MainLayout: React.FC = () => {
     }, [showAccountMenu]);
 
     useEffect(() => {
+        const onClickOutside = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (settingsMenuRef.current?.contains(target) || settingsButtonRef.current?.contains(target)) return;
+            setShowSettingsMenu(false);
+        };
+        if (showSettingsMenu) {
+            document.addEventListener("click", onClickOutside);
+        }
+        return () => {
+            document.removeEventListener("click", onClickOutside);
+        };
+    }, [showSettingsMenu]);
+
+    useEffect(() => {
         if (activeTab !== "contacts") {
             setActiveContact(null);
             setShowContactMenu(false);
@@ -165,6 +180,21 @@ export const MainLayout: React.FC = () => {
             document.removeEventListener("click", onClickOutside);
         };
     }, [showContactMenu]);
+
+    useEffect(() => {
+        if (!isNotificationSoundSupported()) return;
+        const unlock = (): void => {
+            ensureNotificationSoundEnabled();
+            window.removeEventListener("pointerdown", unlock);
+            window.removeEventListener("keydown", unlock);
+        };
+        window.addEventListener("pointerdown", unlock);
+        window.addEventListener("keydown", unlock);
+        return () => {
+            window.removeEventListener("pointerdown", unlock);
+            window.removeEventListener("keydown", unlock);
+        };
+    }, []);
 
     const onLogout = (): void => {
         clearSession();
@@ -302,37 +332,58 @@ export const MainLayout: React.FC = () => {
                         badgeCount={inviteBadgeCount}
                         onClick={() => setActiveTab("contacts")}
                     />
-                    <NavBarItem
-                        icon={ClipboardDocumentListIcon}
-                        active={activeTab === "orders"}
-                        onClick={() => setActiveTab("orders")}
-                    />
                 </div>
 
                 {/* Bottom Actions */}
                 <div className="hidden w-full flex-col gap-2 mb-4 lg:flex">
-                    <NavBarItem
-                        icon={Cog6ToothIcon}
-                        active={activeTab === "settings"}
-                        onClick={() => setActiveTab("settings")}
-                    />
-                    <button
-                        type="button"
-                        onClick={toggleMode}
-                        className="w-full h-12 flex items-center justify-center text-gray-400 hover:text-gray-200 transition-colors"
-                        aria-label="Toggle theme"
-                    >
-                        {themeMode === "dark" ? (
-                            <SunIcon className="w-6 h-6" />
-                        ) : (
-                            <MoonIcon className="w-6 h-6" />
+                    <div className="relative w-full flex items-center justify-center">
+                        <button
+                            ref={settingsButtonRef}
+                            type="button"
+                            onClick={() => setShowSettingsMenu((prev) => !prev)}
+                            className={`w-full h-16 flex items-center justify-center cursor-pointer transition-colors ${
+                                activeTab === "settings"
+                                    ? "text-[#2F5C56] bg-gray-800"
+                                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                            }`}
+                            aria-label="Open settings"
+                        >
+                            <Cog6ToothIcon className="w-7 h-7" />
+                        </button>
+                        {showSettingsMenu && (
+                            <div
+                                ref={settingsMenuRef}
+                                className="absolute bottom-16 left-1/2 z-30 w-48 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900"
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setActiveTab("orders");
+                                        setShowSettingsMenu(false);
+                                    }}
+                                    className="w-full px-2 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                    工單
+                                </button>
+                                <div className="mt-2 flex items-center justify-between px-2 py-2">
+                                    <div className="text-slate-700 dark:text-slate-100">深色模式</div>
+                                    <button
+                                        type="button"
+                                        onClick={toggleMode}
+                                        className={`relative h-6 w-11 rounded-full transition-colors ${
+                                            themeMode === "dark" ? "bg-emerald-500" : "bg-slate-300"
+                                        }`}
+                                        aria-label="Toggle theme"
+                                    >
+                                        <span
+                                            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                                                themeMode === "dark" ? "translate-x-5" : "translate-x-0.5"
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+                            </div>
                         )}
-                    </button>
-                    {/* Avatar Placeholder */}
-                    <div className="w-full flex justify-center mt-4">
-                        <div className="w-10 h-10 rounded-full bg-gray-700 border-2 border-gray-600 overflow-hidden">
-                            {/* <img src="..." /> */}
-                        </div>
                     </div>
                 </div>
             </nav>
