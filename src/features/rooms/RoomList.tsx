@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
@@ -682,7 +682,7 @@ export function RoomList({
         if (contactSort !== "company") {
             return sortedContacts.map((contact) => renderContactButton(contact));
         }
-        const rows: React.ReactNode[] = [];
+        const rows: ReactNode[] = [];
         let lastCompany: string | null = null;
         sortedContacts.forEach((contact, index) => {
             const company = contact.companyName || t("common.placeholder");
