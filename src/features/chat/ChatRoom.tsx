@@ -93,11 +93,14 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
 type ChatRoomContext = {
     activeRoomId: string | null;
     onMobileBack?: () => void;
+    onHideRoom?: () => void;
+    onTogglePin?: () => void;
+    isRoomPinned?: boolean;
 };
 
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
-    const { activeRoomId, onMobileBack } = useOutletContext<ChatRoomContext>();
+    const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned } = useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const userId = useAuthStore((state) => state.matrixCredentials?.user_id ?? null);
     const { events, room } = useRoomTimeline(matrixClient, activeRoomId, { limit: 200 });
@@ -105,6 +108,9 @@ export const ChatRoom: React.FC = () => {
     const [composerText, setComposerText] = useState("");
     const [scrollLoading, setScrollLoading] = useState(false);
     const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+    const [showActionsMenu, setShowActionsMenu] = useState(false);
+    const actionsMenuRef = useRef<HTMLDivElement | null>(null);
+    const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -117,6 +123,19 @@ export const ChatRoom: React.FC = () => {
         }
         return localpart || displayName || userId || t("common.unknown");
     };
+
+    useEffect(() => {
+        if (!showActionsMenu) return;
+        const handleClick = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (actionsMenuRef.current?.contains(target) || actionsButtonRef.current?.contains(target)) return;
+            setShowActionsMenu(false);
+        };
+        document.addEventListener("click", handleClick);
+        return () => {
+            document.removeEventListener("click", handleClick);
+        };
+    }, [showActionsMenu]);
 
     const mergedEvents = useMemo(() => {
         if (!room) return [];
@@ -265,9 +284,44 @@ export const ChatRoom: React.FC = () => {
                     <button className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800">
                         <LanguageIcon className="w-6 h-6" />
                     </button>
-                    <button className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800">
-                        <EllipsisVerticalIcon className="w-6 h-6" />
-                    </button>
+                    <div className="relative">
+                        <button
+                            ref={actionsButtonRef}
+                            type="button"
+                            onClick={() => setShowActionsMenu((prev) => !prev)}
+                            className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800"
+                            aria-label={t("chat.actionsMenu")}
+                        >
+                            <EllipsisVerticalIcon className="w-6 h-6" />
+                        </button>
+                        {showActionsMenu && (
+                            <div
+                                ref={actionsMenuRef}
+                                className="absolute right-0 mt-2 w-40 rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-xl dark:border-slate-800 dark:bg-slate-900"
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowActionsMenu(false);
+                                        onHideRoom?.();
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                    {t("chat.hide")}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowActionsMenu(false);
+                                        onTogglePin?.();
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                    {isRoomPinned ? t("chat.unpin") : t("chat.pin")}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </header>
 

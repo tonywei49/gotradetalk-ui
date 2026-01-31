@@ -54,6 +54,7 @@ export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "orders" | "settings" | "account">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+    const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
     const [unreadBadgeCount, setUnreadBadgeCount] = useState(0);
     const [activeContact, setActiveContact] = useState<ContactSummary | null>(null);
@@ -251,6 +252,35 @@ export const MainLayout: React.FC = () => {
         clearSession();
         navigate("/auth");
     };
+
+    const onHideActiveRoom = async (): Promise<void> => {
+        if (!matrixClient || !activeRoomId) return;
+        const room = matrixClient.getRoom(activeRoomId);
+        if (!room) return;
+        const currentUserId = matrixCredentials?.user_id ?? null;
+        const otherMember = room.getJoinedMembers().find((member) => member.userId !== currentUserId);
+        if (!otherMember) return;
+        try {
+            await hideDirectRoom(matrixClient, otherMember.userId, activeRoomId);
+            setPinnedRoomIds((prev) => prev.filter((roomId) => roomId !== activeRoomId));
+            setActiveRoomId(null);
+            setMobileView("list");
+        } catch {
+            // ignore hide failures
+        }
+    };
+
+    const onTogglePinActiveRoom = (): void => {
+        if (!activeRoomId) return;
+        setPinnedRoomIds((prev) => {
+            if (prev.includes(activeRoomId)) {
+                return prev.filter((roomId) => roomId !== activeRoomId);
+            }
+            return [activeRoomId, ...prev];
+        });
+    };
+
+    const isActiveRoomPinned = activeRoomId ? pinnedRoomIds.includes(activeRoomId) : false;
 
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
@@ -556,6 +586,12 @@ export const MainLayout: React.FC = () => {
                                     placeholder={t("layout.searchPlaceholder")}
                                     className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
                                 />
+                                <button
+                                    type="button"
+                                    className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                >
+                                    {t("layout.groupChat")}
+                                </button>
                             </div>
                         </div>
 
@@ -581,6 +617,7 @@ export const MainLayout: React.FC = () => {
                             }}
                             activeContactId={activeContact?.id ?? null}
                             contactsRefreshToken={contactsRefreshToken}
+                            pinnedRoomIds={pinnedRoomIds}
                         />
                     </>
                 )}
@@ -770,6 +807,9 @@ export const MainLayout: React.FC = () => {
                         context={{
                             activeRoomId,
                             onMobileBack: () => setMobileView("list"),
+                            onHideRoom: () => void onHideActiveRoom(),
+                            onTogglePin: () => onTogglePinActiveRoom(),
+                            isRoomPinned: isActiveRoomPinned,
                         }}
                     />
                 )}

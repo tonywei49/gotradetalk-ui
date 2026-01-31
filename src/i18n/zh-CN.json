@@ -185,7 +185,8 @@
             "gender": "性别",
             "country": "国家",
             "language": "语言"
-        }
+        },
+        "groupChat": "群聊"
     },
     "profile": {
         "gender": {
@@ -247,6 +248,10 @@
         "placeholder": "输入消息...",
         "scrollToBottom": "回到底部",
         "imageAlt": "图片",
-        "headerFallback": "聊天"
+        "headerFallback": "聊天",
+        "hide": "隐藏",
+        "pin": "置顶",
+        "unpin": "取消置顶",
+        "actionsMenu": "聊天操作"
     }
 }

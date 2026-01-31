@@ -13,7 +13,7 @@ import {
     rejectContact,
     requestContact,
 } from "../../api/contacts";
-import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
+import { getDirectRoomId, getOrCreateDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
 import { playNotificationSound } from "../../utils/notificationSound";
 
 type DirectRoomEntry = {
@@ -55,6 +55,7 @@ type RoomListProps = {
     onSelectContact?: (contact: ContactSummary | null) => void;
     activeContactId?: string | null;
     contactsRefreshToken?: number;
+    pinnedRoomIds?: string[];
 };
 
 const EMPTY_STATE: DirectRoomEntry[] = [];
@@ -148,6 +149,7 @@ export function RoomList({
     onSelectContact,
     activeContactId,
     contactsRefreshToken,
+    pinnedRoomIds = [],
 }: RoomListProps) {
     const { t } = useTranslation();
     const [rooms, setRooms] = useState<DirectRoomEntry[]>(EMPTY_STATE);
@@ -588,6 +590,60 @@ export function RoomList({
         });
     }, [contacts, contactSort]);
 
+    const renderContactButton = (contact: ContactSummary) => (
+        <button
+            key={contact.id}
+            type="button"
+            onClick={() => {
+                onSelectContact?.(contact);
+            }}
+            className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${activeContactId === contact.id
+                ? "bg-emerald-50 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:ring-emerald-700"
+                : ""
+                }`}
+        >
+            <div className="min-w-0 text-left">
+                <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                    {getAccountIdLabel({
+                        matrixUserId: contact.matrixUserId,
+                        userLocalId: contact.userLocalId,
+                    })}
+                </div>
+                <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                    {getMetaLabel({
+                        companyName: contact.companyName,
+                        title: null,
+                        country: contact.country,
+                    })}
+                </div>
+            </div>
+        </button>
+    );
+
+    const contactRows = useMemo(() => {
+        if (contactSort !== "company") {
+            return sortedContacts.map((contact) => renderContactButton(contact));
+        }
+        const rows: React.ReactNode[] = [];
+        let lastCompany: string | null = null;
+        sortedContacts.forEach((contact, index) => {
+            const company = contact.companyName || t("common.placeholder");
+            if (index > 0 && company !== lastCompany) {
+                rows.push(
+                    <div
+                        key={`company-sep-${company}-${contact.id}`}
+                        className="px-3 py-1 text-xs text-slate-300 dark:text-slate-600"
+                    >
+                        ---
+                    </div>,
+                );
+            }
+            rows.push(renderContactButton(contact));
+            lastCompany = company;
+        });
+        return rows;
+    }, [sortedContacts, contactSort, activeContactId, onSelectContact, t]);
+
     const onAcceptRequest = async (
         requesterId: string,
         matrixUserId: string | null,
@@ -637,16 +693,6 @@ export function RoomList({
             await refreshContacts();
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : t("roomList.errors.rejectFailed"));
-        }
-    };
-
-    const onHideRoom = async (entry: DirectRoomEntry): Promise<void> => {
-        if (!client) return;
-        try {
-            await hideDirectRoom(client, entry.userId, entry.roomId);
-            refresh?.();
-        } catch {
-            // ignore hide failures
         }
     };
 
@@ -703,6 +749,9 @@ export function RoomList({
     const visibleRooms = acceptedMatrixUserIds.size
         ? rooms.filter((entry) => acceptedMatrixUserIds.has(entry.userId))
         : rooms;
+    const pinnedSet = new Set(pinnedRoomIds);
+    const pinnedRooms = visibleRooms.filter((entry) => pinnedSet.has(entry.roomId));
+    const unpinnedRooms = visibleRooms.filter((entry) => !pinnedSet.has(entry.roomId));
 
     return (
         <div className="flex-1 overflow-y-auto">
@@ -725,48 +774,81 @@ export function RoomList({
                 visibleRooms.length === 0 ? (
                     <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.directChats")}</div>
                 ) : (
-                    visibleRooms.map((entry) => (
-                        <div
-                            key={entry.roomId}
-                            className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
-                                }`}
-                        >
-                            <button
-                                type="button"
-                                onClick={() => onSelectRoom(entry.roomId)}
-                                className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                    <>
+                        {pinnedRooms.map((entry) => (
+                            <div
+                                key={entry.roomId}
+                                className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                                    }`}
                             >
-                                <div className="relative w-10 h-10 flex-shrink-0">
-                                    <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
-                                    {entry.unreadCount > 0 && (
-                                        <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
-                                            {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                    <div className="flex justify-between items-baseline">
-                                        <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
-                                            {entry.displayName}
-                                        </span>
-                                        <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                                            {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
-                                        </span>
+                                <button
+                                    type="button"
+                                    onClick={() => onSelectRoom(entry.roomId)}
+                                    className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                                >
+                                    <div className="relative w-10 h-10 flex-shrink-0">
+                                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
+                                        {entry.unreadCount > 0 && (
+                                            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                                                {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
+                                            </span>
+                                        )}
                                     </div>
-                                    <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
-                                        {entry.lastMessage || " "}
-                                    </p>
-                                </div>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => void onHideRoom(entry)}
-                                className="text-xs text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                        <div className="flex justify-between items-baseline">
+                                            <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                                                {entry.displayName}
+                                            </span>
+                                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                                {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
+                                            </span>
+                                        </div>
+                                        <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
+                                            {entry.lastMessage || " "}
+                                        </p>
+                                    </div>
+                                </button>
+                            </div>
+                        ))}
+                        {pinnedRooms.length > 0 && unpinnedRooms.length > 0 && (
+                            <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                        )}
+                        {unpinnedRooms.map((entry) => (
+                            <div
+                                key={entry.roomId}
+                                className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                                    }`}
                             >
-                                {t("roomList.actions.hide")}
-                            </button>
-                        </div>
-                    ))
+                                <button
+                                    type="button"
+                                    onClick={() => onSelectRoom(entry.roomId)}
+                                    className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                                >
+                                    <div className="relative w-10 h-10 flex-shrink-0">
+                                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
+                                        {entry.unreadCount > 0 && (
+                                            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                                                {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                        <div className="flex justify-between items-baseline">
+                                            <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                                                {entry.displayName}
+                                            </span>
+                                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                                {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
+                                            </span>
+                                        </div>
+                                        <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
+                                            {entry.lastMessage || " "}
+                                        </p>
+                                    </div>
+                                </button>
+                            </div>
+                        ))}
+                    </>
                 )
             ) : (
                 <div className="px-4 py-4">
@@ -842,35 +924,7 @@ export function RoomList({
                                         }`}
                                 >{t("roomList.sorting.byName")}</button>
                             </div>
-                            {sortedContacts.map((contact) => (
-                                <button
-                                    key={contact.id}
-                                    type="button"
-                                    onClick={() => {
-                                        onSelectContact?.(contact);
-                                    }}
-                                    className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${activeContactId === contact.id
-                                        ? "bg-emerald-50 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:ring-emerald-700"
-                                        : ""
-                                        }`}
-                                >
-                                    <div className="min-w-0 text-left">
-                                        <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                            {getAccountIdLabel({
-                                                matrixUserId: contact.matrixUserId,
-                                                userLocalId: contact.userLocalId,
-                                            })}
-                                        </div>
-                                        <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                                            {getMetaLabel({
-                                                companyName: contact.companyName,
-                                                title: null,
-                                                country: contact.country,
-                                            })}
-                                        </div>
-                                    </div>
-                                </button>
-                            ))}
+                            {contactRows}
                         </div>
                     )}
                 </div>

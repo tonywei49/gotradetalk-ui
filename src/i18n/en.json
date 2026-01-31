@@ -185,7 +185,8 @@
             "gender": "Gender",
             "country": "Country",
             "language": "Language"
-        }
+        },
+        "groupChat": "Group chat"
     },
     "profile": {
         "gender": {
@@ -247,6 +248,10 @@
         "placeholder": "Type a message...",
         "scrollToBottom": "Scroll to bottom",
         "imageAlt": "image",
-        "headerFallback": "Chat"
+        "headerFallback": "Chat",
+        "hide": "Hide",
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "actionsMenu": "Chat actions"
     }
 }
