@@ -66,10 +66,11 @@ export const MainLayout: React.FC = () => {
     const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language">("none");
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
+    const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
     const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
-    const toggleMode = useThemeStore((state) => state.toggleMode);
+    const setThemeMode = useThemeStore((state) => state.setMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const hubSession = useAuthStore((state) => state.hubSession);
@@ -95,6 +96,7 @@ export const MainLayout: React.FC = () => {
         { value: "en", label: "English" },
         { value: "zh-CN", label: "简体中文" },
     ];
+    const text = (en: string, zh: string): string => (displayLanguage === "en" ? en : zh);
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
@@ -174,6 +176,7 @@ export const MainLayout: React.FC = () => {
                 }
                 if (response.profile?.translation_locale) {
                     setChatReceiveLanguage(response.profile.translation_locale);
+                    setPendingChatReceiveLanguage(response.profile.translation_locale);
                 }
             } catch {
                 if (!isActive) return;
@@ -405,7 +408,9 @@ export const MainLayout: React.FC = () => {
                 {activeTab === "settings" ? (
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">設定</div>
+                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                {text("Settings", "設定")}
+                            </div>
                         </div>
                         <div className="p-4 space-y-3">
                             <button
@@ -415,34 +420,48 @@ export const MainLayout: React.FC = () => {
                                 }}
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                工單
+                                {text("Tickets", "工單")}
                             </button>
                             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
                                 <div className="flex items-center justify-between">
                                     <div className="text-sm text-slate-700 dark:text-slate-100">
-                                        外觀
+                                        {text("Appearance", "外觀")}
                                         <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                                            {themeMode === "dark" ? "深色" : "淺色"}
+                                            {themeMode === "dark" ? text("Dark", "深色") : text("Light", "淺色")}
                                         </span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={toggleMode}
-                                        className={`relative h-6 w-11 rounded-full transition-colors ${
-                                            themeMode === "dark" ? "bg-emerald-500" : "bg-slate-300"
-                                        }`}
-                                        aria-label="Toggle theme"
-                                    >
-                                        <span
-                                            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                                                themeMode === "dark" ? "translate-x-5" : "translate-x-0.5"
+                                    <div className="flex items-center rounded-full border border-gray-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                                        <button
+                                            type="button"
+                                            onClick={() => setThemeMode("light")}
+                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
+                                                themeMode === "light"
+                                                    ? "bg-emerald-500 text-white"
+                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
                                             }`}
-                                        />
-                                    </button>
+                                            aria-label="Light mode"
+                                        >
+                                            <span aria-hidden="true">☀</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setThemeMode("dark")}
+                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
+                                                themeMode === "dark"
+                                                    ? "bg-emerald-500 text-white"
+                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                            }`}
+                                            aria-label="Dark mode"
+                                        >
+                                            <span aria-hidden="true">🌙</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
-                                <div className="text-sm text-slate-700 dark:text-slate-100 mb-2">顯示語言</div>
+                                <div className="text-sm text-slate-700 dark:text-slate-100 mb-2">
+                                    {text("Display language", "顯示語言")}
+                                </div>
                                 <select
                                     value={displayLanguage}
                                     onChange={(event) => void handleDisplayLanguageChange(event.target.value)}
@@ -459,35 +478,38 @@ export const MainLayout: React.FC = () => {
                                 type="button"
                                 onClick={() => {
                                     setSettingsDetail("chat-language");
+                                    setPendingChatReceiveLanguage(chatReceiveLanguage);
                                     setMobileView("detail");
                                 }}
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                聊天接收語言
+                                {text("Chat receive language", "聊天接收語言")}
                             </button>
                         </div>
                     </>
                 ) : activeTab === "account" ? (
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">賬號設定</div>
+                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                {text("Account settings", "賬號設定")}
+                            </div>
                         </div>
                         <div className="p-4 space-y-3">
                             <label className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800">
-                                上傳頭像
+                                {text("Upload avatar", "上傳頭像")}
                                 <input type="file" accept="image/*" className="hidden" />
                             </label>
                             <button
                                 type="button"
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                修改密碼
+                                {text("Change password", "修改密碼")}
                             </button>
                             <button
                                 type="button"
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
-                                修改名稱（姓名）
+                                {text("Change name", "修改名稱（姓名）")}
                             </button>
                         </div>
                     </>
@@ -682,7 +704,7 @@ export const MainLayout: React.FC = () => {
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (
                             <>
                                 <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    Select an item to view details.
+                                    {text("Select an item to view details.", "請從左側選擇項目")}
                                 </div>
                                 <div className="px-6">
                                     <div className="flex items-center gap-3 mb-4">
@@ -695,7 +717,7 @@ export const MainLayout: React.FC = () => {
                                             &lt;
                                         </button>
                                         <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            聊天接收語言
+                                            {text("Chat receive language", "聊天接收語言")}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -703,9 +725,9 @@ export const MainLayout: React.FC = () => {
                                             <button
                                                 key={option.value}
                                                 type="button"
-                                                onClick={() => void handleChatReceiveLanguageChange(option.value)}
+                                                onClick={() => setPendingChatReceiveLanguage(option.value)}
                                                 className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${
-                                                    chatReceiveLanguage === option.value
+                                                    pendingChatReceiveLanguage === option.value
                                                         ? "border-emerald-400 text-emerald-600"
                                                         : "border-gray-200"
                                                 }`}
@@ -718,19 +740,21 @@ export const MainLayout: React.FC = () => {
                                 <div className="mt-auto px-6 pb-6">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setSettingsDetail("none");
-                                            setMobileView("list");
-                                        }}
+                                        onClick={() =>
+                                            void handleChatReceiveLanguageChange(pendingChatReceiveLanguage).then(() => {
+                                                setSettingsDetail("none");
+                                                setMobileView("list");
+                                            })
+                                        }
                                         className="w-full rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
                                     >
-                                        確認
+                                        {text("Confirm", "確認")}
                                     </button>
                                 </div>
                             </>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                                Select an item to view details.
+                                {text("Select an item to view details.", "請從左側選擇項目")}
                             </div>
                         )}
                     </div>
