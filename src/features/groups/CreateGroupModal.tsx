@@ -95,13 +95,52 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                 invitees: Array.from(selectedMembers),
                 historyVisibility,
             });
-            onSuccess(roomId);
+
+            // 等待 SDK 同步完成，確保房間可用
+            // 僅用於群組創建流程，不影響私聊邏輯
+            await waitForRoomSync(matrixClient, roomId, 5000);
+
             onClose();
+            onSuccess(roomId);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to create group");
         } finally {
             setCreating(false);
         }
+    };
+
+    /**
+     * 等待 SDK 同步房間完成。
+     * 僅用於群組創建後的跳轉，不影響私聊流程。
+     */
+    const waitForRoomSync = (client: MatrixClient, roomId: string, timeoutMs: number): Promise<void> => {
+        return new Promise((resolve) => {
+            const room = client.getRoom(roomId);
+            if (room) {
+                resolve();
+                return;
+            }
+
+            const timeout = setTimeout(() => {
+                cleanup();
+                // 即使超時也嘗試成功，因為房間可能已創建
+                resolve();
+            }, timeoutMs);
+
+            const onRoom = (syncedRoom: { roomId: string }) => {
+                if (syncedRoom.roomId === roomId) {
+                    cleanup();
+                    resolve();
+                }
+            };
+
+            const cleanup = () => {
+                clearTimeout(timeout);
+                client.removeListener("Room" as any, onRoom);
+            };
+
+            client.on("Room" as any, onRoom);
+        });
     };
 
     if (!isOpen) return null;
@@ -213,8 +252,8 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                                             {/* 選中指示器 */}
                                             <div
                                                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${isSelected
-                                                        ? "bg-emerald-500 border-emerald-500"
-                                                        : "border-gray-300 dark:border-slate-600"
+                                                    ? "bg-emerald-500 border-emerald-500"
+                                                    : "border-gray-300 dark:border-slate-600"
                                                     }`}
                                             >
                                                 {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
@@ -234,8 +273,8 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                         <div className="space-y-2">
                             <label
                                 className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${historyVisibility === "shared"
-                                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
-                                        : "border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800"
+                                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
+                                    : "border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800"
                                     }`}
                             >
                                 <input
@@ -258,8 +297,8 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
 
                             <label
                                 className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${historyVisibility === "joined"
-                                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
-                                        : "border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800"
+                                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"
+                                    : "border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800"
                                     }`}
                             >
                                 <input
@@ -304,8 +343,8 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                         onClick={handleCreate}
                         disabled={!canCreate}
                         className={`flex-1 px-4 py-3 rounded-xl font-medium transition-colors ${canCreate
-                                ? "bg-emerald-500 hover:bg-emerald-600 text-white"
-                                : "bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed"
+                            ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                            : "bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed"
                             }`}
                     >
                         {creating ? t("group.creating", "Creating...") : t("group.create", "Create Group")}

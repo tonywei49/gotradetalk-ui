@@ -28,13 +28,27 @@ export async function createGroupChat(
         throw new Error("User is not logged in");
     }
 
-    // 構建 initial_state 設置歷史可見性
+    // 構建 initial_state 設置歷史可見性、加入規則、訪客訪問
     const initialState: ICreateRoomOpts["initial_state"] = [
         {
             type: "m.room.history_visibility",
             state_key: "",
             content: {
                 history_visibility: historyVisibility,
+            },
+        },
+        {
+            type: "m.room.join_rules",
+            state_key: "",
+            content: {
+                join_rule: "invite", // 只有受邀者才能加入
+            },
+        },
+        {
+            type: "m.room.guest_access",
+            state_key: "",
+            content: {
+                guest_access: "forbidden", // 禁止訪客訪問
             },
         },
     ];
@@ -65,5 +79,9 @@ export async function createGroupChat(
     };
 
     const result = await client.createRoom(createRoomOpts);
+
+    // 確保房間不在目錄中可見
+    await client.setRoomDirectoryVisibility(result.room_id, Visibility.Private);
+
     return result.room_id;
 }

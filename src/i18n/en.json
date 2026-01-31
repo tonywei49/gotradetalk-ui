@@ -269,6 +269,24 @@
         "historyJoined": "New Messages Only",
         "historyJoinedDesc": "New members can only see messages after joining",
         "create": "Create Group",
-        "creating": "Creating..."
+        "creating": "Creating...",
+        "unnamed": "Unnamed Group",
+        "members": "members",
+        "pending": "pending",
+        "joinedMembers": "Joined Members",
+        "invitedMembers": "Invited",
+        "memberJoined": "Joined",
+        "memberInvited": "Invited",
+        "memberLeft": "Left",
+        "memberBanned": "Banned",
+        "admin": "Admin",
+        "leaveGroup": "Leave Group",
+        "leaveConfirm": "Are you sure you want to leave this group?",
+        "leave": "Leave",
+        "leaving": "Leaving...",
+        "inviteTitle": "Group Invitation",
+        "inviteFrom": "Invited by",
+        "accept": "Accept",
+        "decline": "Decline"
     }
 }

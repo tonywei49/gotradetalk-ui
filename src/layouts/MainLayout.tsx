@@ -15,6 +15,8 @@ import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { CreateGroupModal } from "../features/groups/CreateGroupModal";
+import { GroupInviteList } from "../features/groups/GroupInviteList";
+import { GroupDetailsPanel, isGroupRoom } from "../features/groups/GroupDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
 import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
@@ -593,6 +595,20 @@ export const MainLayout: React.FC = () => {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Group Invite List - 獨立組件，不影響私聊邏輯 */}
+                        {activeTab === "chat" && (
+                            <GroupInviteList
+                                client={matrixClient}
+                                onAccept={(roomId) => {
+                                    setActiveRoomId(roomId);
+                                    setMobileView("detail");
+                                }}
+                                onDecline={() => {
+                                    // 拒絕後不需要特殊處理
+                                }}
+                            />
+                        )}
 
                         {/* Room List Content (Placeholder) */}
                         <RoomList

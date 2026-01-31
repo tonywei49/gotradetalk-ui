@@ -269,6 +269,24 @@
         "historyJoined": "仅显示新消息",
         "historyJoinedDesc": "新成员只能查看加入后的消息",
         "create": "创建群聊",
-        "creating": "创建中..."
+        "creating": "创建中...",
+        "unnamed": "未命名群组",
+        "members": "成员",
+        "pending": "待加入",
+        "joinedMembers": "已加入成员",
+        "invitedMembers": "已邀请",
+        "memberJoined": "已加入",
+        "memberInvited": "已邀请",
+        "memberLeft": "已离开",
+        "memberBanned": "已禁止",
+        "admin": "管理员",
+        "leaveGroup": "退出群聊",
+        "leaveConfirm": "确定要退出这个群聊吗？",
+        "leave": "退出",
+        "leaving": "退出中...",
+        "inviteTitle": "群聊邀请",
+        "inviteFrom": "邀请者",
+        "accept": "接受",
+        "decline": "拒绝"
     }
 }
