@@ -21,6 +21,7 @@ import {
     updateStaffLanguage,
     updateStaffTranslationLanguage,
 } from "../api/profile";
+import { setLanguage } from "../i18n";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -82,9 +83,6 @@ export const MainLayout: React.FC = () => {
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const accountButtonRef = useRef<HTMLButtonElement | null>(null);
-    const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-    const settingsMenuRef = useRef<HTMLDivElement | null>(null);
-    const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
     const [meProfile, setMeProfile] = useState<HubProfileSummary | null>(null);
     const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
     const accountId = meProfile?.user_local_id || fallbackAccountId;
@@ -100,6 +98,9 @@ export const MainLayout: React.FC = () => {
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
+        if (value === "en" || value === "zh-CN") {
+            setLanguage(value);
+        }
         try {
             if (userType === "client" && hubSession) {
                 await updateClientLanguage(hubSession, value);
@@ -108,6 +109,9 @@ export const MainLayout: React.FC = () => {
             }
         } catch {
             setDisplayLanguage(previous);
+            if (previous === "en" || previous === "zh-CN") {
+                setLanguage(previous);
+            }
         }
     };
 
@@ -164,6 +168,9 @@ export const MainLayout: React.FC = () => {
                 setMeProfile(response.profile);
                 if (response.profile?.locale) {
                     setDisplayLanguage(response.profile.locale);
+                    if (response.profile.locale === "en" || response.profile.locale === "zh-CN") {
+                        setLanguage(response.profile.locale);
+                    }
                 }
                 if (response.profile?.translation_locale) {
                     setChatReceiveLanguage(response.profile.translation_locale);
@@ -191,20 +198,6 @@ export const MainLayout: React.FC = () => {
             document.removeEventListener("click", onClickOutside);
         };
     }, [showAccountMenu]);
-
-    useEffect(() => {
-        const onClickOutside = (event: MouseEvent): void => {
-            const target = event.target as Node;
-            if (settingsMenuRef.current?.contains(target) || settingsButtonRef.current?.contains(target)) return;
-            setShowSettingsMenu(false);
-        };
-        if (showSettingsMenu) {
-            document.addEventListener("click", onClickOutside);
-        }
-        return () => {
-            document.removeEventListener("click", onClickOutside);
-        };
-    }, [showSettingsMenu]);
 
     useEffect(() => {
         if (activeTab !== "contacts") {
@@ -383,40 +376,23 @@ export const MainLayout: React.FC = () => {
                 </div>
 
                 {/* Bottom Actions */}
-                <div className="hidden w-full flex-col gap-2 mb-4 lg:flex">
-                    <div className="relative w-full flex items-center justify-center">
-                        <button
-                            ref={settingsButtonRef}
-                            type="button"
-                            onClick={() => setShowSettingsMenu((prev) => !prev)}
-                            className={`w-full h-16 flex items-center justify-center cursor-pointer transition-colors ${
-                                activeTab === "settings"
-                                    ? "text-[#2F5C56] bg-gray-800"
-                                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
-                            }`}
-                            aria-label="Open settings"
-                        >
-                            <Cog6ToothIcon className="w-7 h-7" />
-                        </button>
-                        {showSettingsMenu && (
-                            <div
-                                ref={settingsMenuRef}
-                                className="absolute bottom-12 left-1/2 z-30 w-48 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900 lg:bottom-16"
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setActiveTab("settings");
-                                        setSettingsDetail("none");
-                                        setShowSettingsMenu(false);
-                                    }}
-                                    className="w-full px-2 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                                >
-                                    設定
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                <div className="w-full flex items-center justify-end gap-2 lg:flex-col lg:mb-4">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setActiveTab("settings");
+                            setSettingsDetail("none");
+                            setMobileView("list");
+                        }}
+                        className={`w-full h-16 flex items-center justify-center cursor-pointer transition-colors ${
+                            activeTab === "settings"
+                                ? "text-[#2F5C56] bg-gray-800"
+                                : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                        }`}
+                        aria-label="Open settings"
+                    >
+                        <Cog6ToothIcon className="w-7 h-7" />
+                    </button>
                 </div>
             </nav>
 
@@ -443,7 +419,12 @@ export const MainLayout: React.FC = () => {
                             </button>
                             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
                                 <div className="flex items-center justify-between">
-                                    <div className="text-sm text-slate-700 dark:text-slate-100">深色模式</div>
+                                    <div className="text-sm text-slate-700 dark:text-slate-100">
+                                        外觀
+                                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                                            {themeMode === "dark" ? "深色" : "淺色"}
+                                        </span>
+                                    </div>
                                     <button
                                         type="button"
                                         onClick={toggleMode}
@@ -698,42 +679,60 @@ export const MainLayout: React.FC = () => {
                     </div>
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
-                        <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                            Select an item to view details.
-                        </div>
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (
-                            <div className="border-t border-gray-100 p-6 dark:border-slate-800">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setMobileView("list")}
-                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                        aria-label="Back to list"
-                                    >
-                                        &lt;
-                                    </button>
-                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                        聊天接收語言
+                            <>
+                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
+                                    Select an item to view details.
+                                </div>
+                                <div className="px-6">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileView("list")}
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                            aria-label="Back to list"
+                                        >
+                                            &lt;
+                                        </button>
+                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                            聊天接收語言
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                        {translationLanguageOptions.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => void handleChatReceiveLanguageChange(option.value)}
+                                                className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${
+                                                    chatReceiveLanguage === option.value
+                                                        ? "border-emerald-400 text-emerald-600"
+                                                        : "border-gray-200"
+                                                }`}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                                    {translationLanguageOptions.map((option) => (
-                                        <button
-                                            key={option.value}
-                                            type="button"
-                                            onClick={() => void handleChatReceiveLanguageChange(option.value)}
-                                            className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${
-                                                chatReceiveLanguage === option.value
-                                                    ? "border-emerald-400 text-emerald-600"
-                                                    : "border-gray-200"
-                                            }`}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    ))}
+                                <div className="mt-auto px-6 pb-6">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSettingsDetail("none");
+                                            setMobileView("list");
+                                        }}
+                                        className="w-full rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                                    >
+                                        確認
+                                    </button>
                                 </div>
+                            </>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                                Select an item to view details.
                             </div>
-                        ) : null}
+                        )}
                     </div>
                 ) : (
                     <Outlet
