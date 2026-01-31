@@ -15,6 +15,12 @@ import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
+import {
+    updateClientLanguage,
+    updateClientTranslationLanguage,
+    updateStaffLanguage,
+    updateStaffTranslationLanguage,
+} from "../api/profile";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -65,8 +71,9 @@ export const MainLayout: React.FC = () => {
     const toggleMode = useThemeStore((state) => state.toggleMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const matrixClient = useAuthStore((state) => state.matrixClient);
-    const hubAccessToken = useAuthStore((state) => state.hubSession?.access_token ?? null);
-    const hubSessionExpiresAt = useAuthStore((state) => state.hubSession?.expires_at ?? null);
+    const hubSession = useAuthStore((state) => state.hubSession);
+    const hubAccessToken = hubSession?.access_token ?? null;
+    const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = useAuthStore((state) => state.matrixCredentials?.access_token ?? null);
     const matrixHsUrl = useAuthStore((state) => state.matrixCredentials?.hs_url ?? null);
     const userType = useAuthStore((state) => state.userType);
@@ -90,6 +97,33 @@ export const MainLayout: React.FC = () => {
         { value: "en", label: "English" },
         { value: "zh-CN", label: "简体中文" },
     ];
+    const handleDisplayLanguageChange = async (value: string): Promise<void> => {
+        const previous = displayLanguage;
+        setDisplayLanguage(value);
+        try {
+            if (userType === "client" && hubSession) {
+                await updateClientLanguage(hubSession, value);
+            } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
+                await updateStaffLanguage(matrixAccessToken, matrixHsUrl, value);
+            }
+        } catch {
+            setDisplayLanguage(previous);
+        }
+    };
+
+    const handleChatReceiveLanguageChange = async (value: string): Promise<void> => {
+        const previous = chatReceiveLanguage;
+        setChatReceiveLanguage(value);
+        try {
+            if (userType === "client" && hubSession) {
+                await updateClientTranslationLanguage(hubSession, value);
+            } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
+                await updateStaffTranslationLanguage(matrixAccessToken, matrixHsUrl, value);
+            }
+        } catch {
+            setChatReceiveLanguage(previous);
+        }
+    };
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -130,6 +164,9 @@ export const MainLayout: React.FC = () => {
                 setMeProfile(response.profile);
                 if (response.profile?.locale) {
                     setDisplayLanguage(response.profile.locale);
+                }
+                if (response.profile?.translation_locale) {
+                    setChatReceiveLanguage(response.profile.translation_locale);
                 }
             } catch {
                 if (!isActive) return;
@@ -427,7 +464,7 @@ export const MainLayout: React.FC = () => {
                                 <div className="text-sm text-slate-700 dark:text-slate-100 mb-2">顯示語言</div>
                                 <select
                                     value={displayLanguage}
-                                    onChange={(event) => setDisplayLanguage(event.target.value)}
+                                    onChange={(event) => void handleDisplayLanguageChange(event.target.value)}
                                     className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                 >
                                     {displayLangOptions.map((option) => (
@@ -684,7 +721,7 @@ export const MainLayout: React.FC = () => {
                                         <button
                                             key={option.value}
                                             type="button"
-                                            onClick={() => setChatReceiveLanguage(option.value)}
+                                            onClick={() => void handleChatReceiveLanguageChange(option.value)}
                                             className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${
                                                 chatReceiveLanguage === option.value
                                                     ? "border-emerald-400 text-emerald-600"

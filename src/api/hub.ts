@@ -142,6 +142,28 @@ export async function hubStaffUpdateLocaleSelf(
     );
 }
 
+export async function hubStaffTranslationLocaleSelf(
+    accessToken: string,
+    hsUrl: string,
+): Promise<{ translation_locale: string | null }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = withQuery(joinUrl(hubBaseUrl, "/staff/translation-locale/self"), { hs_url: hsUrl });
+    return getJson<{ translation_locale: string | null }>(url, accessToken);
+}
+
+export async function hubStaffUpdateTranslationLocaleSelf(
+    accessToken: string,
+    hsUrl: string,
+    translationLocale: string,
+): Promise<void> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    await postJson<Record<string, unknown>>(
+        `${hubBaseUrl}/staff/translation-locale/self`,
+        { hs_url: hsUrl, translation_locale: translationLocale },
+        accessToken,
+    );
+}
+
 export async function hubGetMe(params: {
     accessToken: string;
     hsUrl?: string | null;

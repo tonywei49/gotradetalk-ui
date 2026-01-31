@@ -36,6 +36,8 @@ export type HubProfileSummary = {
     user_local_id: string | null;
     matrix_user_id: string | null;
     user_type: string | null;
+    locale?: string | null;
+    translation_locale?: string | null;
 };
 
 export type HubMeResponse = {
