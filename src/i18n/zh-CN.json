@@ -271,7 +271,11 @@
         "renameGroupFailed": "修改群組名稱失敗。",
         "leaveGroupConfirm": "是否要退出聊天室？",
         "groupNameFallback": "群聊",
-        "groupAdminTag": "《版主》"
+        "groupAdminTag": "《版主》",
+        "inviteSearchPlaceholder": "搜尋好友...",
+        "inviteContactsEmpty": "沒有可邀請的好友。",
+        "inviteContactsAuthMissing": "缺少邀請權限。",
+        "inviteContactsFailed": "載入好友清單失敗。"
     },
     "group": {
         "createTitle": "创建群聊",

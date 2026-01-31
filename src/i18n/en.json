@@ -271,7 +271,11 @@
         "renameGroupFailed": "Failed to rename group.",
         "leaveGroupConfirm": "Leave this group chat?",
         "groupNameFallback": "Group chat",
-        "groupAdminTag": "Host"
+        "groupAdminTag": "Host",
+        "inviteSearchPlaceholder": "Search contacts...",
+        "inviteContactsEmpty": "No contacts available to invite.",
+        "inviteContactsAuthMissing": "Missing invite permission.",
+        "inviteContactsFailed": "Failed to load contacts."
     },
     "group": {
         "createTitle": "Create Group",

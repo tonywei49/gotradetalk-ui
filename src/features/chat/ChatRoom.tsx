@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../../stores/AuthStore";
 import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
 import { updateRoomInvitePermission } from "../../services/matrix";
+import { listContacts, type ContactEntry } from "../../api/contacts";
 
 type MessageBubbleProps = {
     event: MatrixEvent;
@@ -109,7 +110,10 @@ export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
     const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned } = useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
+    const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const userId = useAuthStore((state) => state.matrixCredentials?.user_id ?? null);
+    const hubSession = useAuthStore((state) => state.hubSession);
+    const userType = useAuthStore((state) => state.userType);
     const { events, room } = useRoomTimeline(matrixClient, activeRoomId, { limit: 200 });
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const [composerText, setComposerText] = useState("");
@@ -124,7 +128,11 @@ export const ChatRoom: React.FC = () => {
     const [inviteAllowed, setInviteAllowed] = useState(true);
     const [inviteBusy, setInviteBusy] = useState(false);
     const [inviteError, setInviteError] = useState<string | null>(null);
-    const [inviteMemberId, setInviteMemberId] = useState("");
+    const [contacts, setContacts] = useState<ContactEntry[]>([]);
+    const [contactsLoading, setContactsLoading] = useState(false);
+    const [contactsError, setContactsError] = useState<string | null>(null);
+    const [contactFilter, setContactFilter] = useState("");
+    const [selectedInviteIds, setSelectedInviteIds] = useState<Set<string>>(new Set());
     const [inviteMemberBusy, setInviteMemberBusy] = useState(false);
     const [inviteMemberError, setInviteMemberError] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState("");
@@ -132,6 +140,14 @@ export const ChatRoom: React.FC = () => {
     const [renameError, setRenameError] = useState<string | null>(null);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
     const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
+    const hubAccessToken = hubSession?.access_token ?? null;
+    const hubSessionExpiresAt = hubSession?.expires_at ?? null;
+    const matrixAccessToken = matrixCredentials?.access_token ?? null;
+    const matrixHsUrl = matrixCredentials?.hs_url ?? null;
+    const inviteTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
+    const useHubToken = userType === "client" && hubAccessToken && !inviteTokenExpired;
+    const inviteAccessToken = useHubToken ? hubAccessToken : matrixAccessToken;
+    const inviteHsUrl = useHubToken ? null : matrixHsUrl;
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -143,6 +159,15 @@ export const ChatRoom: React.FC = () => {
             return `${localpart} (${displayName})`;
         }
         return localpart || displayName || userId || t("common.unknown");
+    };
+
+    const getMatrixHost = (hsUrl: string | null): string | null => {
+        if (!hsUrl) return null;
+        try {
+            return new URL(hsUrl).host;
+        } catch {
+            return null;
+        }
     };
 
     useEffect(() => {
@@ -200,10 +225,60 @@ export const ChatRoom: React.FC = () => {
     const canManageInvites = userPowerLevel >= 100;
     const canInviteMembers = userPowerLevel >= inviteLevel;
     const canRenameGroup = userPowerLevel >= 50;
+    const matrixHost = getMatrixHost(matrixHsUrl);
+    const memberIdSet = useMemo(() => new Set(groupMembers.map((member) => member.userId)), [groupMembers]);
+    const filteredContacts = useMemo(() => {
+        const needle = contactFilter.trim().toLowerCase();
+        return contacts.filter((contact) => {
+            const matrixUserId =
+                contact.matrix_user_id ||
+                (contact.user_local_id && matrixHost ? `@${contact.user_local_id}:${matrixHost}` : null);
+            if (!matrixUserId) return false;
+            if (memberIdSet.has(matrixUserId)) return false;
+            const label = getUserLabel(
+                matrixUserId,
+                contact.display_name || contact.user_local_id || contact.company_name,
+            ).toLowerCase();
+            return needle ? label.includes(needle) : true;
+        });
+    }, [contacts, contactFilter, matrixHost, memberIdSet]);
+    const visibleInviteContacts = filteredContacts
+        .map((contact) => {
+            const matrixUserId =
+                contact.matrix_user_id ||
+                (contact.user_local_id && matrixHost ? `@${contact.user_local_id}:${matrixHost}` : null);
+            if (!matrixUserId) return null;
+            return {
+                id: contact.user_id,
+                matrixUserId,
+                label: getUserLabel(matrixUserId, contact.display_name || contact.user_local_id),
+            };
+        })
+        .filter((value): value is { id: string; matrixUserId: string; label: string } => Boolean(value));
 
     useEffect(() => {
         setInviteAllowed(inviteLevel === 0);
     }, [inviteLevel, room?.roomId]);
+
+    useEffect(() => {
+        if (!showInviteMembersModal || !isGroupChat) return;
+        if (!inviteAccessToken) {
+            setContactsError(t("chat.inviteContactsAuthMissing"));
+            setContacts([]);
+            return;
+        }
+        setContactsLoading(true);
+        setContactsError(null);
+        setSelectedInviteIds(new Set());
+        void listContacts(inviteAccessToken, inviteHsUrl)
+            .then((items) => {
+                setContacts(items);
+            })
+            .catch((err) => {
+                setContactsError(err instanceof Error ? err.message : t("chat.inviteContactsFailed"));
+            })
+            .finally(() => setContactsLoading(false));
+    }, [showInviteMembersModal, isGroupChat, inviteAccessToken, inviteHsUrl, t]);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
@@ -672,11 +747,45 @@ export const ChatRoom: React.FC = () => {
                         </div>
                         <input
                             type="text"
-                            value={inviteMemberId}
-                            onChange={(event) => setInviteMemberId(event.target.value)}
-                            placeholder={t("chat.inviteMemberPlaceholder")}
+                            value={contactFilter}
+                            onChange={(event) => setContactFilter(event.target.value)}
+                            placeholder={t("chat.inviteSearchPlaceholder")}
                             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         />
+                        {contactsLoading && (
+                            <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">{t("common.loading")}</div>
+                        )}
+                        {contactsError && <div className="mt-3 text-sm text-rose-500">{contactsError}</div>}
+                        {!contactsLoading && !contactsError && visibleInviteContacts.length === 0 && (
+                            <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                                {t("chat.inviteContactsEmpty")}
+                            </div>
+                        )}
+                        <div className="mt-4 max-h-64 overflow-y-auto space-y-2">
+                            {visibleInviteContacts.map((contact) => (
+                                <label
+                                    key={contact.id}
+                                    className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:text-slate-100"
+                                >
+                                    <span className="truncate">{contact.label}</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedInviteIds.has(contact.matrixUserId)}
+                                        onChange={(event) => {
+                                            setSelectedInviteIds((prev) => {
+                                                const next = new Set(prev);
+                                                if (event.target.checked) {
+                                                    next.add(contact.matrixUserId);
+                                                } else {
+                                                    next.delete(contact.matrixUserId);
+                                                }
+                                                return next;
+                                            });
+                                        }}
+                                    />
+                                </label>
+                            ))}
+                        </div>
                         {inviteMemberError && <div className="mt-3 text-sm text-rose-500">{inviteMemberError}</div>}
                         <div className="mt-4 flex gap-2">
                             <button
@@ -688,20 +797,15 @@ export const ChatRoom: React.FC = () => {
                             </button>
                             <button
                                 type="button"
-                                disabled={inviteMemberBusy}
+                                disabled={inviteMemberBusy || selectedInviteIds.size === 0}
                                 onClick={() => {
                                     if (!matrixClient || !room) return;
-                                    const target = inviteMemberId.trim();
-                                    if (!target) {
-                                        setInviteMemberError(t("chat.inviteMemberRequired"));
-                                        return;
-                                    }
                                     setInviteMemberBusy(true);
                                     setInviteMemberError(null);
-                                    void matrixClient
-                                        .invite(room.roomId, target)
+                                    const targets = Array.from(selectedInviteIds);
+                                    void Promise.all(targets.map((target) => matrixClient.invite(room.roomId, target)))
                                         .then(() => {
-                                            setInviteMemberId("");
+                                            setSelectedInviteIds(new Set());
                                             setShowInviteMembersModal(false);
                                         })
                                         .catch((err) => {
