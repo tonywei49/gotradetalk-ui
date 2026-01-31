@@ -152,6 +152,11 @@ export const ChatRoom: React.FC = () => {
         return filtered;
     }, [events, room]);
 
+    const canSendReceipt = (event: MatrixEvent | undefined): event is MatrixEvent => {
+        const eventId = event?.getId();
+        return Boolean(eventId && eventId.startsWith("$"));
+    };
+
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
         if (!room || !matrixClient) return;
@@ -162,7 +167,7 @@ export const ChatRoom: React.FC = () => {
             container.scrollTop = container.scrollHeight;
             // 在底部時發送已讀回執
             const latestEvent = mergedEvents[mergedEvents.length - 1];
-            if (latestEvent) {
+            if (canSendReceipt(latestEvent)) {
                 void matrixClient.sendReadReceipt(latestEvent);
             }
         }
@@ -178,7 +183,7 @@ export const ChatRoom: React.FC = () => {
             const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
             if (distanceFromBottom < 120) {
                 const latestEvent = mergedEvents[mergedEvents.length - 1];
-                if (latestEvent) {
+                if (canSendReceipt(latestEvent)) {
                     void matrixClient.sendReadReceipt(latestEvent);
                 }
             }
@@ -210,7 +215,7 @@ export const ChatRoom: React.FC = () => {
         // 當滾動到底部時發送已讀回執
         if (distanceFromBottom < 50) {
             const latestEvent = mergedEvents[mergedEvents.length - 1];
-            if (latestEvent) {
+            if (canSendReceipt(latestEvent)) {
                 void matrixClient.sendReadReceipt(latestEvent);
             }
         }
