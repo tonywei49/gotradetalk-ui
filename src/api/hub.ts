@@ -183,7 +183,8 @@ export async function hubGetMe(params: {
 
 export async function hubMeUpdateLocale(accessToken: string, locale: string): Promise<{ locale: string | null }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    return postJson<{ locale: string | null }>(`${hubBaseUrl}/me/locale`, { locale }, accessToken);
+    const url = withQuery(joinUrl(hubBaseUrl, "/me/locale"), { locale });
+    return postJson<{ locale: string | null }>(url, { locale }, accessToken);
 }
 
 export async function hubMeUpdateTranslationLocale(
@@ -191,8 +192,9 @@ export async function hubMeUpdateTranslationLocale(
     translationLocale: string,
 ): Promise<{ translation_locale: string | null }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = withQuery(joinUrl(hubBaseUrl, "/me/translation-locale"), { translation_locale: translationLocale });
     return postJson<{ translation_locale: string | null }>(
-        `${hubBaseUrl}/me/translation-locale`,
+        url,
         { translation_locale: translationLocale },
         accessToken,
     );
