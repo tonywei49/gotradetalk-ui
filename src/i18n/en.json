@@ -253,5 +253,22 @@
         "pin": "Pin",
         "unpin": "Unpin",
         "actionsMenu": "Chat actions"
+    },
+    "group": {
+        "createTitle": "Create Group",
+        "groupName": "Group Name",
+        "groupNamePlaceholder": "Enter group name...",
+        "selectMembers": "Select Members",
+        "selected": "selected",
+        "searchContacts": "Search contacts...",
+        "loadingContacts": "Loading contacts...",
+        "noContacts": "No contacts found",
+        "historySettings": "History Visibility",
+        "historyShared": "Share Full History",
+        "historySharedDesc": "New members can see all previous messages",
+        "historyJoined": "New Messages Only",
+        "historyJoinedDesc": "New members can only see messages after joining",
+        "create": "Create Group",
+        "creating": "Creating..."
     }
 }

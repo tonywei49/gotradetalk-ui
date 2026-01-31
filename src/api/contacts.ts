@@ -1,6 +1,6 @@
 import { hubApiBaseUrl } from "../config";
 
-type ContactEntry = {
+export type ContactEntry = {
     contact_id: string;
     initiated_by_me: boolean;
     user_id: string;

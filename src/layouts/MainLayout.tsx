@@ -14,6 +14,7 @@ import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../ap
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
+import { CreateGroupModal } from "../features/groups/CreateGroupModal";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
 import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
@@ -65,6 +66,7 @@ export const MainLayout: React.FC = () => {
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
+    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
     const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
@@ -102,9 +104,9 @@ export const MainLayout: React.FC = () => {
         hubAccessToken && !localeTokenExpired
             ? undefined
             : {
-                  hsUrl: matrixHsUrl,
-                  matrixUserId: matrixCredentials?.user_id ?? null,
-              };
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
+            };
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
@@ -424,11 +426,10 @@ export const MainLayout: React.FC = () => {
                             setSettingsDetail("none");
                             setMobileView("list");
                         }}
-                        className={`w-full h-16 flex items-center justify-center cursor-pointer transition-colors ${
-                            activeTab === "settings"
-                                ? "text-[#2F5C56] bg-gray-800"
-                                : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
-                        }`}
+                        className={`w-full h-16 flex items-center justify-center cursor-pointer transition-colors ${activeTab === "settings"
+                            ? "text-[#2F5C56] bg-gray-800"
+                            : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                            }`}
                         aria-label={t("layout.openSettings")}
                     >
                         <Cog6ToothIcon className="w-7 h-7" />
@@ -438,9 +439,8 @@ export const MainLayout: React.FC = () => {
 
             {/* 2. List Panel (w-80, bg-white) */}
             <aside
-                className={`w-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${
-                    mobileView === "detail" ? "hidden lg:flex" : "flex"
-                }`}
+                className={`w-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${mobileView === "detail" ? "hidden lg:flex" : "flex"
+                    }`}
             >
                 {activeTab === "settings" ? (
                     <>
@@ -471,11 +471,10 @@ export const MainLayout: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={() => setThemeMode("light")}
-                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
-                                                themeMode === "light"
-                                                    ? "bg-emerald-500 text-white"
-                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                            }`}
+                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${themeMode === "light"
+                                                ? "bg-emerald-500 text-white"
+                                                : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                                }`}
                                             aria-label={t("layout.light")}
                                         >
                                             <span aria-hidden="true">☀</span>
@@ -483,11 +482,10 @@ export const MainLayout: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={() => setThemeMode("dark")}
-                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
-                                                themeMode === "dark"
-                                                    ? "bg-emerald-500 text-white"
-                                                    : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                            }`}
+                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${themeMode === "dark"
+                                                ? "bg-emerald-500 text-white"
+                                                : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                                }`}
                                             aria-label={t("layout.dark")}
                                         >
                                             <span aria-hidden="true">🌙</span>
@@ -588,6 +586,7 @@ export const MainLayout: React.FC = () => {
                                 />
                                 <button
                                     type="button"
+                                    onClick={() => setShowCreateGroupModal(true)}
                                     className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
                                 >
                                     {t("layout.groupChat")}
@@ -625,9 +624,8 @@ export const MainLayout: React.FC = () => {
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
             <main
-                className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${
-                    mobileView === "list" ? "hidden lg:flex" : "flex"
-                }`}
+                className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
+                    }`}
             >
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
@@ -770,11 +768,10 @@ export const MainLayout: React.FC = () => {
                                                 key={option.value}
                                                 type="button"
                                                 onClick={() => setPendingChatReceiveLanguage(option.value)}
-                                                className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${
-                                                    pendingChatReceiveLanguage === option.value
-                                                        ? "border-emerald-400 text-emerald-600"
-                                                        : "border-gray-200"
-                                                }`}
+                                                className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${pendingChatReceiveLanguage === option.value
+                                                    ? "border-emerald-400 text-emerald-600"
+                                                    : "border-gray-200"
+                                                    }`}
                                             >
                                                 {option.label}
                                             </button>
@@ -817,6 +814,20 @@ export const MainLayout: React.FC = () => {
                 {/* Placeholder for when no chat is selected (if Outlet is empty) */}
                 {/* <div className="flex-1 flex items-center justify-center text-gray-400">Select a chat to start messaging</div> */}
             </main>
+
+            {/* Create Group Modal */}
+            <CreateGroupModal
+                isOpen={showCreateGroupModal}
+                onClose={() => setShowCreateGroupModal(false)}
+                onSuccess={(roomId) => {
+                    setActiveRoomId(roomId);
+                    setActiveTab("chat");
+                    setMobileView("detail");
+                }}
+                matrixClient={matrixClient}
+                accessToken={hubAccessToken || matrixAccessToken}
+                hsUrl={matrixHsUrl}
+            />
         </div>
     );
 };

@@ -253,5 +253,22 @@
         "pin": "置顶",
         "unpin": "取消置顶",
         "actionsMenu": "聊天操作"
+    },
+    "group": {
+        "createTitle": "创建群聊",
+        "groupName": "群组名称",
+        "groupNamePlaceholder": "请输入群组名称...",
+        "selectMembers": "选择成员",
+        "selected": "已选",
+        "searchContacts": "搜索联系人...",
+        "loadingContacts": "加载联系人中...",
+        "noContacts": "未找到联系人",
+        "historySettings": "历史消息可见性",
+        "historyShared": "共享完整历史",
+        "historySharedDesc": "新成员可以查看所有之前的消息",
+        "historyJoined": "仅显示新消息",
+        "historyJoinedDesc": "新成员只能查看加入后的消息",
+        "create": "创建群聊",
+        "creating": "创建中..."
     }
 }
