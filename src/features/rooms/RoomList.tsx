@@ -220,11 +220,12 @@ export function RoomList({
             if (toStartOfTimeline) return;
             refresh();
 
-            // 在非活動房間收到新消息時播放提示音
-            if (room.roomId !== activeRoomId && event.getType() === EventType.RoomMessage) {
-                // 檢查是否是自己發送的消息
+            // 在非活動房間，或頁面隱藏時收到新消息播放提示音
+            if (event.getType() === EventType.RoomMessage) {
                 const myUserId = client.getUserId();
-                if (event.getSender() !== myUserId) {
+                const isFromMe = event.getSender() === myUserId;
+                const isBackground = typeof document !== "undefined" && document.hidden;
+                if (!isFromMe && (room.roomId !== activeRoomId || isBackground)) {
                     playNotificationSound();
                 }
             }

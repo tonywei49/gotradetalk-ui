@@ -5,6 +5,19 @@
 
 let audioContext: AudioContext | null = null;
 
+export function ensureNotificationSoundEnabled(): void {
+    try {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        }
+        if (audioContext.state === "suspended") {
+            void audioContext.resume();
+        }
+    } catch (error) {
+        console.warn("Failed to enable notification sound:", error);
+    }
+}
+
 /**
  * 播放通知音效
  * 使用 Web Audio API 生成簡單的提示音，避免需要外部音頻文件
