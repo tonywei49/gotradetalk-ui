@@ -76,6 +76,7 @@ export async function createGroupChat(
         invite: invitees,
         initial_state: initialState,
         power_level_content_override: powerLevelContentOverride,
+        room_version: "11",
     };
 
     console.log("[createGroupChat] Creating room with options:", JSON.stringify(createRoomOpts, null, 2));
