@@ -53,8 +53,10 @@ export async function updateRoomInvitePermission(roomId: string, allowMembersToI
 export async function inviteUsersToRoom(roomId: string, userIds: string[]): Promise<number> {
     const client = getMatrixClient();
     const unique = Array.from(new Set(userIds.filter((userId) => userId.trim())));
+    console.log("[inviteUsersToRoom] Inviting users:", { roomId, userIds: unique });
     if (unique.length === 0) return 0;
     const results = await Promise.allSettled(unique.map((userId) => client.invite(roomId, userId)));
+    console.log("[inviteUsersToRoom] Invite results:", results);
     const forbidden = results.find(
         (result) =>
             result.status === "rejected" &&
