@@ -50,15 +50,26 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
         return client
             .getRooms()
             .filter((room) => {
-                // 只處理邀請狀態的房間
-                if (room.getMyMembership() !== "invite") return false;
-                // 排除私聊房間（在 m.direct 中的房間）
+                const membership = room.getMyMembership();
                 const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
                 const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+                const isDirect = directRooms.has(room.roomId);
+                const memberCount = room.getJoinedMemberCount() ?? 0;
+
+                console.log("[GroupInviteList] Checking room:", room.roomId, {
+                    name: room.name,
+                    membership,
+                    kind,
+                    isDirect,
+                    memberCount,
+                });
+
+                // 只處理邀請狀態的房間
+                if (membership !== "invite") return false;
+                // 排除私聊房間（在 m.direct 中的房間）
                 if (kind && kind !== ROOM_KIND_GROUP) return false;
                 if (!kind) {
-                    const memberCount = room.getJoinedMemberCount() ?? 0;
-                    if (directRooms.has(room.roomId) && memberCount <= 2) return false;
+                    if (isDirect && memberCount <= 2) return false;
                 }
                 return true;
             })
