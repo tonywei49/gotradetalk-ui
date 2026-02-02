@@ -22,6 +22,7 @@ type ChatRoomEntry = {
     userId?: string;
     roomId: string;
     room: Room;
+    myMembership: string;
     displayName: string;
     lastMessage: string;
     lastActive: number;
@@ -128,6 +129,7 @@ function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
                 userId,
                 roomId,
                 room,
+                myMembership: room.getMyMembership(),
                 displayName: room.getMember(userId)?.name ?? userId,
                 lastMessage: getLastMessagePreview(room),
                 lastActive,
@@ -167,6 +169,7 @@ function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
             userId: otherMember.userId,
             roomId: room.roomId,
             room,
+            myMembership: room.getMyMembership(),
             displayName: otherMember.name ?? otherMember.userId,
             lastMessage: getLastMessagePreview(room),
             lastActive: room.getLastActiveTimestamp(),
@@ -210,6 +213,7 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
         groupRooms.push({
             roomId: room.roomId,
             room,
+            myMembership: room.getMyMembership(),
             displayName: room.name || "Group",
             lastMessage: getLastMessagePreview(room),
             lastActive: room.getLastActiveTimestamp(),
@@ -220,6 +224,29 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
     }
 
     return groupRooms.sort((a, b) => b.lastActive - a.lastActive);
+}
+
+function buildInviteRooms(client: MatrixClient): ChatRoomEntry[] {
+    const rooms = client.getRooms();
+    const invites: ChatRoomEntry[] = [];
+    for (const room of rooms) {
+        if (room.getMyMembership() !== "invite") continue;
+        if (room.isSpaceRoom()) continue;
+        const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+        const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+        invites.push({
+            roomId: room.roomId,
+            room,
+            myMembership: room.getMyMembership(),
+            displayName: room.name || "Invite",
+            lastMessage: "",
+            lastActive: room.getLastActiveTimestamp(),
+            unreadCount: 0,
+            isDeprecated: false,
+            isGroup: kind === ROOM_KIND_GROUP,
+        });
+    }
+    return invites.sort((a, b) => b.lastActive - a.lastActive);
 }
 
 export function RoomList({
@@ -332,6 +359,7 @@ export function RoomList({
                 .map((room) => ({
                     roomId: room.roomId,
                     room,
+                    myMembership: room.getMyMembership(),
                     displayName: room.name || "Chat",
                     lastMessage: getLastMessagePreview(room),
                     lastActive: room.getLastActiveTimestamp(),
@@ -339,8 +367,14 @@ export function RoomList({
                     isDeprecated: Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX)),
                     isGroup: false,
                 }));
+            const inviteRooms = buildInviteRooms(client);
             setRooms(
-                [...directRooms, ...groupRooms, ...unlabeledRooms.filter((entry) => !directRoomIdSet.has(entry.roomId))]
+                [
+                    ...inviteRooms,
+                    ...directRooms,
+                    ...groupRooms,
+                    ...unlabeledRooms.filter((entry) => !directRoomIdSet.has(entry.roomId)),
+                ]
                     .filter((entry) => !hiddenDirectRoomIds.has(entry.roomId))
                     .sort((a, b) => b.lastActive - a.lastActive),
             );
@@ -424,8 +458,9 @@ export function RoomList({
             Boolean(activeRoomId) &&
             rooms.some((room) => room.roomId === activeRoomId);
         if (!hasActive) {
-            if (rooms.length > 0) {
-                onSelectRoom(rooms[0].roomId);
+            const nextRoom = rooms.find((room) => room.myMembership !== "invite") ?? rooms[0];
+            if (nextRoom) {
+                onSelectRoom(nextRoom.roomId);
             }
         }
     }, [rooms, activeRoomId, onSelectRoom]);
@@ -943,9 +978,117 @@ export function RoomList({
     }, [client, contacts, userType]);
 
     const visibleRooms = rooms;
+    const inviteRooms = visibleRooms.filter((entry) => entry.myMembership === "invite");
+    const activeRooms = visibleRooms.filter((entry) => entry.myMembership !== "invite");
     const pinnedSet = new Set(pinnedRoomIds);
-    const pinnedRooms = visibleRooms.filter((entry) => pinnedSet.has(entry.roomId));
-    const unpinnedRooms = visibleRooms.filter((entry) => !pinnedSet.has(entry.roomId));
+    const pinnedRooms = activeRooms.filter((entry) => pinnedSet.has(entry.roomId));
+    const unpinnedRooms = activeRooms.filter((entry) => !pinnedSet.has(entry.roomId));
+
+    const renderRoomEntry = (entry: ChatRoomEntry): ReactNode => {
+        const isInvite = entry.myMembership === "invite";
+        if (isInvite) {
+            return (
+                <div
+                    key={entry.roomId}
+                    className="group w-full px-4 py-3 flex gap-3 items-center border border-emerald-100 rounded-xl bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-900/20"
+                >
+                    <div className="relative w-10 h-10 flex-shrink-0">
+                        {entry.isGroup ? (
+                            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
+                                    {entry.displayName[0]?.toUpperCase() || "G"}
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
+                        )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                            {entry.displayName}
+                        </div>
+                        <div className="text-[12px] text-emerald-600 dark:text-emerald-400">
+                            Invited you to this group
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!client) return;
+                                void client.joinRoom(entry.roomId);
+                            }}
+                            className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500 text-white hover:bg-emerald-600"
+                        >
+                            Join
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!client) return;
+                                void client.leave(entry.roomId);
+                            }}
+                            className="px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-500 text-white hover:bg-rose-600"
+                        >
+                            Reject
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div
+                key={entry.roomId}
+                className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${
+                    entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                }`}
+            >
+                <button
+                    type="button"
+                    onClick={() => onSelectRoom(entry.roomId)}
+                    className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                >
+                    <div className="relative w-10 h-10 flex-shrink-0">
+                        {entry.isGroup ? (
+                            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
+                                    {entry.displayName[0]?.toUpperCase() || "G"}
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
+                        )}
+                        {entry.unreadCount > 0 && (
+                            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                                {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                        <div className="flex justify-between items-baseline">
+                            <div className="min-w-0 flex items-center gap-2">
+                                <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                                    {entry.displayName}
+                                </span>
+                                {entry.isDeprecated && (
+                                    <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                        {t("chat.deprecatedTag")}
+                                    </span>
+                                )}
+                            </div>
+                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
+                            </span>
+                        </div>
+                        <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
+                            {entry.lastMessage || " "}
+                        </p>
+                    </div>
+                </button>
+            </div>
+        );
+    };
 
     return (
         <div className="flex-1 overflow-y-auto">
@@ -969,110 +1112,15 @@ export function RoomList({
                     <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.directChats")}</div>
                 ) : (
                     <>
-                        {pinnedRooms.map((entry) => (
-                            <div
-                                key={entry.roomId}
-                                className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
-                                    }`}
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() => onSelectRoom(entry.roomId)}
-                                    className="flex-1 min-w-0 flex items-center gap-3 text-left"
-                                >
-                                    <div className="relative w-10 h-10 flex-shrink-0">
-                                        {entry.isGroup ? (
-                                            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                                                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
-                                                    {entry.displayName[0]?.toUpperCase() || "G"}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
-                                        )}
-                                        {entry.unreadCount > 0 && (
-                                            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
-                                                {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                        <div className="flex justify-between items-baseline">
-                                            <div className="min-w-0 flex items-center gap-2">
-                                                <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
-                                                    {entry.displayName}
-                                                </span>
-                                                {entry.isDeprecated && (
-                                                    <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                                                        {t("chat.deprecatedTag")}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                                                {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
-                                            </span>
-                                        </div>
-                                        <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
-                                            {entry.lastMessage || " "}
-                                        </p>
-                                    </div>
-                                </button>
-                            </div>
-                        ))}
+                        {inviteRooms.map((entry) => renderRoomEntry(entry))}
+                        {inviteRooms.length > 0 && (pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
+                            <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                        )}
+                        {pinnedRooms.map((entry) => renderRoomEntry(entry))}
                         {pinnedRooms.length > 0 && unpinnedRooms.length > 0 && (
                             <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
                         )}
-                        {unpinnedRooms.map((entry) => (
-                            <div
-                                key={entry.roomId}
-                                className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
-                                    }`}
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() => onSelectRoom(entry.roomId)}
-                                    className="flex-1 min-w-0 flex items-center gap-3 text-left"
-                                >
-                                    <div className="relative w-10 h-10 flex-shrink-0">
-                                        {entry.isGroup ? (
-                                            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                                                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
-                                                    {entry.displayName[0]?.toUpperCase() || "G"}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
-                                        )}
-                                        {entry.unreadCount > 0 && (
-                                            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
-                                                {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                        <div className="flex justify-between items-baseline">
-                                            <div className="min-w-0 flex items-center gap-2">
-                                                <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
-                                                    {entry.displayName}
-                                                </span>
-                                                {entry.isDeprecated && (
-                                                    <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                                                        {t("chat.deprecatedTag")}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                                                {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
-                                            </span>
-                                        </div>
-                                        <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
-                                            {entry.lastMessage || " "}
-                                        </p>
-                                    </div>
-                                </button>
-                            </div>
-                        ))}
-
+                        {unpinnedRooms.map((entry) => renderRoomEntry(entry))}
                     </>
                 )
             ) : (
