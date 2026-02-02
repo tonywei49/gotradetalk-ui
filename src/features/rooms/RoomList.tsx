@@ -298,7 +298,9 @@ export function RoomList({
                 const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
                 const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
                 const isDeprecated = Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX));
-                const shouldHideDirect = kind === ROOM_KIND_DIRECT || (!kind && isDirect);
+                const memberCount = room.getJoinedMemberCount() ?? 0;
+                const shouldHideDirect =
+                    kind === ROOM_KIND_DIRECT || (!kind && isDirect && memberCount === 2);
                 if (shouldHideDirect && !directRoomIds.has(room.roomId) && !isDeprecated) {
                     hiddenDirectRoomIds.add(room.roomId);
                 }
@@ -445,15 +447,22 @@ export function RoomList({
                 try {
                     if (userType === "client") {
                         if (staffSearchMode === "customer") {
-                            const queryValue = staffCustomerId.trim();
-                            if (!queryValue) {
+                            const localpart = normalizeMatrixLocalpart(staffCustomerId);
+                            if (!localpart) {
                                 setSearchResults([]);
                                 setSearchError(null);
                                 return;
                             }
-                            const results = await searchDirectoryAll(queryValue, searchToken, searchHsUrl);
+                            const matrixUserId = buildMatrixUserId(localpart, STAFF_CUSTOMER_DOMAIN);
+                            if (!matrixUserId) {
+                                setSearchResults([]);
+                                setSearchError(t("roomList.errors.invalidUserId"));
+                                return;
+                            }
+                            const results = await searchDirectoryAll(matrixUserId, searchToken, searchHsUrl);
+                            const filtered = results.filter((item) => item.matrix_user_id === matrixUserId);
                             setSearchResults(
-                                results.map((item) => ({
+                                filtered.map((item) => ({
                                     id: item.profile_id,
                                     displayName: item.display_name,
                                     userLocalId: item.user_local_id,
@@ -484,8 +493,9 @@ export function RoomList({
                             return;
                         }
                         const results = await searchDirectoryAll(matrixUserId, searchToken, searchHsUrl);
+                        const filtered = results.filter((item) => item.matrix_user_id === matrixUserId);
                         setSearchResults(
-                            results.map((item) => ({
+                            filtered.map((item) => ({
                                 id: item.profile_id,
                                 displayName: item.display_name,
                                 userLocalId: item.user_local_id,
