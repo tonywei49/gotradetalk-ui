@@ -376,6 +376,14 @@ export const MainLayout: React.FC = () => {
                     ((matrixClient.getAccountData(EventType.Direct)?.getContent() as Record<string, string[]>)?.[
                         matrixUserId
                     ] ?? []).find((id) => Boolean(matrixClient.getRoom(id))) ??
+                    matrixClient
+                        .getRooms()
+                        .find(
+                            (room) =>
+                                room.getMyMembership() === "join" &&
+                                room.getJoinedMembers().length === 2 &&
+                                room.getJoinedMembers().some((member) => member.userId === matrixUserId),
+                        )?.roomId ??
                     null;
                 if (roomId) {
                     try {

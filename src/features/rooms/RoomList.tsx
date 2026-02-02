@@ -825,7 +825,7 @@ export function RoomList({
     }, [client, contacts, userType]);
 
     const visibleRooms = acceptedMatrixUserIds.size
-        ? rooms.filter((entry) => acceptedMatrixUserIds.has(entry.userId))
+        ? rooms.filter((entry) => entry.isDeprecated || acceptedMatrixUserIds.has(entry.userId))
         : rooms;
     const pinnedSet = new Set(pinnedRoomIds);
     const pinnedRooms = visibleRooms.filter((entry) => pinnedSet.has(entry.roomId));
