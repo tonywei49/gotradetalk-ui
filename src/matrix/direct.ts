@@ -1,6 +1,7 @@
 import type { MatrixClient } from "matrix-js-sdk";
 import { EventType, Preset, SyncState, ClientEvent } from "matrix-js-sdk";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
+import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT } from "../constants/roomKinds";
 
 type DirectAccountData = Record<string, string[]>;
 
@@ -121,6 +122,13 @@ export async function getOrCreateDirectRoom(
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
         room_version: "11",
+        initial_state: [
+            {
+                type: ROOM_KIND_EVENT,
+                state_key: "",
+                content: { kind: ROOM_KIND_DIRECT },
+            },
+        ],
     });
 
     const content = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as DirectAccountData;
@@ -192,6 +200,13 @@ export async function createDirectRoomWithMessage(
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
         room_version: "11",
+        initial_state: [
+            {
+                type: ROOM_KIND_EVENT,
+                state_key: "",
+                content: { kind: ROOM_KIND_DIRECT },
+            },
+        ],
     });
 
     const content = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as DirectAccountData;

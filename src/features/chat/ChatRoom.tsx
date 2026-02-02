@@ -18,6 +18,7 @@ import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
 import { inviteUsersToRoom, updateRoomInvitePermission } from "../../services/matrix";
 import { listContacts, type ContactEntry } from "../../api/contacts";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
+import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
 type MessageBubbleProps = {
     event: MatrixEvent;
@@ -204,14 +205,13 @@ export const ChatRoom: React.FC = () => {
         return Boolean(eventId && eventId.startsWith("$"));
     };
 
-    const isDirectRoom = useMemo(() => {
-        if (!matrixClient || !activeRoomId) return false;
-        const accountData = matrixClient.getAccountData(EventType.Direct);
-        const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
-        return Object.values(directContent).some((roomIds) => roomIds.includes(activeRoomId));
-    }, [matrixClient, activeRoomId]);
-
-    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom;
+    const roomKind = useMemo(() => {
+        if (!room) return null;
+        const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+        return (kindEvent?.getContent() as { kind?: string } | undefined)?.kind ?? null;
+    }, [room]);
+    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && roomKind === ROOM_KIND_GROUP;
+    const isDirectRoom = Boolean(room) && roomKind === ROOM_KIND_DIRECT;
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
     const groupMembers = room?.getJoinedMembers() ?? [];
     const memberCount = groupMembers.length;

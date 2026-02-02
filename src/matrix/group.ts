@@ -1,5 +1,6 @@
 import type { MatrixClient, ICreateRoomOpts } from "matrix-js-sdk";
 import { Preset, Visibility } from "matrix-js-sdk";
+import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../constants/roomKinds";
 
 export type HistoryVisibility = "shared" | "joined";
 
@@ -30,6 +31,11 @@ export async function createGroupChat(
 
     // 構建 initial_state 設置歷史可見性、加入規則、訪客訪問
     const initialState: ICreateRoomOpts["initial_state"] = [
+        {
+            type: ROOM_KIND_EVENT,
+            state_key: "",
+            content: { kind: ROOM_KIND_GROUP },
+        },
         {
             type: "m.room.history_visibility",
             state_key: "",

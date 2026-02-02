@@ -16,6 +16,7 @@ import {
 import { getDirectRoomId, getOrCreateDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
 import { playNotificationSound } from "../../utils/notificationSound";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
+import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
 type ChatRoomEntry = {
     userId?: string;
@@ -110,6 +111,7 @@ function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
     const content = (accountData?.getContent() ?? {}) as Record<string, string[]>;
     const byUser = new Map<string, ChatRoomEntry>();
     const visibleRoomIds = new Set(client.getVisibleRooms().map((room) => room.roomId));
+    const myUserId = client.getUserId();
 
     Object.entries(content).forEach(([userId, roomIds]) => {
         roomIds.forEach((roomId) => {
@@ -147,7 +149,6 @@ function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
         });
     });
 
-    const myUserId = client.getUserId();
     client.getRooms().forEach((room) => {
         if (room.getMyMembership() !== "join") return;
         if (room.isSpaceRoom()) return;
@@ -182,6 +183,7 @@ function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
  * 構建群組房間列表 - 不影響私聊邏輯
  */
 function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
+    const allRooms = client.getRooms();
     const directRoomIds = new Set<string>();
     const accountData = client.getAccountData(EventType.Direct);
     const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
@@ -189,14 +191,15 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
         roomIds.forEach((roomId) => directRoomIds.add(roomId));
     });
 
-    return client
-        .getRooms()
-        .filter((room) => {
-            if (room.getMyMembership() !== "join") return false;
-            if (room.isSpaceRoom()) return false;
-            return true;
-        })
-        .map((room) => ({
+    const groupRooms: ChatRoomEntry[] = [];
+    for (const room of allRooms) {
+        if (room.getMyMembership() !== "join") continue;
+        if (room.isSpaceRoom()) continue;
+        const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+        const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+        if (kind && kind !== ROOM_KIND_GROUP) continue;
+        if (!kind && directRoomIds.has(room.roomId)) continue;
+        groupRooms.push({
             roomId: room.roomId,
             room,
             displayName: room.name || "Group",
@@ -204,14 +207,11 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
             lastActive: room.getLastActiveTimestamp(),
             unreadCount: room.getUnreadNotificationCount() ?? 0,
             isDeprecated: false,
-            isGroup: !directRoomIds.has(room.roomId) &&
-                Boolean(
-                    !room.currentState
-                        .getStateEvents(EventType.RoomMember, client.getUserId() ?? "")
-                        ?.getContent()?.is_direct,
-                ),
-        }))
-        .sort((a, b) => b.lastActive - a.lastActive);
+            isGroup: true,
+        });
+    }
+
+    return groupRooms.sort((a, b) => b.lastActive - a.lastActive);
 }
 
 export function RoomList({
@@ -269,7 +269,6 @@ export function RoomList({
     >([]);
     const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
     const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
-    const [acceptedMatrixUserIds, setAcceptedMatrixUserIds] = useState<Set<string>>(new Set());
     const [contactSort, setContactSort] = useState<"company" | "name">("company");
     // 選中的搜索結果和初始消息（用於發送好友請求）
     const [selectedSearchItem, setSelectedSearchItem] = useState<{
@@ -282,10 +281,52 @@ export function RoomList({
     const refresh = useMemo(() => {
         if (!client) return null;
         return () => {
+            const accountData = client.getAccountData(EventType.Direct);
+            const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
+            const directRoomIds = new Set<string>();
+            Object.values(directContent).forEach((roomIds) => {
+                roomIds.forEach((roomId) => directRoomIds.add(roomId));
+            });
+            const hiddenDirectRoomIds = new Set<string>();
+            const myUserId = client.getUserId() ?? "";
+            client.getRooms().forEach((room) => {
+                if (room.getMyMembership() !== "join") return;
+                if (room.isSpaceRoom()) return;
+                const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
+                const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
+                const isDeprecated = Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX));
+                if (isDirect && !directRoomIds.has(room.roomId) && !isDeprecated) {
+                    hiddenDirectRoomIds.add(room.roomId);
+                }
+            });
+
             const directRooms = buildDirectRooms(client);
             const directRoomIdSet = new Set(directRooms.map((entry) => entry.roomId));
             const groupRooms = buildGroupRooms(client).filter((entry) => !directRoomIdSet.has(entry.roomId));
-            setRooms([...directRooms, ...groupRooms].sort((a, b) => b.lastActive - a.lastActive));
+            const unlabeledRooms = client
+                .getRooms()
+                .filter((room) => {
+                    if (room.getMyMembership() !== "join") return false;
+                    if (room.isSpaceRoom()) return false;
+                    const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+                    const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+                    return !kind && !directRoomIds.has(room.roomId);
+                })
+                .map((room) => ({
+                    roomId: room.roomId,
+                    room,
+                    displayName: room.name || "Chat",
+                    lastMessage: getLastMessagePreview(room),
+                    lastActive: room.getLastActiveTimestamp(),
+                    unreadCount: room.getUnreadNotificationCount() ?? 0,
+                    isDeprecated: Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX)),
+                    isGroup: false,
+                }));
+            setRooms(
+                [...directRooms, ...groupRooms, ...unlabeledRooms.filter((entry) => !directRoomIdSet.has(entry.roomId))]
+                    .filter((entry) => !hiddenDirectRoomIds.has(entry.roomId))
+                    .sort((a, b) => b.lastActive - a.lastActive),
+            );
         };
     }, [client]);
 
@@ -530,9 +571,6 @@ export function RoomList({
                 })),
             );
             setAcceptedIds(new Set(contactItems.map((item) => item.user_id)));
-            setAcceptedMatrixUserIds(
-                new Set(contactItems.map((item) => item.matrix_user_id).filter((value): value is string => Boolean(value))),
-            );
             setIncomingRequests(
                 requestItems.map((item) => ({
                     id: item.request_id,
@@ -847,11 +885,7 @@ export function RoomList({
         })();
     }, [client, contacts, userType]);
 
-    const visibleRooms = acceptedMatrixUserIds.size
-        ? rooms.filter(
-            (entry) => entry.isGroup || entry.isDeprecated || (entry.userId && acceptedMatrixUserIds.has(entry.userId)),
-        )
-        : rooms;
+    const visibleRooms = rooms;
     const pinnedSet = new Set(pinnedRoomIds);
     const pinnedRooms = visibleRooms.filter((entry) => pinnedSet.has(entry.roomId));
     const unpinnedRooms = visibleRooms.filter((entry) => !pinnedSet.has(entry.roomId));
