@@ -194,10 +194,6 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
         .filter((room) => {
             if (room.getMyMembership() !== "join") return false;
             if (room.isSpaceRoom()) return false;
-            const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, client.getUserId() ?? "");
-            const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
-            if (directRoomIds.has(room.roomId)) return false;
-            if (isDirect) return false;
             return true;
         })
         .map((room) => ({
@@ -208,7 +204,12 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
             lastActive: room.getLastActiveTimestamp(),
             unreadCount: room.getUnreadNotificationCount() ?? 0,
             isDeprecated: false,
-            isGroup: true,
+            isGroup: !directRoomIds.has(room.roomId) &&
+                Boolean(
+                    !room.currentState
+                        .getStateEvents(EventType.RoomMember, client.getUserId() ?? "")
+                        ?.getContent()?.is_direct,
+                ),
         }))
         .sort((a, b) => b.lastActive - a.lastActive);
 }
@@ -282,7 +283,8 @@ export function RoomList({
         if (!client) return null;
         return () => {
             const directRooms = buildDirectRooms(client);
-            const groupRooms = buildGroupRooms(client);
+            const directRoomIdSet = new Set(directRooms.map((entry) => entry.roomId));
+            const groupRooms = buildGroupRooms(client).filter((entry) => !directRoomIdSet.has(entry.roomId));
             setRooms([...directRooms, ...groupRooms].sort((a, b) => b.lastActive - a.lastActive));
         };
     }, [client]);
