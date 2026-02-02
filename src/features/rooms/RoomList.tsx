@@ -180,7 +180,7 @@ function buildGroupRooms(client: MatrixClient): GroupRoomEntry[] {
         .filter((room) => {
             if (room.getMyMembership() !== "join") return false;
             const memberCount = room.getJoinedMemberCount() ?? 0;
-            if (directRoomIds.has(room.roomId) && memberCount <= 2) return false;
+            if (memberCount <= 2) return false;
             if (room.isSpaceRoom()) return false;
             return true;
         })
@@ -292,6 +292,14 @@ export function RoomList({
             // 在非活動房間，或頁面隱藏時收到新消息播放提示音
             if (event.getType() === EventType.RoomMessage) {
                 const myUserId = client.getUserId();
+                const memberCount = room.getJoinedMemberCount() ?? 0;
+                const isPotentialDirect = memberCount === 2 && !room.name?.startsWith(DEPRECATED_DM_PREFIX);
+                if (isPotentialDirect) {
+                    const otherMember = room.getJoinedMembers().find((member) => member.userId !== myUserId);
+                    if (otherMember) {
+                        void setDirectRoom(client, otherMember.userId, room.roomId);
+                    }
+                }
                 const isFromMe = event.getSender() === myUserId;
                 const isBackground = typeof document !== "undefined" && document.hidden;
                 if (!isFromMe && (room.roomId !== activeRoomId || isBackground)) {
