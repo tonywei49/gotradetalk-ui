@@ -203,9 +203,11 @@ function buildGroupRooms(client: MatrixClient): GroupRoomEntry[] {
         .getRooms()
         .filter((room) => {
             if (room.getMyMembership() !== "join") return false;
-            const memberCount = room.getJoinedMemberCount() ?? 0;
-            if (memberCount <= 2) return false;
             if (room.isSpaceRoom()) return false;
+            const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, client.getUserId() ?? "");
+            const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
+            if (directRoomIds.has(room.roomId)) return false;
+            if (isDirect) return false;
             return true;
         })
         .map((room) => ({
@@ -316,9 +318,9 @@ export function RoomList({
             // 在非活動房間，或頁面隱藏時收到新消息播放提示音
             if (event.getType() === EventType.RoomMessage) {
                 const myUserId = client.getUserId();
-                const memberCount = room.getJoinedMemberCount() ?? 0;
-                const isPotentialDirect = memberCount === 2 && !room.name?.startsWith(DEPRECATED_DM_PREFIX);
-                if (isPotentialDirect) {
+                const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, client.getUserId() ?? "");
+                const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
+                if (isDirect) {
                     const otherMember = room.getJoinedMembers().find((member) => member.userId !== myUserId);
                     if (otherMember) {
                         void setDirectRoom(client, otherMember.userId, room.roomId);
