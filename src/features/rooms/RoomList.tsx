@@ -145,6 +145,30 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
         });
     });
 
+    const myUserId = client.getUserId();
+    client.getRooms().forEach((room) => {
+        if (room.getMyMembership() !== "join") return;
+        if (room.isSpaceRoom()) return;
+        if (!room.name?.startsWith(DEPRECATED_DM_PREFIX)) return;
+        if (visibleRoomIds.size && !visibleRoomIds.has(room.roomId)) return;
+        const members = room.getJoinedMembers();
+        if (members.length !== 2) return;
+        const otherMember = members.find((member) => member.userId !== myUserId);
+        if (!otherMember) return;
+        if (byUser.has(otherMember.userId)) return;
+        const entry: DirectRoomEntry = {
+            userId: otherMember.userId,
+            roomId: room.roomId,
+            room,
+            displayName: otherMember.name ?? otherMember.userId,
+            lastMessage: getLastMessagePreview(room),
+            lastActive: room.getLastActiveTimestamp(),
+            unreadCount: room.getUnreadNotificationCount() ?? 0,
+            isDeprecated: true,
+        };
+        byUser.set(otherMember.userId, entry);
+    });
+
     return Array.from(byUser.values()).sort((a, b) => b.lastActive - a.lastActive);
 }
 
