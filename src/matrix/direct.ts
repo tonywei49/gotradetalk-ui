@@ -71,6 +71,10 @@ export async function getOrCreateDirectRoom(
     userId: string,
     forceNew = false,
 ): Promise<string> {
+    const myUserId = client.getUserId();
+    if (!myUserId) {
+        throw new Error("User is not logged in");
+    }
     if (!forceNew) {
         const existing = getDirectRoomId(client, userId);
         if (existing) {
@@ -122,6 +126,19 @@ export async function getOrCreateDirectRoom(
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
         room_version: "11",
+        power_level_content_override: {
+            users: {
+                [myUserId]: 100,
+                [userId]: 100,
+            },
+            users_default: 0,
+            events_default: 0,
+            state_default: 50,
+            ban: 50,
+            kick: 50,
+            redact: 50,
+            invite: 50,
+        },
         initial_state: [
             {
                 type: ROOM_KIND_EVENT,
@@ -151,6 +168,10 @@ export async function createDirectRoomWithMessage(
     message: string,
     forceNew = false,
 ): Promise<string> {
+    const myUserId = client.getUserId();
+    if (!myUserId) {
+        throw new Error("User is not logged in");
+    }
     if (!forceNew) {
         const existing = getDirectRoomId(client, userId);
         if (existing) {
@@ -200,6 +221,19 @@ export async function createDirectRoomWithMessage(
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
         room_version: "11",
+        power_level_content_override: {
+            users: {
+                [myUserId]: 100,
+                [userId]: 100,
+            },
+            users_default: 0,
+            events_default: 0,
+            state_default: 50,
+            ban: 50,
+            kick: 50,
+            redact: 50,
+            invite: 50,
+        },
         initial_state: [
             {
                 type: ROOM_KIND_EVENT,
