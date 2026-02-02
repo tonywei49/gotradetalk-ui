@@ -64,6 +64,10 @@ export async function setDirectRoom(client: MatrixClient, userId: string, roomId
 }
 
 export async function getOrCreateDirectRoom(client: MatrixClient, userId: string): Promise<string> {
+    const myUserId = client.getUserId();
+    if (!myUserId) {
+        throw new Error("User is not logged in");
+    }
     // 1. 優先從 m.direct 查找
     const existing = getDirectRoomId(client, userId);
     if (existing) {
@@ -119,6 +123,19 @@ export async function getOrCreateDirectRoom(client: MatrixClient, userId: string
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
         room_version: "11",
+        power_level_content_override: {
+            users: {
+                [myUserId]: 100,
+                [userId]: 100,
+            },
+            users_default: 0,
+            events_default: 0,
+            state_default: 50,
+            ban: 50,
+            kick: 50,
+            redact: 50,
+            invite: 50,
+        },
     });
 
     const content = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as DirectAccountData;
@@ -140,6 +157,10 @@ export async function createDirectRoomWithMessage(
     userId: string,
     message: string,
 ): Promise<string> {
+    const myUserId = client.getUserId();
+    if (!myUserId) {
+        throw new Error("User is not logged in");
+    }
     // 1. 優先從 m.direct 查找
     const existing = getDirectRoomId(client, userId);
     if (existing) {
@@ -198,6 +219,19 @@ export async function createDirectRoomWithMessage(
         is_direct: true,
         preset: Preset.TrustedPrivateChat,
         room_version: "11",
+        power_level_content_override: {
+            users: {
+                [myUserId]: 100,
+                [userId]: 100,
+            },
+            users_default: 0,
+            events_default: 0,
+            state_default: 50,
+            ban: 50,
+            kick: 50,
+            redact: 50,
+            invite: 50,
+        },
     });
 
     // 更新 m.direct account data
