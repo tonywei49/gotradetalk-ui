@@ -285,6 +285,7 @@ export function RoomList({
         displayName: string | null;
     } | null>(null);
     const [initialMessage, setInitialMessage] = useState("");
+    const [sendingRequest, setSendingRequest] = useState(false);
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -698,10 +699,12 @@ export function RoomList({
 
     const onRequestContact = async (targetId: string, targetMatrixUserId: string | null, initialMessage: string): Promise<void> => {
         if (!searchToken || !client || !targetMatrixUserId) return;
+        if (sendingRequest) return; // 防止重複點擊
         if (!initialMessage.trim()) {
             setSearchError(t("roomList.errors.greetingRequired"));
             return;
         }
+        setSendingRequest(true);
         try {
             // 1. 創建房間並發送初始消息
             const roomId = await createDirectRoomWithMessage(
@@ -727,6 +730,8 @@ export function RoomList({
             setStaffPersonId("");
         } catch (error) {
             setSearchError(error instanceof Error ? error.message : t("roomList.errors.requestFailed"));
+        } finally {
+            setSendingRequest(false);
         }
     };
 
@@ -1316,12 +1321,12 @@ export function RoomList({
                                                 setInitialMessage("");
                                             });
                                         }}
-                                        disabled={!initialMessage.trim()}
-                                        className={`mt-2 w-full py-1.5 text-sm font-medium rounded ${initialMessage.trim()
+                                        disabled={!initialMessage.trim() || sendingRequest}
+                                        className={`mt-2 w-full py-1.5 text-sm font-medium rounded ${initialMessage.trim() && !sendingRequest
                                             ? "bg-emerald-500 text-white hover:bg-emerald-600"
                                             : "bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-600"
                                             }`}
-                                    >{t("roomList.search.sendRequest")}</button>
+                                    >{sendingRequest ? t("common.sending", "Sending...") : t("roomList.search.sendRequest")}</button>
                                 </div>
                             )}
                             {searchResults.length === 0 &&

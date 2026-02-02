@@ -56,21 +56,32 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                 const isDirect = directRooms.has(room.roomId);
                 const memberCount = room.getJoinedMemberCount() ?? 0;
 
+                // 檢查成員事件中的 is_direct 屬性
+                const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
+                const isDirectFromMemberEvent = Boolean(memberEvent?.getContent()?.is_direct);
+
                 console.log("[GroupInviteList] Checking room:", room.roomId, {
                     name: room.name,
                     membership,
                     kind,
                     isDirect,
+                    isDirectFromMemberEvent,
                     memberCount,
                 });
 
                 // 只處理邀請狀態的房間
                 if (membership !== "invite") return false;
-                // 排除私聊房間（在 m.direct 中的房間）
-                if (kind && kind !== ROOM_KIND_GROUP) return false;
-                if (!kind) {
-                    if (isDirect && memberCount <= 2) return false;
+
+                // 如果有 room_kind，根據它判斷
+                if (kind) {
+                    return kind === ROOM_KIND_GROUP;
                 }
+
+                // 如果沒有 room_kind，使用其他方式判斷
+                // 排除私聊邀請（is_direct 為 true 或在 m.direct 中）
+                if (isDirectFromMemberEvent) return false;
+                if (isDirect && memberCount <= 2) return false;
+
                 return true;
             })
             .map((room) => {
