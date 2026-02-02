@@ -275,7 +275,10 @@
         "inviteSearchPlaceholder": "搜尋好友...",
         "inviteContactsEmpty": "沒有可邀請的好友。",
         "inviteContactsAuthMissing": "缺少邀請權限。",
-        "inviteContactsFailed": "載入好友清單失敗。"
+        "inviteContactsFailed": "載入好友清單失敗。",
+        "deprecatedTag": "已棄用",
+        "deprecatedNotice": "此聊天室已棄用，請重新開始新的聊天。",
+        "deprecatedPlaceholder": "此聊天室已棄用"
     },
     "group": {
         "createTitle": "创建群聊",

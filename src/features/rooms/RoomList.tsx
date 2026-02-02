@@ -15,6 +15,7 @@ import {
 } from "../../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
 import { playNotificationSound } from "../../utils/notificationSound";
+import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 
 type DirectRoomEntry = {
     userId: string;
@@ -24,6 +25,7 @@ type DirectRoomEntry = {
     lastMessage: string;
     lastActive: number;
     unreadCount: number;
+    isDeprecated: boolean;
 };
 
 export type ContactSummary = {
@@ -123,9 +125,21 @@ function buildDirectRooms(client: MatrixClient): DirectRoomEntry[] {
                 lastMessage: getLastMessagePreview(room),
                 lastActive,
                 unreadCount,
+                isDeprecated: room.name?.startsWith(DEPRECATED_DM_PREFIX) ?? false,
             };
             const existing = byUser.get(userId);
-            if (!existing || entry.lastActive > existing.lastActive) {
+            if (!existing) {
+                byUser.set(userId, entry);
+                return;
+            }
+            if (existing.isDeprecated && !entry.isDeprecated) {
+                byUser.set(userId, entry);
+                return;
+            }
+            if (!existing.isDeprecated && entry.isDeprecated) {
+                return;
+            }
+            if (entry.lastActive > existing.lastActive) {
                 byUser.set(userId, entry);
             }
         });
@@ -576,7 +590,12 @@ export function RoomList({
         }
         try {
             // 1. 創建房間並發送初始消息
-            const roomId = await createDirectRoomWithMessage(client, targetMatrixUserId, initialMessage.trim());
+            const roomId = await createDirectRoomWithMessage(
+                client,
+                targetMatrixUserId,
+                initialMessage.trim(),
+                true,
+            );
 
             // 2. 將房間 ID 傳給 Hub API
             const result = await requestContact(searchToken, targetId, initialMessage.trim(), roomId, searchHsUrl);
@@ -854,9 +873,16 @@ export function RoomList({
                                     </div>
                                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                                         <div className="flex justify-between items-baseline">
-                                            <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
-                                                {entry.displayName}
-                                            </span>
+                                            <div className="min-w-0 flex items-center gap-2">
+                                                <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                                                    {entry.displayName}
+                                                </span>
+                                                {entry.isDeprecated && (
+                                                    <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                                        {t("chat.deprecatedTag")}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <span className="text-[10px] text-gray-400 dark:text-slate-500">
                                                 {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
                                             </span>
@@ -892,9 +918,16 @@ export function RoomList({
                                     </div>
                                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                                         <div className="flex justify-between items-baseline">
-                                            <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
-                                                {entry.displayName}
-                                            </span>
+                                            <div className="min-w-0 flex items-center gap-2">
+                                                <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                                                    {entry.displayName}
+                                                </span>
+                                                {entry.isDeprecated && (
+                                                    <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                                        {t("chat.deprecatedTag")}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <span className="text-[10px] text-gray-400 dark:text-slate-500">
                                                 {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
                                             </span>

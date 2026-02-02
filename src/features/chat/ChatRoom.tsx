@@ -17,6 +17,7 @@ import { useAuthStore } from "../../stores/AuthStore";
 import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
 import { inviteUsersToRoom, updateRoomInvitePermission } from "../../services/matrix";
 import { listContacts, type ContactEntry } from "../../api/contacts";
+import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 
 type MessageBubbleProps = {
     event: MatrixEvent;
@@ -211,6 +212,7 @@ export const ChatRoom: React.FC = () => {
     }, [matrixClient, activeRoomId]);
 
     const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom;
+    const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
     const groupMembers = room?.getJoinedMembers() ?? [];
     const memberCount = groupMembers.length;
     const powerLevels = useMemo((): PowerLevelContent | null => {
@@ -351,7 +353,7 @@ export const ChatRoom: React.FC = () => {
     };
 
     const onSend = (): void => {
-        if (!matrixClient || !activeRoomId) return;
+        if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
         const trimmed = composerText.trim();
         if (!trimmed) return;
         setComposerText("");
@@ -555,6 +557,11 @@ export const ChatRoom: React.FC = () => {
                 onScroll={() => void onScroll()}
                 className="flex-1 min-h-0 overflow-y-auto p-6 bg-[#F2F4F7] dark:bg-slate-950"
             >
+                {isDeprecatedRoom && (
+                    <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-200">
+                        {t("chat.deprecatedNotice")}
+                    </div>
+                )}
                 {scrollLoading && (
                     <div className="text-center text-xs text-slate-400 dark:text-slate-500 mb-4">
                         {t("common.loading")}
@@ -623,14 +630,16 @@ export const ChatRoom: React.FC = () => {
                                 void onSend();
                             }
                         }}
-                        className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none h-12 max-h-32 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400"
-                        placeholder={t("chat.placeholder")}
+                        className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none h-12 max-h-32 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-slate-800"
+                        placeholder={isDeprecatedRoom ? t("chat.deprecatedPlaceholder") : t("chat.placeholder")}
                         rows={1}
+                        disabled={isDeprecatedRoom}
                     />
                     <button
                         type="button"
                         onClick={() => void onSend()}
-                        className="bg-[#2F5C56] hover:bg-[#244a45] text-white p-3 rounded-xl shadow-md transition-colors flex items-center justify-center dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                        className="bg-[#2F5C56] hover:bg-[#244a45] text-white p-3 rounded-xl shadow-md transition-colors flex items-center justify-center dark:bg-emerald-500 dark:hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={isDeprecatedRoom}
                     >
                         <PaperAirplaneIcon className="w-5 h-5" />
                     </button>

@@ -23,6 +23,8 @@ import { translationLanguageOptions } from "../constants/translationLanguages";
 import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
 import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
 import { setLanguage } from "../i18n";
+import { markRoomDeprecated } from "../services/matrix";
+import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -274,8 +276,15 @@ export const MainLayout: React.FC = () => {
             if (directRoomIds.has(activeRoomId)) {
                 const currentUserId = matrixCredentials?.user_id ?? null;
                 const otherMember = room.getJoinedMembers().find((member) => member.userId !== currentUserId);
-                if (!otherMember) return;
-                await hideDirectRoom(matrixClient, otherMember.userId, activeRoomId);
+                const directPartnerId =
+                    otherMember?.userId ??
+                    Object.entries(directContent).find(([, roomIds]) => roomIds.includes(activeRoomId))?.[0] ??
+                    null;
+                if (!directPartnerId) return;
+                await hideDirectRoom(matrixClient, directPartnerId, activeRoomId);
+                if (room.name?.startsWith(DEPRECATED_DM_PREFIX)) {
+                    await matrixClient.leave(activeRoomId);
+                }
             } else if (!room.isSpaceRoom()) {
                 await matrixClient.leave(activeRoomId);
             }
@@ -362,9 +371,20 @@ export const MainLayout: React.FC = () => {
                 activeContact.matrixUserId ||
                 (activeContact.userLocalId && matrixHost ? `@${activeContact.userLocalId}:${matrixHost}` : null);
             if (matrixClient && matrixUserId) {
-                const roomId = getDirectRoomId(matrixClient, matrixUserId);
+                const roomId =
+                    getDirectRoomId(matrixClient, matrixUserId) ??
+                    ((matrixClient.getAccountData(EventType.Direct)?.getContent() as Record<string, string[]>)?.[
+                        matrixUserId
+                    ] ?? []).find((id) => Boolean(matrixClient.getRoom(id))) ??
+                    null;
                 if (roomId) {
+                    try {
+                        await markRoomDeprecated(roomId);
+                    } catch {
+                        // ignore mark failures
+                    }
                     await hideDirectRoom(matrixClient, matrixUserId, roomId);
+                    await matrixClient.leave(roomId);
                 }
             }
             setActiveContact(null);

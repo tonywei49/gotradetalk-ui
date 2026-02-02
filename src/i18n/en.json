@@ -275,7 +275,10 @@
         "inviteSearchPlaceholder": "Search contacts...",
         "inviteContactsEmpty": "No contacts available to invite.",
         "inviteContactsAuthMissing": "Missing invite permission.",
-        "inviteContactsFailed": "Failed to load contacts."
+        "inviteContactsFailed": "Failed to load contacts.",
+        "deprecatedTag": "Deprecated",
+        "deprecatedNotice": "This conversation has been deprecated. Please start a new chat.",
+        "deprecatedPlaceholder": "This chat is deprecated."
     },
     "group": {
         "createTitle": "Create Group",
