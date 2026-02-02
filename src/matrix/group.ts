@@ -82,7 +82,10 @@ export async function createGroupChat(
         // 注意：不使用 invite 參數，因為跨服務器可能導致邀請失敗
         initial_state: initialState,
         power_level_content_override: powerLevelContentOverride,
-        room_version: "11",
+        room_version: "10",
+        creation_content: {
+            "m.federate": true,
+        },
     };
 
     console.log("[createGroupChat] Creating room with options:", JSON.stringify(createRoomOpts, null, 2));
