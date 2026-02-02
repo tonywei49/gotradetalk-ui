@@ -108,7 +108,7 @@ function getLastMessagePreview(room: Room): string {
 function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
     const accountData = client.getAccountData(EventType.Direct);
     const content = (accountData?.getContent() ?? {}) as Record<string, string[]>;
-    const byUser = new Map<string, DirectRoomEntry>();
+    const byUser = new Map<string, ChatRoomEntry>();
     const visibleRoomIds = new Set(client.getVisibleRooms().map((room) => room.roomId));
 
     Object.entries(content).forEach(([userId, roomIds]) => {
