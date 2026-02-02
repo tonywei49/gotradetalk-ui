@@ -118,6 +118,10 @@ function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
             if (!visibleRoomIds.has(roomId)) return;
             const room = client.getRoom(roomId);
             if (!room) return;
+            // 排除群組房間 - 可能由於歷史原因存在於 m.direct 中
+            const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+            const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+            if (kind === ROOM_KIND_GROUP) return;
             const lastActive = room.getLastActiveTimestamp();
             const unreadCount = room.getUnreadNotificationCount() ?? 0;
             const entry: ChatRoomEntry = {
@@ -312,7 +316,9 @@ export function RoomList({
 
             const directRooms = buildDirectRooms(client);
             const directRoomIdSet = new Set(directRooms.map((entry) => entry.roomId));
-            const groupRooms = buildGroupRooms(client).filter((entry) => !directRoomIdSet.has(entry.roomId));
+            // 群組房間不應該基於 directRoomIdSet 過濾，因為 m.direct 帳戶數據可能包含舊數據
+            // buildGroupRooms 已經根據 room_kind 正確識別群組
+            const groupRooms = buildGroupRooms(client);
             const unlabeledRooms = client
                 .getRooms()
                 .filter((room) => {
