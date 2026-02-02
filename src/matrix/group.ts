@@ -73,13 +73,13 @@ export async function createGroupChat(
         invite: 50,
     };
 
-    // 創建房間配置 - 不啟用加密
+    // 創建房間配置 - 不在創建時邀請，後續逐一邀請以解決 Federation 問題
     const createRoomOpts: ICreateRoomOpts = {
         name,
         topic,
         preset: Preset.PrivateChat, // 私有群組，不會自動開啟加密
         visibility: Visibility.Private, // 不公開在目錄中
-        invite: invitees,
+        // 注意：不使用 invite 參數，因為跨服務器可能導致邀請失敗
         initial_state: initialState,
         power_level_content_override: powerLevelContentOverride,
         room_version: "11",
@@ -87,9 +87,25 @@ export async function createGroupChat(
 
     console.log("[createGroupChat] Creating room with options:", JSON.stringify(createRoomOpts, null, 2));
     const result = await client.createRoom(createRoomOpts);
+    const roomId = result.room_id;
 
     // 確保房間不在目錄中可見
-    await client.setRoomDirectoryVisibility(result.room_id, Visibility.Private);
+    await client.setRoomDirectoryVisibility(roomId, Visibility.Private);
 
-    return result.room_id;
+    // 逐一邀請用戶，確保跨服務器邀請正確發送
+    if (invitees.length > 0) {
+        console.log("[createGroupChat] Inviting users one by one:", invitees);
+        for (const invitee of invitees) {
+            try {
+                console.log("[createGroupChat] Inviting:", invitee);
+                await client.invite(roomId, invitee);
+                console.log("[createGroupChat] Successfully invited:", invitee);
+            } catch (error) {
+                console.error("[createGroupChat] Failed to invite:", invitee, error);
+                // 繼續邀請其他用戶，不因單個失敗而中斷
+            }
+        }
+    }
+
+    return roomId;
 }
