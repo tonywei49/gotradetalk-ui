@@ -179,7 +179,8 @@ function buildGroupRooms(client: MatrixClient): GroupRoomEntry[] {
         .getRooms()
         .filter((room) => {
             if (room.getMyMembership() !== "join") return false;
-            if (directRoomIds.has(room.roomId)) return false;
+            const memberCount = room.getJoinedMemberCount() ?? 0;
+            if (directRoomIds.has(room.roomId) && memberCount <= 2) return false;
             if (room.isSpaceRoom()) return false;
             return true;
         })

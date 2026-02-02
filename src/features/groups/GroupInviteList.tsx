@@ -52,7 +52,8 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                 // 只處理邀請狀態的房間
                 if (room.getMyMembership() !== "invite") return false;
                 // 排除私聊房間（在 m.direct 中的房間）
-                if (directRooms.has(room.roomId)) return false;
+                const memberCount = room.getJoinedMemberCount() ?? 0;
+                if (directRooms.has(room.roomId) && memberCount <= 2) return false;
                 return true;
             })
             .map((room) => {
