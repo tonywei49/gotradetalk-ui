@@ -1,5 +1,5 @@
 import type { MatrixClient } from "matrix-js-sdk";
-import { EventType } from "matrix-js-sdk";
+import { EventType, MatrixError } from "matrix-js-sdk";
 import { useAuthStore } from "../stores/AuthStore";
 import { DEPRECATED_DM_PREFIX, DEPRECATED_DM_SEPARATOR } from "../constants/rooms";
 
@@ -80,11 +80,46 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
         const myLevel = powerLevels.users?.[currentUserId] ?? powerLevels.users_default ?? 0;
         const inviteLevel = powerLevels.invite ?? 0;
         if (myLevel < inviteLevel) {
-            throw new Error("您沒有權限邀請成員 (You are not allowed to invite users)");
+            throw new Error("You are not allowed to invite users");
         }
     }
 
-    const results = await Promise.allSettled(unique.map((userId) => client.invite(roomId, userId)));
+    const alreadyJoined: string[] = [];
+    const alreadyInvited: string[] = [];
+    const bannedUsers: string[] = [];
+    const pendingInvites: string[] = [];
+    if (room) {
+        for (const userId of unique) {
+            const member = room.getMember(userId);
+            const membership = member?.membership;
+            if (membership === "join") {
+                alreadyJoined.push(userId);
+                continue;
+            }
+            if (membership === "invite") {
+                alreadyInvited.push(userId);
+                continue;
+            }
+            if (membership === "ban") {
+                bannedUsers.push(userId);
+                continue;
+            }
+            pendingInvites.push(userId);
+        }
+    } else {
+        pendingInvites.push(...unique);
+    }
+
+    if (pendingInvites.length === 0) {
+        const parts = [
+            alreadyJoined.length > 0 ? `Already joined: ${alreadyJoined.join(", ")}` : null,
+            alreadyInvited.length > 0 ? `Already invited: ${alreadyInvited.join(", ")}` : null,
+            bannedUsers.length > 0 ? `Banned: ${bannedUsers.join(", ")}` : null,
+        ].filter((part): part is string => Boolean(part));
+        throw new Error(parts.length > 0 ? parts.join("; ") : "No users to invite");
+    }
+
+    const results = await Promise.allSettled(pendingInvites.map((userId) => client.invite(roomId, userId)));
     console.log("[inviteUsersToRoom] Invite results:", results);
     const forbidden = results.find((result) => {
         if (result.status !== "rejected") return false;
@@ -95,7 +130,7 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
         return false;
     });
     if (forbidden) {
-        throw new Error("您沒有權限邀請成員 (You are not allowed to invite users)");
+        throw new Error("You are not allowed to invite users");
     }
 
     const failures = results
@@ -103,13 +138,28 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
             if (result.status !== "rejected") return null;
             const reason = result.reason as
                 | { errcode?: string; message?: string; error?: string; httpStatus?: number }
+                | MatrixError
                 | null;
-            const detail = reason?.errcode || reason?.message || reason?.error || "unknown error";
-            return `${unique[index]}: ${detail}`;
+            const errcode = (reason as { errcode?: string } | null)?.errcode;
+            let detail = errcode || (reason as { message?: string } | null)?.message || "unknown error";
+            if (errcode === "M_FORBIDDEN") detail = "No invite permission";
+            if (errcode === "M_NOT_FOUND" || errcode === "M_USER_NOT_FOUND") detail = "User not found";
+            if (errcode === "M_UNSUPPORTED_ROOM_VERSION") detail = "Unsupported room version";
+            if (errcode === "M_BAD_STATE") detail = "Room state error";
+            return `${pendingInvites[index]}: ${detail}`;
         })
         .filter((value): value is string => value !== null);
+    if (alreadyJoined.length > 0) {
+        failures.push(`Already joined: ${alreadyJoined.join(", ")}`);
+    }
+    if (alreadyInvited.length > 0) {
+        failures.push(`Already invited: ${alreadyInvited.join(", ")}`);
+    }
+    if (bannedUsers.length > 0) {
+        failures.push(`Banned: ${bannedUsers.join(", ")}`);
+    }
     if (failures.length > 0) {
-        throw new Error(`部分邀請失敗: ${failures.join(", ")}`);
+        throw new Error(`Some invites failed: ${failures.join("; ")}`);
     }
 
     return results.filter((result) => result.status === "fulfilled").length;
