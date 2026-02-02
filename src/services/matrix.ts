@@ -54,7 +54,13 @@ export async function updateRoomInvitePermission(roomId: string, allowMembersToI
 export async function inviteUsersToRoom(roomId: string, userIds: string[]): Promise<number> {
     const client = getMatrixClient();
     const unique = Array.from(new Set(userIds.filter((userId) => userId.trim())));
-    console.log("[inviteUsersToRoom] Inviting users:", { roomId, userIds: unique });
+    const hsUrl = (client as { getHomeserverUrl?: () => string | null }).getHomeserverUrl?.() ?? null;
+    console.log("[inviteUsersToRoom] Inviting users:", {
+        roomId,
+        userIds: unique,
+        fromUserId: client.getUserId(),
+        hsUrl,
+    });
     if (unique.length === 0) return 0;
 
     const room = client.getRoom(roomId);
@@ -119,7 +125,14 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
         throw new Error(parts.length > 0 ? parts.join("; ") : "No users to invite");
     }
 
-    const results = await Promise.allSettled(pendingInvites.map((userId) => client.invite(roomId, userId)));
+    const results = await Promise.allSettled(
+        pendingInvites.map(async (userId) => {
+            console.log("[inviteUsersToRoom] Inviting:", { roomId, userId, hsUrl });
+            const result = await client.invite(roomId, userId);
+            console.log("[inviteUsersToRoom] Invite success:", { roomId, userId });
+            return result;
+        }),
+    );
     console.log("[inviteUsersToRoom] Invite results:", results);
     const forbidden = results.find((result) => {
         if (result.status !== "rejected") return false;
