@@ -56,6 +56,34 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
     const unique = Array.from(new Set(userIds.filter((userId) => userId.trim())));
     console.log("[inviteUsersToRoom] Inviting users:", { roomId, userIds: unique });
     if (unique.length === 0) return 0;
+
+    const room = client.getRoom(roomId);
+    const currentUserId = client.getUserId();
+    let powerLevels: PowerLevelContent | null = null;
+    if (room) {
+        const event = room.currentState.getStateEvents(EventType.RoomPowerLevels, "");
+        powerLevels = (event?.getContent() ?? null) as PowerLevelContent | null;
+    }
+    if (!powerLevels) {
+        try {
+            const eventContent = (await client.getStateEvent(
+                roomId,
+                EventType.RoomPowerLevels,
+                "",
+            )) as PowerLevelContent;
+            powerLevels = eventContent ?? {};
+        } catch {
+            powerLevels = null;
+        }
+    }
+    if (powerLevels && currentUserId) {
+        const myLevel = powerLevels.users?.[currentUserId] ?? powerLevels.users_default ?? 0;
+        const inviteLevel = powerLevels.invite ?? 0;
+        if (myLevel < inviteLevel) {
+            throw new Error("您沒有權限邀請成員 (You are not allowed to invite users)");
+        }
+    }
+
     const results = await Promise.allSettled(unique.map((userId) => client.invite(roomId, userId)));
     console.log("[inviteUsersToRoom] Invite results:", results);
     const forbidden = results.find((result) => {
@@ -69,6 +97,21 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
     if (forbidden) {
         throw new Error("您沒有權限邀請成員 (You are not allowed to invite users)");
     }
+
+    const failures = results
+        .map((result, index) => {
+            if (result.status !== "rejected") return null;
+            const reason = result.reason as
+                | { errcode?: string; message?: string; error?: string; httpStatus?: number }
+                | null;
+            const detail = reason?.errcode || reason?.message || reason?.error || "unknown error";
+            return `${unique[index]}: ${detail}`;
+        })
+        .filter((value): value is string => value !== null);
+    if (failures.length > 0) {
+        throw new Error(`部分邀請失敗: ${failures.join(", ")}`);
+    }
+
     return results.filter((result) => result.status === "fulfilled").length;
 }
 
