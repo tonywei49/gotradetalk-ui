@@ -3,6 +3,7 @@ import type { MatrixClient, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { useTranslation } from "react-i18next";
+import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
 export type GroupInvite = {
     roomId: string;
@@ -52,8 +53,13 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                 // 只處理邀請狀態的房間
                 if (room.getMyMembership() !== "invite") return false;
                 // 排除私聊房間（在 m.direct 中的房間）
-                const memberCount = room.getJoinedMemberCount() ?? 0;
-                if (directRooms.has(room.roomId) && memberCount <= 2) return false;
+                const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+                const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+                if (kind && kind !== ROOM_KIND_GROUP) return false;
+                if (!kind) {
+                    const memberCount = room.getJoinedMemberCount() ?? 0;
+                    if (directRooms.has(room.roomId) && memberCount <= 2) return false;
+                }
                 return true;
             })
             .map((room) => {

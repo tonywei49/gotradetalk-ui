@@ -16,7 +16,7 @@ import {
 import { getDirectRoomId, getOrCreateDirectRoom, setDirectRoom, createDirectRoomWithMessage, joinDirectRoom } from "../../matrix/direct";
 import { playNotificationSound } from "../../utils/notificationSound";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
-import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
+import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
 type ChatRoomEntry = {
     userId?: string;
@@ -292,10 +292,14 @@ export function RoomList({
             client.getRooms().forEach((room) => {
                 if (room.getMyMembership() !== "join") return;
                 if (room.isSpaceRoom()) return;
+                const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+                const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+                if (kind === ROOM_KIND_GROUP) return;
                 const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
                 const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
                 const isDeprecated = Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX));
-                if (isDirect && !directRoomIds.has(room.roomId) && !isDeprecated) {
+                const shouldHideDirect = kind === ROOM_KIND_DIRECT || (!kind && isDirect);
+                if (shouldHideDirect && !directRoomIds.has(room.roomId) && !isDeprecated) {
                     hiddenDirectRoomIds.add(room.roomId);
                 }
             });
@@ -378,14 +382,26 @@ export function RoomList({
             refresh();
         };
 
+        const onRoom = (): void => {
+            refresh();
+        };
+
+        const onMembership = (): void => {
+            refresh();
+        };
+
         client.on(RoomEvent.Timeline, onTimeline);
         client.on(ClientEvent.AccountData, onAccountData);
         client.on(RoomEvent.Receipt, onReceipt);
+        client.on("Room" as any, onRoom);
+        client.on(RoomEvent.MyMembership, onMembership);
 
         return () => {
             client.off(RoomEvent.Timeline, onTimeline);
             client.off(ClientEvent.AccountData, onAccountData);
             client.off(RoomEvent.Receipt, onReceipt);
+            client.off("Room" as any, onRoom);
+            client.off(RoomEvent.MyMembership, onMembership);
         };
     }, [client, refresh, activeRoomId]);
 
@@ -408,62 +424,16 @@ export function RoomList({
     }, [rooms, onUnreadBadgeChange]);
 
     const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
-    const isStaffSearch = userType === "staff";
-    const useHubToken = !isStaffSearch && Boolean(hubAccessToken) && !hubTokenExpired;
+    const isStructuredSearch = userType === "staff" || userType === "client";
+    const useHubToken = userType === "client" && Boolean(hubAccessToken) && !hubTokenExpired;
     const searchToken = useHubToken ? hubAccessToken : matrixAccessToken;
     const searchHsUrl = useHubToken ? null : matrixHsUrl;
     const matrixHost = getMatrixHost(matrixHsUrl);
 
     useEffect(() => {
-        if (isStaffSearch) return;
-        if (!query.trim()) {
-            setSearchResults([]);
-            setSearchError(null);
-            return;
-        }
+        if (!isStructuredSearch) return;
         if (!searchToken) {
             setSearchError(t("roomList.errors.searchRequiresToken"));
-            setSearchResults([]);
-            return;
-        }
-        const handler = window.setTimeout(() => {
-            void (async () => {
-                setSearchBusy(true);
-                setSearchError(null);
-                try {
-                    const results = await searchDirectoryAll(query.trim(), searchToken, searchHsUrl);
-                    setSearchResults(
-                        results.map((item) => ({
-                            id: item.profile_id,
-                            displayName: item.display_name,
-                            userLocalId: item.user_local_id,
-                            companyName: item.company_name,
-                            title: null,
-                            country: item.country,
-                            matrixUserId: item.matrix_user_id ?? null,
-                        })),
-                    );
-                } catch (error) {
-                    setSearchError(error instanceof Error ? error.message : t("roomList.errors.searchFailed"));
-                    setSearchResults([]);
-                } finally {
-                    setSearchBusy(false);
-                }
-            })();
-        }, 350);
-
-        return () => window.clearTimeout(handler);
-    }, [isStaffSearch, query, searchToken, searchHsUrl]);
-
-    useEffect(() => {
-        if (!isStaffSearch) return;
-        if (!searchToken) {
-            setSearchError(t("roomList.errors.searchRequiresToken"));
-            setSearchResults([]);
-            return;
-        }
-        if (!searchHsUrl) {
-            setSearchError(t("roomList.errors.missingHomeserver"));
             setSearchResults([]);
             return;
         }
@@ -473,6 +443,66 @@ export function RoomList({
                 setSearchBusy(true);
                 setSearchError(null);
                 try {
+                    if (userType === "client") {
+                        if (staffSearchMode === "customer") {
+                            const queryValue = staffCustomerId.trim();
+                            if (!queryValue) {
+                                setSearchResults([]);
+                                setSearchError(null);
+                                return;
+                            }
+                            const results = await searchDirectoryAll(queryValue, searchToken, searchHsUrl);
+                            setSearchResults(
+                                results.map((item) => ({
+                                    id: item.profile_id,
+                                    displayName: item.display_name,
+                                    userLocalId: item.user_local_id,
+                                    companyName: item.company_name,
+                                    title: null,
+                                    country: item.country,
+                                    matrixUserId: item.matrix_user_id ?? null,
+                                })),
+                            );
+                            return;
+                        }
+                        const normalizedDomain = normalizeMatrixDomain(staffCompanyDomain);
+                        const domain = normalizedDomain
+                            ? normalizedDomain.startsWith("matrix.")
+                                ? normalizedDomain
+                                : `matrix.${normalizedDomain}`
+                            : "";
+                        const localpart = normalizeMatrixLocalpart(staffPersonId);
+                        if (!localpart || !domain) {
+                            setSearchResults([]);
+                            setSearchError(null);
+                            return;
+                        }
+                        const matrixUserId = buildMatrixUserId(localpart, domain);
+                        if (!matrixUserId) {
+                            setSearchResults([]);
+                            setSearchError(t("roomList.errors.invalidUserId"));
+                            return;
+                        }
+                        const results = await searchDirectoryAll(matrixUserId, searchToken, searchHsUrl);
+                        setSearchResults(
+                            results.map((item) => ({
+                                id: item.profile_id,
+                                displayName: item.display_name,
+                                userLocalId: item.user_local_id,
+                                companyName: item.company_name,
+                                title: null,
+                                country: item.country,
+                                matrixUserId: item.matrix_user_id ?? null,
+                            })),
+                        );
+                        return;
+                    }
+
+                    if (!searchHsUrl) {
+                        setSearchError(t("roomList.errors.missingHomeserver"));
+                        setSearchResults([]);
+                        return;
+                    }
                     if (staffSearchMode === "customer") {
                         const localpart = normalizeMatrixLocalpart(staffCustomerId);
                         if (!localpart) {
@@ -538,13 +568,15 @@ export function RoomList({
 
         return () => window.clearTimeout(handler);
     }, [
-        isStaffSearch,
+        isStructuredSearch,
         searchToken,
         searchHsUrl,
         staffSearchMode,
         staffCustomerId,
         staffCompanyDomain,
         staffPersonId,
+        userType,
+        t,
     ]);
 
     const refreshContacts = async (): Promise<void> => {
@@ -1103,7 +1135,7 @@ export function RoomList({
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
                                 <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{t("roomList.search.startChat")}</h3>
-                                {isStaffSearch && (
+                                {isStructuredSearch && (
                                     <div className="flex items-center rounded-full border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
                                         <button
                                             type="button"
@@ -1139,7 +1171,7 @@ export function RoomList({
                                 <XMarkIcon className="h-5 w-5" />
                             </button>
                         </div>
-                        {isStaffSearch ? (
+                        {isStructuredSearch ? (
                             staffSearchMode === "customer" ? (
                                 <input
                                     type="text"
@@ -1273,7 +1305,7 @@ export function RoomList({
                                 </div>
                             )}
                             {searchResults.length === 0 &&
-                                (isStaffSearch
+                                (isStructuredSearch
                                     ? staffSearchMode === "customer"
                                         ? Boolean(staffCustomerId.trim())
                                         : Boolean(staffCompanyDomain.trim() && staffPersonId.trim())
