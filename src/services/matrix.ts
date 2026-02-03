@@ -138,6 +138,18 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
             console.log("[inviteUsersToRoom] Inviting:", { roomId, userId, hsUrl });
             const result = await client.invite(roomId, userId);
             console.log("[inviteUsersToRoom] Invite success:", { roomId, userId });
+            const membership = room?.getMember(userId)?.membership ?? null;
+            console.log("[inviteUsersToRoom] Invite membership (immediate):", { roomId, userId, membership });
+            if (room) {
+                setTimeout(() => {
+                    const delayedMembership = room.getMember(userId)?.membership ?? null;
+                    console.log("[inviteUsersToRoom] Invite membership (delayed):", {
+                        roomId,
+                        userId,
+                        membership: delayedMembership,
+                    });
+                }, 3000);
+            }
             return result;
         }),
     );
