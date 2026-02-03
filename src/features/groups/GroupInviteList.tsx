@@ -133,7 +133,17 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
         if (!client || processingIds.has(roomId)) return;
         setProcessingIds((prev) => new Set(prev).add(roomId));
         try {
-            await client.joinRoom(roomId);
+            const room = client.getRoom(roomId);
+            const myUserId = client.getUserId();
+            const inviteEvent =
+                room && myUserId ? room.currentState.getStateEvents(EventType.RoomMember, myUserId) : null;
+            const inviterId = inviteEvent?.getSender() ?? null;
+            const viaServer = inviterId ? inviterId.split(":")[1] : undefined;
+            if (viaServer) {
+                await client.joinRoom(roomId, { viaServers: [viaServer] });
+            } else {
+                await client.joinRoom(roomId);
+            }
             onAccept(roomId);
             refresh();
         } catch (err) {
