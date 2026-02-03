@@ -226,63 +226,13 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
     return groupRooms.sort((a, b) => b.lastActive - a.lastActive);
 }
 
-function buildInviteRooms(client: MatrixClient): ChatRoomEntry[] {
-    const rooms = client.getRooms();
-    const invites: ChatRoomEntry[] = [];
-    const directRoomIds = new Set<string>();
-    const accountData = client.getAccountData(EventType.Direct);
-    const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
-    Object.values(directContent).forEach((roomIds) => {
-        roomIds.forEach((roomId) => directRoomIds.add(roomId));
-    });
-    const myUserId = client.getUserId();
-    for (const room of rooms) {
-        if (room.getMyMembership() !== "invite") continue;
-        if (room.isSpaceRoom()) continue;
-
-        const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-        const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
-        const memberEvent = myUserId ? room.currentState.getStateEvents(EventType.RoomMember, myUserId) : null;
-        const isDirectFromMemberEvent = Boolean(memberEvent?.getContent()?.is_direct);
-
-        // 根據 kind 判斷
-        if (kind === ROOM_KIND_GROUP) continue; // 群組邀請交給 GroupInviteList 處理
-        if (kind === ROOM_KIND_DIRECT) {
-            // 明確標記為私聊
-            invites.push({
-                roomId: room.roomId,
-                room,
-                myMembership: room.getMyMembership(),
-                displayName: room.name || "Invite",
-                lastMessage: "",
-                lastActive: room.getLastActiveTimestamp(),
-                unreadCount: 0,
-                isDeprecated: false,
-                isGroup: false,
-            });
-            continue;
-        }
-
-        // 沒有 kind 的情況，使用其他方式判斷
-        // 只有同時滿足以下條件之一才視為私聊邀請：
-        // 1. is_direct 成員事件為 true
-        // 2. 在 m.direct 帳戶數據中
-        const isDirectInvite = isDirectFromMemberEvent || directRoomIds.has(room.roomId);
-        if (!isDirectInvite) continue; // 不是私聊邀請，交給 GroupInviteList 處理
-
-        invites.push({
-            roomId: room.roomId,
-            room,
-            myMembership: room.getMyMembership(),
-            displayName: room.name || "Invite",
-            lastMessage: "",
-            lastActive: room.getLastActiveTimestamp(),
-            unreadCount: 0,
-            isDeprecated: false,
-            isGroup: false,
-        });
-    }
-    return invites.sort((a, b) => b.lastActive - a.lastActive);
+/**
+ * 私聊邀請不再單獨顯示，用戶通過「好友請求」流程來處理。
+ * 當用戶接受好友請求時，會自動加入對應的聊天室。
+ */
+function buildInviteRooms(_client: MatrixClient): ChatRoomEntry[] {
+    // 私聊邀請通過好友請求流程處理，不單獨顯示
+    return [];
 }
 
 export function RoomList({
