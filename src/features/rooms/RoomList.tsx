@@ -229,15 +229,23 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
 function buildInviteRooms(client: MatrixClient): ChatRoomEntry[] {
     const rooms = client.getRooms();
     const invites: ChatRoomEntry[] = [];
+    const directRoomIds = new Set<string>();
+    const accountData = client.getAccountData(EventType.Direct);
+    const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
+    Object.values(directContent).forEach((roomIds) => {
+        roomIds.forEach((roomId) => directRoomIds.add(roomId));
+    });
     const myUserId = client.getUserId();
     for (const room of rooms) {
         if (room.getMyMembership() !== "invite") continue;
         if (room.isSpaceRoom()) continue;
         const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
         const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+        if (kind === ROOM_KIND_GROUP) continue;
         const memberEvent = myUserId ? room.currentState.getStateEvents(EventType.RoomMember, myUserId) : null;
         const isDirectFromMemberEvent = Boolean(memberEvent?.getContent()?.is_direct);
-        const isGroupInvite = kind === ROOM_KIND_GROUP || (!isDirectFromMemberEvent && Boolean(room.name));
+        const isDirectInvite = isDirectFromMemberEvent || directRoomIds.has(room.roomId);
+        if (!isDirectInvite) continue;
         invites.push({
             roomId: room.roomId,
             room,
@@ -247,7 +255,7 @@ function buildInviteRooms(client: MatrixClient): ChatRoomEntry[] {
             lastActive: room.getLastActiveTimestamp(),
             unreadCount: 0,
             isDeprecated: false,
-            isGroup: isGroupInvite,
+            isGroup: false,
         });
     }
     return invites.sort((a, b) => b.lastActive - a.lastActive);
