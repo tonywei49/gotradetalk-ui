@@ -55,6 +55,14 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
     const client = getMatrixClient();
     const unique = Array.from(new Set(userIds.filter((userId) => userId.trim())));
     const hsUrl = (client as { getHomeserverUrl?: () => string | null }).getHomeserverUrl?.() ?? null;
+    try {
+        const createEvent = await client.getStateEvent(roomId, "m.room.create", "");
+        const roomVersion = (createEvent as { room_version?: string } | null)?.room_version ?? "unknown";
+        const federate = (createEvent as { [key: string]: unknown } | null)?.["m.federate"];
+        console.log("[inviteUsersToRoom] Room create:", { roomId, roomVersion, federate });
+    } catch (error) {
+        console.warn("[inviteUsersToRoom] Failed to read room create event:", { roomId, error });
+    }
     console.log("[inviteUsersToRoom] Inviting users:", {
         roomId,
         userIds: unique,

@@ -91,6 +91,14 @@ export async function createGroupChat(
     console.log("[createGroupChat] Creating room with options:", JSON.stringify(createRoomOpts, null, 2));
     const result = await client.createRoom(createRoomOpts);
     const roomId = result.room_id;
+    try {
+        const createEvent = await client.getStateEvent(roomId, "m.room.create", "");
+        const roomVersion = (createEvent as { room_version?: string } | null)?.room_version ?? "unknown";
+        const federate = (createEvent as { [key: string]: unknown } | null)?.["m.federate"];
+        console.log("[createGroupChat] Room created:", { roomId, roomVersion, federate });
+    } catch (error) {
+        console.warn("[createGroupChat] Failed to read room create event:", error);
+    }
 
     // 確保房間不在目錄中可見
     await client.setRoomDirectoryVisibility(roomId, Visibility.Private);
