@@ -119,6 +119,8 @@ function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
             if (!visibleRoomIds.has(roomId)) return;
             const room = client.getRoom(roomId);
             if (!room) return;
+            // 排除邀請狀態 - 私聊邀請通過好友請求流程處理
+            if (room.getMyMembership() === "invite") return;
             // 排除群組房間 - 可能由於歷史原因存在於 m.direct 中
             const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
             const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
