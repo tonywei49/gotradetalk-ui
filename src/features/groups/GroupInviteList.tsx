@@ -77,6 +77,8 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                     return kind === ROOM_KIND_GROUP;
                 }
 
+                if (!room.name) return false;
+
                 // 如果沒有 room_kind，使用其他方式判斷
                 // 排除私聊邀請（is_direct 為 true 或在 m.direct 中）
                 if (isDirectFromMemberEvent) return false;

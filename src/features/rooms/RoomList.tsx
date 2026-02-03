@@ -229,11 +229,15 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
 function buildInviteRooms(client: MatrixClient): ChatRoomEntry[] {
     const rooms = client.getRooms();
     const invites: ChatRoomEntry[] = [];
+    const myUserId = client.getUserId();
     for (const room of rooms) {
         if (room.getMyMembership() !== "invite") continue;
         if (room.isSpaceRoom()) continue;
         const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
         const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
+        const memberEvent = myUserId ? room.currentState.getStateEvents(EventType.RoomMember, myUserId) : null;
+        const isDirectFromMemberEvent = Boolean(memberEvent?.getContent()?.is_direct);
+        const isGroupInvite = kind === ROOM_KIND_GROUP || (!isDirectFromMemberEvent && Boolean(room.name));
         invites.push({
             roomId: room.roomId,
             room,
@@ -243,7 +247,7 @@ function buildInviteRooms(client: MatrixClient): ChatRoomEntry[] {
             lastActive: room.getLastActiveTimestamp(),
             unreadCount: 0,
             isDeprecated: false,
-            isGroup: kind === ROOM_KIND_GROUP,
+            isGroup: isGroupInvite,
         });
     }
     return invites.sort((a, b) => b.lastActive - a.lastActive);
