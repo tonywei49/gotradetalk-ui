@@ -239,13 +239,37 @@ function buildInviteRooms(client: MatrixClient): ChatRoomEntry[] {
     for (const room of rooms) {
         if (room.getMyMembership() !== "invite") continue;
         if (room.isSpaceRoom()) continue;
+
         const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
         const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
-        if (kind === ROOM_KIND_GROUP) continue;
         const memberEvent = myUserId ? room.currentState.getStateEvents(EventType.RoomMember, myUserId) : null;
         const isDirectFromMemberEvent = Boolean(memberEvent?.getContent()?.is_direct);
+
+        // 根據 kind 判斷
+        if (kind === ROOM_KIND_GROUP) continue; // 群組邀請交給 GroupInviteList 處理
+        if (kind === ROOM_KIND_DIRECT) {
+            // 明確標記為私聊
+            invites.push({
+                roomId: room.roomId,
+                room,
+                myMembership: room.getMyMembership(),
+                displayName: room.name || "Invite",
+                lastMessage: "",
+                lastActive: room.getLastActiveTimestamp(),
+                unreadCount: 0,
+                isDeprecated: false,
+                isGroup: false,
+            });
+            continue;
+        }
+
+        // 沒有 kind 的情況，使用其他方式判斷
+        // 只有同時滿足以下條件之一才視為私聊邀請：
+        // 1. is_direct 成員事件為 true
+        // 2. 在 m.direct 帳戶數據中
         const isDirectInvite = isDirectFromMemberEvent || directRoomIds.has(room.roomId);
-        if (!isDirectInvite) continue;
+        if (!isDirectInvite) continue; // 不是私聊邀請，交給 GroupInviteList 處理
+
         invites.push({
             roomId: room.roomId,
             room,
@@ -1052,9 +1076,8 @@ export function RoomList({
         return (
             <div
                 key={entry.roomId}
-                className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${
-                    entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
-                }`}
+                className={`group w-full px-4 py-2 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                    }`}
             >
                 <button
                     type="button"
