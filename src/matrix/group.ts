@@ -29,11 +29,13 @@ export async function createGroupChat(
         throw new Error("User is not logged in");
     }
 
-    const disableRoomKind =
-        typeof window !== "undefined" && window.localStorage.getItem("gt_disable_room_kind") === "1";
-
     // 妲嬪缓 initial_state 瑷疆姝峰彶鍙鎬с€佸姞鍏ヨ鍓囥€佽í瀹㈣í鍟?
     const initialState: ICreateRoomOpts["initial_state"] = [
+        {
+            type: ROOM_KIND_EVENT,
+            state_key: "",
+            content: { kind: ROOM_KIND_GROUP },
+        },
         {
             type: "m.room.history_visibility",
             state_key: "",
@@ -56,13 +58,6 @@ export async function createGroupChat(
             },
         },
     ];
-    if (!disableRoomKind) {
-        initialState.unshift({
-            type: ROOM_KIND_EVENT,
-            state_key: "",
-            content: { kind: ROOM_KIND_GROUP },
-        });
-    }
 
     // 妲嬪缓 power_level_content_override 纰轰繚鍓靛缓鑰呮槸绠＄悊鍝?
     const powerLevelContentOverride = {
