@@ -1,4 +1,4 @@
-import type { MatrixClient } from "matrix-js-sdk";
+﻿import type { MatrixClient } from "matrix-js-sdk";
 import { EventType, MatrixError } from "matrix-js-sdk";
 import { useAuthStore } from "../stores/AuthStore";
 import { DEPRECATED_DM_PREFIX, DEPRECATED_DM_SEPARATOR } from "../constants/rooms";
@@ -54,24 +54,19 @@ export async function updateRoomInvitePermission(roomId: string, allowMembersToI
 export async function inviteUsersToRoom(roomId: string, userIds: string[]): Promise<number> {
     const client = getMatrixClient();
     const unique = Array.from(new Set(userIds.filter((userId) => userId.trim())));
-    const hsUrl = (client as { getHomeserverUrl?: () => string | null }).getHomeserverUrl?.() ?? null;
-    try {
-        const createEvent = await client.getStateEvent(roomId, "m.room.create", "");
-        const roomVersion = (createEvent as { room_version?: string } | null)?.room_version ?? "unknown";
-        const federate = (createEvent as { [key: string]: unknown } | null)?.["m.federate"];
-        console.log("[inviteUsersToRoom] Room create:", { roomId, roomVersion, federate });
-    } catch (error) {
-        console.warn("[inviteUsersToRoom] Failed to read room create event:", { roomId, error });
-    }
-    console.log("[inviteUsersToRoom] Inviting users:", {
-        roomId,
-        userIds: unique,
-        fromUserId: client.getUserId(),
-        hsUrl,
-    });
     if (unique.length === 0) return 0;
 
     const room = client.getRoom(roomId);
+    let roomVersion = "unknown";
+    let federate: unknown = null;
+    try {
+        const createEvent = await client.getStateEvent(roomId, "m.room.create", "");
+        roomVersion = (createEvent as { room_version?: string } | null)?.room_version ?? "unknown";
+        federate = (createEvent as { [key: string]: unknown } | null)?.["m.federate"] ?? null;
+    } catch {
+        // ignore diagnostic fetch failures
+    }
+
     const currentUserId = client.getUserId();
     let powerLevels: PowerLevelContent | null = null;
     if (room) {
@@ -133,27 +128,29 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
         throw new Error(parts.length > 0 ? parts.join("; ") : "No users to invite");
     }
 
-    const results = await Promise.allSettled(
-        pendingInvites.map(async (userId) => {
-            console.log("[inviteUsersToRoom] Inviting:", { roomId, userId, hsUrl });
-            const result = await client.invite(roomId, userId);
-            console.log("[inviteUsersToRoom] Invite success:", { roomId, userId });
-            const membership = room?.getMember(userId)?.membership ?? null;
-            console.log("[inviteUsersToRoom] Invite membership (immediate):", { roomId, userId, membership });
-            if (room) {
-                setTimeout(() => {
-                    const delayedMembership = room.getMember(userId)?.membership ?? null;
-                    console.log("[inviteUsersToRoom] Invite membership (delayed):", {
-                        roomId,
-                        userId,
-                        membership: delayedMembership,
-                    });
-                }, 3000);
-            }
-            return result;
-        }),
-    );
-    console.log("[inviteUsersToRoom] Invite results:", results);
+    const results = await Promise.allSettled(pendingInvites.map((userId) => client.invite(roomId, userId)));
+    const resultSummary = results.map((result, index) => ({
+        userId: pendingInvites[index],
+        status: result.status,
+        errcode: result.status === "rejected" ? (result.reason as { errcode?: string } | null)?.errcode ?? null : null,
+    }));
+
+    // Single diagnostic entry for invite behavior tracing.
+    setTimeout(() => {
+        const delayedMemberships = pendingInvites.map((userId) => ({
+            userId,
+            membership: room?.getMember(userId)?.membership ?? null,
+        }));
+        console.log("[InviteTrace]", {
+            roomId,
+            roomVersion,
+            federate,
+            sender: currentUserId,
+            results: resultSummary,
+            delayedMemberships,
+        });
+    }, 3000);
+
     const forbidden = results.find((result) => {
         if (result.status !== "rejected") return false;
         const reason = result.reason as { httpStatus?: number; errcode?: string } | null;
@@ -220,3 +217,4 @@ export async function markRoomDeprecated(roomId: string): Promise<void> {
     };
     await client.sendStateEvent(roomId, EventType.RoomPowerLevels, nextContent);
 }
+

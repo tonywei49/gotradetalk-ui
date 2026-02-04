@@ -1,4 +1,4 @@
-import type { MatrixClient, ICreateRoomOpts } from "matrix-js-sdk";
+﻿import type { MatrixClient, ICreateRoomOpts } from "matrix-js-sdk";
 import { Preset, Visibility } from "matrix-js-sdk";
 import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../constants/roomKinds";
 
@@ -12,11 +12,11 @@ export interface CreateGroupChatOptions {
 }
 
 /**
- * 創建群組聊天房間。
+ * 鍓靛缓缇ょ祫鑱婂ぉ鎴块枔銆?
  * 
- * @param client Matrix 客戶端
- * @param options 創建選項
- * @returns 新創建的房間 ID
+ * @param client Matrix 瀹㈡埗绔?
+ * @param options 鍓靛缓閬搁爡
+ * @returns 鏂板壍寤虹殑鎴块枔 ID
  */
 export async function createGroupChat(
     client: MatrixClient,
@@ -29,7 +29,7 @@ export async function createGroupChat(
         throw new Error("User is not logged in");
     }
 
-    // 構建 initial_state 設置歷史可見性、加入規則、訪客訪問
+    // 妲嬪缓 initial_state 瑷疆姝峰彶鍙鎬с€佸姞鍏ヨ鍓囥€佽í瀹㈣í鍟?
     const initialState: ICreateRoomOpts["initial_state"] = [
         {
             type: ROOM_KIND_EVENT,
@@ -47,22 +47,22 @@ export async function createGroupChat(
             type: "m.room.join_rules",
             state_key: "",
             content: {
-                join_rule: "invite", // 只有受邀者才能加入
+                join_rule: "invite", // 鍙湁鍙楅個鑰呮墠鑳藉姞鍏?
             },
         },
         {
             type: "m.room.guest_access",
             state_key: "",
             content: {
-                guest_access: "forbidden", // 禁止訪客訪問
+                guest_access: "forbidden", // 绂佹瑷瑷晱
             },
         },
     ];
 
-    // 構建 power_level_content_override 確保創建者是管理員
+    // 妲嬪缓 power_level_content_override 纰轰繚鍓靛缓鑰呮槸绠＄悊鍝?
     const powerLevelContentOverride = {
         users: {
-            [userId]: 100, // 創建者擁有最高權限
+            [userId]: 100, // 鍓靛缓鑰呮搧鏈夋渶楂樻瑠闄?
         },
         users_default: 0,
         events_default: 0,
@@ -73,13 +73,13 @@ export async function createGroupChat(
         invite: 50,
     };
 
-    // 創建房間配置 - 不在創建時邀請，後續逐一邀請以解決 Federation 問題
+    // 鍓靛缓鎴块枔閰嶇疆 - 涓嶅湪鍓靛缓鏅傞個璜嬶紝寰岀簩閫愪竴閭€璜嬩互瑙ｆ焙 Federation 鍟忛
     const createRoomOpts: ICreateRoomOpts = {
         name,
         topic,
-        preset: Preset.PrivateChat, // 私有群組，不會自動開啟加密
-        visibility: Visibility.Private, // 不公開在目錄中
-        // 注意：不使用 invite 參數，因為跨服務器可能導致邀請失敗
+        preset: Preset.PrivateChat, // 绉佹湁缇ょ祫锛屼笉鏈冭嚜鍕曢枊鍟熷姞瀵?
+        visibility: Visibility.Private, // 涓嶅叕闁嬪湪鐩寗涓?
+        // 娉ㄦ剰锛氫笉浣跨敤 invite 鍙冩暩锛屽洜鐐鸿法鏈嶅嫏鍣ㄥ彲鑳藉皫鑷撮個璜嬪け鏁?
         initial_state: initialState,
         power_level_content_override: powerLevelContentOverride,
         room_version: "10",
@@ -87,36 +87,23 @@ export async function createGroupChat(
             "m.federate": true,
         },
     };
-
-    console.log("[createGroupChat] Creating room with options:", JSON.stringify(createRoomOpts, null, 2));
     const result = await client.createRoom(createRoomOpts);
     const roomId = result.room_id;
-    try {
-        const createEvent = await client.getStateEvent(roomId, "m.room.create", "");
-        const roomVersion = (createEvent as { room_version?: string } | null)?.room_version ?? "unknown";
-        const federate = (createEvent as { [key: string]: unknown } | null)?.["m.federate"];
-        console.log("[createGroupChat] Room created:", { roomId, roomVersion, federate });
-    } catch (error) {
-        console.warn("[createGroupChat] Failed to read room create event:", error);
-    }
 
-    // 確保房間不在目錄中可見
+    // 纰轰繚鎴块枔涓嶅湪鐩寗涓彲瑕?
     await client.setRoomDirectoryVisibility(roomId, Visibility.Private);
 
-    // 逐一邀請用戶，確保跨服務器邀請正確發送
+    // 閫愪竴閭€璜嬬敤鎴讹紝纰轰繚璺ㄦ湇鍕欏櫒閭€璜嬫纰虹櫦閫?
     if (invitees.length > 0) {
-        console.log("[createGroupChat] Inviting users one by one:", invitees);
         for (const invitee of invitees) {
             try {
-                console.log("[createGroupChat] Inviting:", invitee);
                 await client.invite(roomId, invitee);
-                console.log("[createGroupChat] Successfully invited:", invitee);
-            } catch (error) {
-                console.error("[createGroupChat] Failed to invite:", invitee, error);
-                // 繼續邀請其他用戶，不因單個失敗而中斷
+            } catch {
+                // 绻肩簩閭€璜嬪叾浠栫敤鎴讹紝涓嶅洜鍠€嬪け鏁楄€屼腑鏂?
             }
         }
     }
 
     return roomId;
 }
+

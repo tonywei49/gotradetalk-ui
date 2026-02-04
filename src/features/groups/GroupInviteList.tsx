@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import type { MatrixClient, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
@@ -21,8 +21,8 @@ export type GroupInviteListProps = {
 };
 
 /**
- * 獨立的群組邀請列表組件。
- * 完全獨立於私聊邏輯，不影響 RoomList。
+ * 鐛ㄧ珛鐨勭兢绲勯個璜嬪垪琛ㄧ祫浠躲€?
+ * 瀹屽叏鐛ㄧ珛鏂肩鑱婇倧杓紝涓嶅奖闊?RoomList銆?
  */
 export const GroupInviteList: React.FC<GroupInviteListProps> = ({
     client,
@@ -33,7 +33,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
     const [invites, setInvites] = useState<GroupInvite[]>([]);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
-    // 構建群組邀請列表
+    // 妲嬪缓缇ょ祫閭€璜嬪垪琛?
     const buildGroupInvites = (): GroupInvite[] => {
         if (!client) return [];
 
@@ -56,31 +56,21 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                 const isDirect = directRooms.has(room.roomId);
                 const memberCount = room.getJoinedMemberCount() ?? 0;
 
-                // 檢查成員事件中的 is_direct 屬性
+                // 妾㈡煡鎴愬摗浜嬩欢涓殑 is_direct 灞€?
                 const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
                 const isDirectFromMemberEvent = Boolean(memberEvent?.getContent()?.is_direct);
 
-                // 只處理邀請狀態的房間
+                // 鍙檿鐞嗛個璜嬬媭鎱嬬殑鎴块枔
                 if (membership !== "invite") return false;
 
-                // 如果有 room_kind，根據它判斷
+                // 濡傛灉鏈?room_kind锛屾牴鎿氬畠鍒ゆ柗
                 if (kind) {
                     return kind === ROOM_KIND_GROUP;
                 }
 
                 if (!room.name) return false;
-
-                console.log("[GroupInviteList] Checking room:", room.roomId, {
-                    name: room.name,
-                    membership,
-                    kind,
-                    isDirect,
-                    isDirectFromMemberEvent,
-                    memberCount,
-                });
-
-                // 如果沒有 room_kind，使用其他方式判斷
-                // 排除私聊邀請（is_direct 為 true 或在 m.direct 中）
+                // 濡傛灉娌掓湁 room_kind锛屼娇鐢ㄥ叾浠栨柟寮忓垽鏂?
+                // 鎺掗櫎绉佽亰閭€璜嬶紙is_direct 鐐?true 鎴栧湪 m.direct 涓級
                 if (isDirectFromMemberEvent) return false;
                 if (isDirect && memberCount <= 2) return false;
 
@@ -101,12 +91,12 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             });
     };
 
-    // 刷新邀請列表
+    // 鍒锋柊閭€璜嬪垪琛?
     const refresh = () => {
         setInvites(buildGroupInvites());
     };
 
-    // 監聽事件
+    // 鐩ｈ伣浜嬩欢
     useEffect(() => {
         if (!client) {
             setInvites([]);
@@ -175,7 +165,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
         }
     };
 
-    // 如果沒有邀請，不渲染任何東西
+    // 濡傛灉娌掓湁閭€璜嬶紝涓嶆覆鏌撲换浣曟澅瑗?
     if (invites.length === 0) return null;
 
     return (
@@ -238,3 +228,4 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
         </div>
     );
 };
+
