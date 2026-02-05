@@ -105,7 +105,7 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel, o
                         ) : isAudio ? (
                             <audio src={mediaUrl} controls className="w-64" />
                         ) : (
-                            messageText
+                            <span className="whitespace-pre-wrap break-words">{messageText}</span>
                         )}
                     </div>
 
