@@ -219,6 +219,45 @@ export async function hubMeUpdateTranslationLocale(
     );
 }
 
+export type HubTranslateResponse = {
+    translation: string;
+    model: string;
+    target_lang: string;
+    input_chars: number;
+    output_chars: number;
+    latency_ms: number;
+};
+
+export async function hubTranslate(params: {
+    accessToken: string;
+    text: string;
+    targetLang: string;
+    sourceLangHint?: string;
+    chatLinkId?: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+}): Promise<HubTranslateResponse> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query: Record<string, string> = {};
+    if (params.hsUrl) {
+        query.hs_url = params.hsUrl;
+    }
+    if (params.matrixUserId) {
+        query.matrix_user_id = params.matrixUserId;
+    }
+    const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/translate"), query) : joinUrl(hubBaseUrl, "/translate");
+    return postJson<HubTranslateResponse>(
+        url,
+        {
+            text: params.text,
+            target_lang: params.targetLang,
+            source_lang_hint: params.sourceLangHint,
+            chat_link_id: params.chatLinkId,
+        },
+        params.accessToken,
+    );
+}
+
 async function getJson<T>(url: string, accessToken?: string): Promise<T> {
     const response = await fetch(url, {
         method: "GET",
