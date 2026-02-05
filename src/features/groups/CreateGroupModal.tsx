@@ -31,6 +31,18 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
+    const getLocalPart = (value: string | null | undefined): string => {
+        if (!value) return "";
+        const trimmed = value.startsWith("@") ? value.slice(1) : value;
+        return trimmed.split(":")[0] || "";
+    };
+    const getUserLabel = (userId: string | null | undefined, displayName?: string | null): string => {
+        const localpart = getLocalPart(userId);
+        if (localpart && displayName && displayName !== localpart) {
+            return `${localpart} (${displayName})`;
+        }
+        return localpart || displayName || userId || t("common.unknown");
+    };
 
     // 加載聯絡人列表
     useEffect(() => {
@@ -58,7 +70,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             (c) =>
                 c.display_name?.toLowerCase().includes(query) ||
                 c.user_local_id?.toLowerCase().includes(query) ||
-                c.company_name?.toLowerCase().includes(query)
+                c.matrix_user_id?.toLowerCase().includes(query)
         );
     }, [contacts, searchQuery]);
 
@@ -242,13 +254,8 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                                             {/* 名稱和公司 */}
                                             <div className="flex-1 min-w-0 text-left">
                                                 <div className="font-medium text-slate-800 dark:text-slate-100 truncate">
-                                                    {contact.display_name || contact.user_local_id || "Unknown"}
+                                                    {getUserLabel(contact.matrix_user_id, contact.display_name || contact.user_local_id)}
                                                 </div>
-                                                {contact.company_name && (
-                                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                                        {contact.company_name}
-                                                    </div>
-                                                )}
                                             </div>
 
                                             {/* 選中指示器 */}

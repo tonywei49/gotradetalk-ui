@@ -275,6 +275,8 @@
         "groupAdminTag": "Host",
         "roomId": "Room ID",
         "roomVersion": "Room version",
+        "roomInfo": "Room info",
+        "playVideo": "Play video",
         "removeMember": "Remove",
         "removeMemberConfirm": "Remove this member?",
         "removeMemberFailed": "Failed to remove member.",

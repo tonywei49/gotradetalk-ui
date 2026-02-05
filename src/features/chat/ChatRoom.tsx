@@ -27,9 +27,10 @@ type MessageBubbleProps = {
     onResend: (event: MatrixEvent) => void;
     mediaUrl: string | null;
     senderLabel: string;
+    onOpenMedia: (payload: { url: string; type: "image" | "video" }) => void;
 };
 
-const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }: MessageBubbleProps) => {
+const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel, onOpenMedia }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
     const messageText = content?.body ?? "";
@@ -37,6 +38,9 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
         status === EventStatus.SENDING || status === EventStatus.ENCRYPTING || status === EventStatus.QUEUED;
     const isFailed = status === EventStatus.NOT_SENT;
     const timeLabel = new Date(event.getTs()).toLocaleTimeString();
+    const isImage = content?.msgtype === MsgType.Image && mediaUrl;
+    const isVideo = content?.msgtype === MsgType.Video && mediaUrl;
+    const isAudio = content?.msgtype === MsgType.Audio && mediaUrl;
 
     return (
         <div className={`flex w-full mb-3 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
@@ -68,8 +72,38 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel }:
                             }
             `}
                     >
-                        {content?.msgtype === MsgType.Image && mediaUrl ? (
-                            <img src={mediaUrl} alt={messageText || t("chat.imageAlt")} className="max-w-[280px] rounded-lg" />
+                        {isImage ? (
+                            <button
+                                type="button"
+                                onClick={() => onOpenMedia({ url: mediaUrl, type: "image" })}
+                                className="block"
+                            >
+                                <img
+                                    src={mediaUrl}
+                                    alt={messageText || t("chat.imageAlt")}
+                                    className="max-w-[280px] rounded-lg"
+                                />
+                            </button>
+                        ) : isVideo ? (
+                            <button
+                                type="button"
+                                onClick={() => onOpenMedia({ url: mediaUrl, type: "video" })}
+                                className="relative block max-w-[320px]"
+                            >
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="rounded-full bg-black/50 px-3 py-2 text-xs text-white">
+                                        {t("chat.playVideo")}
+                                    </div>
+                                </div>
+                                <video
+                                    src={mediaUrl}
+                                    className="max-w-[320px] rounded-lg opacity-80"
+                                    muted
+                                    preload="metadata"
+                                />
+                            </button>
+                        ) : isAudio ? (
+                            <audio src={mediaUrl} controls className="w-64" />
                         ) : (
                             messageText
                         )}
@@ -137,6 +171,13 @@ export const ChatRoom: React.FC = () => {
     const [memberToRemove, setMemberToRemove] = useState<RemoveTarget | null>(null);
     const [removeMemberBusy, setRemoveMemberBusy] = useState(false);
     const [removeMemberError, setRemoveMemberError] = useState<string | null>(null);
+    const [showRoomInfoModal, setShowRoomInfoModal] = useState(false);
+    const [mediaPreview, setMediaPreview] = useState<{ url: string; type: "image" | "video" } | null>(null);
+    const [mediaZoom, setMediaZoom] = useState(1);
+    const [mediaOffset, setMediaOffset] = useState({ x: 0, y: 0 });
+    const draggingRef = useRef(false);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const dragOriginRef = useRef({ x: 0, y: 0 });
     const [inviteAllowed, setInviteAllowed] = useState(true);
     const [inviteBusy, setInviteBusy] = useState(false);
     const [inviteError, setInviteError] = useState<string | null>(null);
@@ -418,6 +459,11 @@ export const ChatRoom: React.FC = () => {
                 return a.name.localeCompare(b.name);
             });
     }, [invitedMembers, powerLevels]);
+    const openMediaPreview = (payload: { url: string; type: "image" | "video" }): void => {
+        setMediaPreview(payload);
+        setMediaZoom(1);
+        setMediaOffset({ x: 0, y: 0 });
+    };
 
     if (!activeRoomId) {
         return <div className="flex-1" />;
@@ -546,20 +592,22 @@ export const ChatRoom: React.FC = () => {
                                             type="button"
                                             onClick={() => {
                                                 setShowActionsMenu(false);
+                                                setShowRoomInfoModal(true);
+                                            }}
+                                            className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                        >
+                                            {t("chat.roomInfo")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowActionsMenu(false);
                                                 setShowLeaveConfirm(true);
                                             }}
                                             className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
                                         >
                                             {t("chat.leaveGroup")}
                                         </button>
-                                        <div className="border-t border-gray-100 px-3 py-2 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                                            <div>
-                                                {t("chat.roomId")}: {room?.roomId ?? "-"}
-                                            </div>
-                                            <div>
-                                                {t("chat.roomVersion")}: {roomVersion ?? "-"}
-                                            </div>
-                                        </div>
                                     </>
                                 ) : (
                                     <>
@@ -610,10 +658,12 @@ export const ChatRoom: React.FC = () => {
                 {mergedEvents.map((event) => {
                     const status = event.getAssociatedStatus?.() ?? event.status ?? null;
                     const isMe = event.getSender() === userId;
-                    const content = event.getContent() as { url?: string } | undefined;
+                    const content = event.getContent() as { url?: string; msgtype?: string } | undefined;
                     const mediaUrl =
                         content?.url && matrixClient
-                            ? matrixClient.mxcUrlToHttp(content.url, 800, 800, "scale")
+                            ? content.msgtype === MsgType.Image
+                                ? matrixClient.mxcUrlToHttp(content.url, 800, 800, "scale")
+                                : matrixClient.mxcUrlToHttp(content.url)
                             : null;
                     const sender = event.getSender();
                     const senderMember = sender ? room?.getMember(sender) : null;
@@ -627,6 +677,7 @@ export const ChatRoom: React.FC = () => {
                             mediaUrl={mediaUrl}
                             onResend={onResend}
                             senderLabel={senderLabel}
+                            onOpenMedia={openMediaPreview}
                         />
                     );
                 })}
@@ -1040,6 +1091,48 @@ export const ChatRoom: React.FC = () => {
                     </div>
                 </div>
             )}
+            {showRoomInfoModal && isGroupChat && (
+                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                                {t("chat.roomInfo")}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowRoomInfoModal(false)}
+                                className="rounded-full p-1 text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
+                                aria-label={t("common.close")}
+                            >
+                                鉁?
+                            </button>
+                        </div>
+                        <div className="space-y-3 text-sm text-slate-700 dark:text-slate-200">
+                            <div>
+                                <div className="text-xs uppercase tracking-[0.12em] text-slate-400">
+                                    {t("chat.roomId")}
+                                </div>
+                                <div className="mt-1 break-all">{room?.roomId ?? "-"}</div>
+                            </div>
+                            <div>
+                                <div className="text-xs uppercase tracking-[0.12em] text-slate-400">
+                                    {t("chat.roomVersion")}
+                                </div>
+                                <div className="mt-1">{roomVersion ?? "-"}</div>
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <button
+                                type="button"
+                                onClick={() => setShowRoomInfoModal(false)}
+                                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                                {t("common.close")}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {showRemoveConfirm && memberToRemove && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
@@ -1084,6 +1177,59 @@ export const ChatRoom: React.FC = () => {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+            {mediaPreview && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4"
+                    onMouseMove={(event) => {
+                        if (!draggingRef.current) return;
+                        const dx = event.clientX - dragStartRef.current.x;
+                        const dy = event.clientY - dragStartRef.current.y;
+                        setMediaOffset({ x: dragOriginRef.current.x + dx, y: dragOriginRef.current.y + dy });
+                    }}
+                    onMouseUp={() => {
+                        draggingRef.current = false;
+                    }}
+                    onMouseLeave={() => {
+                        draggingRef.current = false;
+                    }}
+                >
+                    <button
+                        type="button"
+                        onClick={() => setMediaPreview(null)}
+                        className="absolute top-6 right-6 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
+                    >
+                        {t("common.close")}
+                    </button>
+                    {mediaPreview.type === "image" ? (
+                        <div
+                            className="max-h-[90vh] max-w-[90vw] cursor-grab"
+                            onMouseDown={(event) => {
+                                draggingRef.current = true;
+                                dragStartRef.current = { x: event.clientX, y: event.clientY };
+                                dragOriginRef.current = mediaOffset;
+                            }}
+                            onWheel={(event) => {
+                                event.preventDefault();
+                                const next = Math.min(3, Math.max(0.5, mediaZoom - event.deltaY * 0.001));
+                                setMediaZoom(next);
+                            }}
+                        >
+                            <img
+                                src={mediaPreview.url}
+                                alt={t("chat.imageAlt")}
+                                className="max-h-[90vh] max-w-[90vw] select-none"
+                                style={{
+                                    transform: `translate(${mediaOffset.x}px, ${mediaOffset.y}px) scale(${mediaZoom})`,
+                                    transition: draggingRef.current ? "none" : "transform 120ms ease",
+                                }}
+                                draggable={false}
+                            />
+                        </div>
+                    ) : (
+                        <video src={mediaPreview.url} controls className="max-h-[90vh] max-w-[90vw] rounded-lg" />
+                    )}
                 </div>
             )}
         </div>

@@ -275,6 +275,8 @@
         "groupAdminTag": "《版主》",
         "roomId": "房间ID",
         "roomVersion": "房间版本",
+        "roomInfo": "房间信息",
+        "playVideo": "播放视频",
         "removeMember": "移除",
         "removeMemberConfirm": "是否移除该成员？",
         "removeMemberFailed": "移除成员失败。",
