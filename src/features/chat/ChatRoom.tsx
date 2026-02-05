@@ -108,6 +108,12 @@ type PowerLevelContent = {
     users_default?: number;
 };
 
+type RemoveTarget = {
+    userId: string;
+    label: string;
+    membership: "join" | "invite";
+};
+
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
     const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned } = useOutletContext<ChatRoomContext>();
@@ -127,6 +133,10 @@ export const ChatRoom: React.FC = () => {
     const [showInviteMembersModal, setShowInviteMembersModal] = useState(false);
     const [showRenameModal, setShowRenameModal] = useState(false);
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+    const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+    const [memberToRemove, setMemberToRemove] = useState<RemoveTarget | null>(null);
+    const [removeMemberBusy, setRemoveMemberBusy] = useState(false);
+    const [removeMemberError, setRemoveMemberError] = useState<string | null>(null);
     const [inviteAllowed, setInviteAllowed] = useState(true);
     const [inviteBusy, setInviteBusy] = useState(false);
     const [inviteError, setInviteError] = useState<string | null>(null);
@@ -214,11 +224,19 @@ export const ChatRoom: React.FC = () => {
     const isDirectRoom = Boolean(room) && roomKind === ROOM_KIND_DIRECT;
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
     const groupMembers = room?.getJoinedMembers() ?? [];
+    const invitedMembers = room?.getMembersWithMembership("invite") ?? [];
     const memberCount = groupMembers.length;
+    const invitedCount = invitedMembers.length;
     const powerLevels = useMemo((): PowerLevelContent | null => {
         if (!room) return null;
         const event = room.currentState.getStateEvents("m.room.power_levels", "");
         return (event?.getContent() ?? null) as PowerLevelContent | null;
+    }, [room]);
+    const roomVersion = useMemo(() => {
+        if (!room) return null;
+        const event = room.currentState.getStateEvents("m.room.create", "");
+        const content = event?.getContent() as { room_version?: string } | undefined;
+        return content?.room_version ?? null;
     }, [room]);
     const userPowerLevel = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;
@@ -229,6 +247,7 @@ export const ChatRoom: React.FC = () => {
     const canManageInvites = userPowerLevel >= 100;
     const canInviteMembers = userPowerLevel >= inviteLevel;
     const canRenameGroup = userPowerLevel >= 50;
+    const canRemoveMembers = userPowerLevel >= 50;
     const matrixHost = getMatrixHost(matrixHsUrl);
     const memberIdSet = useMemo(() => new Set(groupMembers.map((member) => member.userId)), [groupMembers]);
     const filteredContacts = useMemo(() => {
@@ -386,6 +405,19 @@ export const ChatRoom: React.FC = () => {
                 return a.name.localeCompare(b.name);
             });
     }, [groupMembers, powerLevels]);
+    const invitedEntries = useMemo(() => {
+        const defaultLevel = powerLevels?.users_default ?? 0;
+        return invitedMembers
+            .map((member) => ({
+                userId: member.userId,
+                name: member.name || member.userId,
+                powerLevel: powerLevels?.users?.[member.userId] ?? defaultLevel,
+            }))
+            .sort((a, b) => {
+                if (a.powerLevel !== b.powerLevel) return b.powerLevel - a.powerLevel;
+                return a.name.localeCompare(b.name);
+            });
+    }, [invitedMembers, powerLevels]);
 
     if (!activeRoomId) {
         return <div className="flex-1" />;
@@ -520,6 +552,14 @@ export const ChatRoom: React.FC = () => {
                                         >
                                             {t("chat.leaveGroup")}
                                         </button>
+                                        <div className="border-t border-gray-100 px-3 py-2 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                                            <div>
+                                                {t("chat.roomId")}: {room?.roomId ?? "-"}
+                                            </div>
+                                            <div>
+                                                {t("chat.roomVersion")}: {roomVersion ?? "-"}
+                                            </div>
+                                        </div>
                                     </>
                                 ) : (
                                     <>
@@ -662,24 +702,94 @@ export const ChatRoom: React.FC = () => {
                                 ✕
                             </button>
                         </div>
-                        <div className="max-h-[60vh] overflow-y-auto space-y-2">
-                            {memberEntries.map((member) => (
-                                <div
-                                    key={member.userId}
-                                    className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
-                                >
-                                    <div className="min-w-0">
-                                        <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                            {getUserLabel(member.userId, member.name)}
-                                        </div>
-                                    </div>
-                                    {member.powerLevel >= 50 && (
-                                        <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                                            {t("chat.groupAdminTag")}
-                                        </span>
-                                    )}
+                        <div className="max-h-[60vh] overflow-y-auto space-y-4">
+                            <div>
+                                <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                    {t("group.joinedMembers")} ({memberCount})
                                 </div>
-                            ))}
+                                <div className="space-y-2">
+                                    {memberEntries.map((member) => (
+                                        <div
+                                            key={member.userId}
+                                            className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
+                                        >
+                                            <div className="min-w-0">
+                                                <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                                    {getUserLabel(member.userId, member.name)}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {member.powerLevel >= 50 && (
+                                                    <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                                                        {t("chat.groupAdminTag")}
+                                                    </span>
+                                                )}
+                                                {canRemoveMembers && member.userId !== userId && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setMemberToRemove({
+                                                                userId: member.userId,
+                                                                label: getUserLabel(member.userId, member.name),
+                                                                membership: "join",
+                                                            });
+                                                            setRemoveMemberError(null);
+                                                            setShowRemoveConfirm(true);
+                                                        }}
+                                                        className="text-xs text-rose-500 hover:text-rose-400"
+                                                    >
+                                                        {t("chat.removeMember")}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                    {t("group.invitedMembers")} ({invitedCount})
+                                </div>
+                                {invitedEntries.length === 0 ? (
+                                    <div className="text-xs text-slate-400 dark:text-slate-500">
+                                        {t("common.placeholder")}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {invitedEntries.map((member) => (
+                                            <div
+                                                key={member.userId}
+                                                className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
+                                            >
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                                        {getUserLabel(member.userId, member.name)}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {canRemoveMembers && member.userId !== userId && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setMemberToRemove({
+                                                                    userId: member.userId,
+                                                                    label: getUserLabel(member.userId, member.name),
+                                                                    membership: "invite",
+                                                                });
+                                                                setRemoveMemberError(null);
+                                                                setShowRemoveConfirm(true);
+                                                            }}
+                                                            className="text-xs text-rose-500 hover:text-rose-400"
+                                                        >
+                                                            {t("chat.removeMember")}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -925,6 +1035,52 @@ export const ChatRoom: React.FC = () => {
                                 className="flex-1 rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600"
                             >
                                 {t("chat.leaveGroup")}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showRemoveConfirm && memberToRemove && (
+                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+                        <div className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-3">
+                            {t("chat.removeMemberConfirm")}
+                        </div>
+                        <div className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                            {memberToRemove.label}
+                        </div>
+                        {removeMemberError && <div className="mb-3 text-sm text-rose-500">{removeMemberError}</div>}
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowRemoveConfirm(false)}
+                                className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                                {t("common.cancel")}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={removeMemberBusy}
+                                onClick={() => {
+                                    if (!matrixClient || !room || !memberToRemove) return;
+                                    setRemoveMemberBusy(true);
+                                    setRemoveMemberError(null);
+                                    void matrixClient
+                                        .kick(room.roomId, memberToRemove.userId, "removed")
+                                        .then(() => {
+                                            setShowRemoveConfirm(false);
+                                            setMemberToRemove(null);
+                                        })
+                                        .catch((err) => {
+                                            setRemoveMemberError(
+                                                err instanceof Error ? err.message : t("chat.removeMemberFailed"),
+                                            );
+                                        })
+                                        .finally(() => setRemoveMemberBusy(false));
+                                }}
+                                className="flex-1 rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50"
+                            >
+                                {removeMemberBusy ? t("common.loading") : t("common.confirm")}
                             </button>
                         </div>
                     </div>

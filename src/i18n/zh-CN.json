@@ -174,6 +174,7 @@
         "selectContact": "请选择联系人查看详情。",
         "contactActions": "联系人操作",
         "removeContact": "删除好友",
+        "removeContactConfirm": "是否删除该好友？",
         "backToList": "返回列表",
         "openSettings": "打开设置",
         "accountSubtitleFallback": "账号",
@@ -198,7 +199,7 @@
     "roomList": {
         "sections": {
             "contacts": "联系人",
-            "directMessages": "私聊",
+            "directMessages": "聊天列表",
             "requests": "请求",
             "groupChats": "群聊"
         },
@@ -272,6 +273,11 @@
         "leaveGroupConfirm": "是否要退出聊天室？",
         "groupNameFallback": "群聊",
         "groupAdminTag": "《版主》",
+        "roomId": "房间ID",
+        "roomVersion": "房间版本",
+        "removeMember": "移除",
+        "removeMemberConfirm": "是否移除该成员？",
+        "removeMemberFailed": "移除成员失败。",
         "inviteSearchPlaceholder": "搜尋好友...",
         "inviteContactsEmpty": "沒有可邀請的好友。",
         "inviteContactsAuthMissing": "缺少邀請權限。",

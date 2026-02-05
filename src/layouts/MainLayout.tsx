@@ -66,6 +66,7 @@ export const MainLayout: React.FC = () => {
     const [unreadBadgeCount, setUnreadBadgeCount] = useState(0);
     const [activeContact, setActiveContact] = useState<ContactSummary | null>(null);
     const [showContactMenu, setShowContactMenu] = useState(false);
+    const [showRemoveContactConfirm, setShowRemoveContactConfirm] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
     const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language">("none");
@@ -397,9 +398,11 @@ export const MainLayout: React.FC = () => {
             }
             setActiveContact(null);
             setShowContactMenu(false);
+            setShowRemoveContactConfirm(false);
             setContactsRefreshToken((prev) => prev + 1);
         } catch {
             setShowContactMenu(false);
+            setShowRemoveContactConfirm(false);
         }
     };
 
@@ -728,7 +731,10 @@ export const MainLayout: React.FC = () => {
                                             >
                                                 <button
                                                     type="button"
-                                                    onClick={() => void onRemoveActiveContact()}
+                                                    onClick={() => {
+                                                        setShowContactMenu(false);
+                                                        setShowRemoveContactConfirm(true);
+                                                    }}
                                                     className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
                                                 >
                                                     {t("layout.removeContact")}
@@ -737,6 +743,34 @@ export const MainLayout: React.FC = () => {
                                         )}
                                     </div>
                                 </div>
+                                {showRemoveContactConfirm && (
+                                    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
+                                        <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+                                            <div className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-3">
+                                                {t("layout.removeContactConfirm")}
+                                            </div>
+                                            <div className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                                                {getContactLabel(activeContact)}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowRemoveContactConfirm(false)}
+                                                    className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                >
+                                                    {t("common.cancel")}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void onRemoveActiveContact()}
+                                                    className="flex-1 rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600"
+                                                >
+                                                    {t("common.confirm")}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="flex-1 px-6 py-6 sm:px-8">
                                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -174,6 +174,7 @@
         "selectContact": "Select a contact to view details.",
         "contactActions": "Contact actions",
         "removeContact": "Remove contact",
+        "removeContactConfirm": "Remove this contact?",
         "backToList": "Back to list",
         "openSettings": "Open settings",
         "accountSubtitleFallback": "Account",
@@ -198,7 +199,7 @@
     "roomList": {
         "sections": {
             "contacts": "Contacts",
-            "directMessages": "Direct Messages",
+            "directMessages": "Chat list",
             "requests": "Requests",
             "groupChats": "Group Chats"
         },
@@ -272,6 +273,11 @@
         "leaveGroupConfirm": "Leave this group chat?",
         "groupNameFallback": "Group chat",
         "groupAdminTag": "Host",
+        "roomId": "Room ID",
+        "roomVersion": "Room version",
+        "removeMember": "Remove",
+        "removeMemberConfirm": "Remove this member?",
+        "removeMemberFailed": "Failed to remove member.",
         "inviteSearchPlaceholder": "Search contacts...",
         "inviteContactsEmpty": "No contacts available to invite.",
         "inviteContactsAuthMissing": "Missing invite permission.",
