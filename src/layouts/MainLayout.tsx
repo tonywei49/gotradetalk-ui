@@ -898,6 +898,7 @@ export const MainLayout: React.FC = () => {
                             onHideRoom: () => void onHideActiveRoom(),
                             onTogglePin: () => onTogglePinActiveRoom(),
                             isRoomPinned: isActiveRoomPinned,
+                            chatReceiveLanguage,
                         }}
                     />
                 )}

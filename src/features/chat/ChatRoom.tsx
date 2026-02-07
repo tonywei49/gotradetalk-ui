@@ -17,6 +17,7 @@ import { useAuthStore } from "../../stores/AuthStore";
 import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
 import { inviteUsersToRoom, updateRoomInvitePermission } from "../../services/matrix";
 import { listContacts, type ContactEntry } from "../../api/contacts";
+import { hubTranslate } from "../../api/hub";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
@@ -28,9 +29,25 @@ type MessageBubbleProps = {
     mediaUrl: string | null;
     senderLabel: string;
     onOpenMedia: (payload: { url: string; type: "image" | "video" }) => void;
+    translatedText?: string | null;
+    showTranslation?: boolean;
+    translationLoading?: boolean;
+    onToggleTranslation?: () => void;
 };
 
-const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel, onOpenMedia }: MessageBubbleProps) => {
+const MessageBubble = ({
+    event,
+    isMe,
+    status,
+    onResend,
+    mediaUrl,
+    senderLabel,
+    onOpenMedia,
+    translatedText,
+    showTranslation,
+    translationLoading,
+    onToggleTranslation,
+}: MessageBubbleProps) => {
     const { t } = useTranslation();
     const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
     const messageText = content?.body ?? "";
@@ -41,6 +58,9 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel, o
     const isImage = content?.msgtype === MsgType.Image && mediaUrl;
     const isVideo = content?.msgtype === MsgType.Video && mediaUrl;
     const isAudio = content?.msgtype === MsgType.Audio && mediaUrl;
+    const isText = !isImage && !isVideo && !isAudio;
+    const showTranslated = Boolean(isText && showTranslation);
+    const displayText = showTranslated ? translatedText ?? t("chat.translationPending") : messageText;
 
     return (
         <div className={`flex w-full mb-3 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
@@ -105,19 +125,33 @@ const MessageBubble = ({ event, isMe, status, onResend, mediaUrl, senderLabel, o
                         ) : isAudio ? (
                             <audio src={mediaUrl} controls className="w-64" />
                         ) : (
-                            <span className="whitespace-pre-wrap break-words">{messageText}</span>
+                            <span className="whitespace-pre-wrap break-words">{displayText}</span>
                         )}
                     </div>
 
                     {/* Time (Incoming: Right of bubble) */}
-                    {!isMe && (
-                        <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
-                    )}
-                </div>
-                {isFailed && (
-                    <button
-                        type="button"
-                        className="mt-2 text-[11px] text-rose-500 hover:text-rose-400"
+                {!isMe && (
+                    <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
+                )}
+            </div>
+            {isText && (translatedText || translationLoading) && onToggleTranslation && (
+                <button
+                    type="button"
+                    className={`mt-1 text-[11px] ${isMe ? "text-emerald-100/80" : "text-emerald-600 dark:text-emerald-300"}`}
+                    onClick={onToggleTranslation}
+                    disabled={translationLoading}
+                >
+                    {translationLoading
+                        ? t("chat.translationPending")
+                        : showTranslated
+                            ? t("chat.showOriginal")
+                            : t("chat.showTranslation")}
+                </button>
+            )}
+            {isFailed && (
+                <button
+                    type="button"
+                    className="mt-2 text-[11px] text-rose-500 hover:text-rose-400"
                         onClick={() => onResend(event)}
                     >
                         {t("chat.resend")}
@@ -134,6 +168,7 @@ type ChatRoomContext = {
     onHideRoom?: () => void;
     onTogglePin?: () => void;
     isRoomPinned?: boolean;
+    chatReceiveLanguage?: string;
 };
 
 type PowerLevelContent = {
@@ -150,7 +185,8 @@ type RemoveTarget = {
 
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
-    const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned } = useOutletContext<ChatRoomContext>();
+    const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned, chatReceiveLanguage } =
+        useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const userId = useAuthStore((state) => state.matrixCredentials?.user_id ?? null);
@@ -201,6 +237,9 @@ export const ChatRoom: React.FC = () => {
     const useHubToken = userType === "client" && hubAccessToken && !inviteTokenExpired;
     const inviteAccessToken = useHubToken ? hubAccessToken : matrixAccessToken;
     const inviteHsUrl = useHubToken ? null : matrixHsUrl;
+    const translateAccessToken = hubAccessToken ?? matrixAccessToken;
+    const translateHsUrl = hubAccessToken ? null : matrixHsUrl;
+    const translateMatrixUserId = matrixCredentials?.user_id ?? null;
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -250,6 +289,45 @@ export const ChatRoom: React.FC = () => {
         filtered.sort((a, b) => a.getTs() - b.getTs());
         return filtered;
     }, [events, room]);
+
+    const [translationMap, setTranslationMap] = useState<Record<string, { text: string | null; loading: boolean }>>({});
+    const [translationView, setTranslationView] = useState<Record<string, boolean>>({});
+    const targetLanguage = (chatReceiveLanguage || "").trim();
+    const canTranslate = Boolean(translateAccessToken && targetLanguage);
+
+    const getEventKey = (event: MatrixEvent): string =>
+        event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
+
+    const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
+        if (!canTranslate || isMeMessage) return false;
+        const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
+        if (!content?.body) return false;
+        if (content.msgtype && content.msgtype !== MsgType.Text) return false;
+        return true;
+    };
+
+    const translateEvent = async (event: MatrixEvent, messageText: string): Promise<void> => {
+        if (!translateAccessToken) return;
+        const key = getEventKey(event);
+        setTranslationMap((prev) => {
+            if (prev[key]?.loading || prev[key]?.text) return prev;
+            return { ...prev, [key]: { text: null, loading: true } };
+        });
+        try {
+            const result = await hubTranslate({
+                accessToken: translateAccessToken,
+                text: messageText,
+                targetLang: targetLanguage,
+                chatLinkId: activeRoomId ?? undefined,
+                hsUrl: translateHsUrl,
+                matrixUserId: translateMatrixUserId,
+            });
+            setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false } }));
+            setTranslationView((prev) => (prev[key] === undefined ? { ...prev, [key]: true } : prev));
+        } catch {
+            setTranslationMap((prev) => ({ ...prev, [key]: { text: null, loading: false } }));
+        }
+    };
 
     const canSendReceipt = (event: MatrixEvent | undefined): event is MatrixEvent => {
         const eventId = event?.getId();
@@ -343,6 +421,19 @@ export const ChatRoom: React.FC = () => {
             })
             .finally(() => setContactsLoading(false));
     }, [showInviteMembersModal, isGroupChat, inviteAccessToken, inviteHsUrl, t]);
+
+    useEffect(() => {
+        if (!canTranslate) return;
+        mergedEvents.forEach((event) => {
+            const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
+            const messageText = content?.body ?? "";
+            const isMeMessage = event.getSender() === userId;
+            if (!shouldTranslateEvent(event, isMeMessage)) return;
+            const key = getEventKey(event);
+            if (translationMap[key]?.text || translationMap[key]?.loading) return;
+            void translateEvent(event, messageText);
+        });
+    }, [canTranslate, mergedEvents, translationMap, targetLanguage, userId]);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
@@ -688,6 +779,16 @@ export const ChatRoom: React.FC = () => {
                             onResend={onResend}
                             senderLabel={senderLabel}
                             onOpenMedia={openMediaPreview}
+                            translatedText={translationMap[getEventKey(event)]?.text ?? null}
+                            translationLoading={translationMap[getEventKey(event)]?.loading ?? false}
+                            showTranslation={
+                                translationView[getEventKey(event)] ??
+                                (translationMap[getEventKey(event)]?.text ? !isMe : false)
+                            }
+                            onToggleTranslation={() => {
+                                const key = getEventKey(event);
+                                setTranslationView((prev) => ({ ...prev, [key]: !prev[key] }));
+                            }}
                         />
                     );
                 })}
