@@ -899,6 +899,7 @@ export const MainLayout: React.FC = () => {
                             onTogglePin: () => onTogglePinActiveRoom(),
                             isRoomPinned: isActiveRoomPinned,
                             chatReceiveLanguage,
+                            companyName: meProfile?.company_name ?? null,
                         }}
                     />
                 )}

@@ -169,6 +169,7 @@ type ChatRoomContext = {
     onTogglePin?: () => void;
     isRoomPinned?: boolean;
     chatReceiveLanguage?: string;
+    companyName?: string | null;
 };
 
 type PowerLevelContent = {
@@ -185,7 +186,7 @@ type RemoveTarget = {
 
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
-    const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned, chatReceiveLanguage } =
+    const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned, chatReceiveLanguage, companyName } =
         useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
@@ -221,6 +222,7 @@ export const ChatRoom: React.FC = () => {
     const [contactsLoading, setContactsLoading] = useState(false);
     const [contactsError, setContactsError] = useState<string | null>(null);
     const [contactFilter, setContactFilter] = useState("");
+    const [translationContactsLoaded, setTranslationContactsLoaded] = useState(false);
     const [selectedInviteIds, setSelectedInviteIds] = useState<Set<string>>(new Set());
     const [inviteMemberBusy, setInviteMemberBusy] = useState(false);
     const [inviteMemberError, setInviteMemberError] = useState<string | null>(null);
@@ -294,20 +296,50 @@ export const ChatRoom: React.FC = () => {
     const [translationView, setTranslationView] = useState<Record<string, boolean>>({});
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
+    const [translationBlocked, setTranslationBlocked] = useState(false);
 
     const getEventKey = (event: MatrixEvent): string =>
         event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
 
+    const resolveMatrixUserId = (contact: ContactEntry): string | null => {
+        if (contact.matrix_user_id) return contact.matrix_user_id;
+        if (contact.user_local_id && matrixHost) return `@${contact.user_local_id}:${matrixHost}`;
+        return null;
+    };
+
+    const resolveContactForUser = (userIdToFind: string | null): ContactEntry | null => {
+        if (!userIdToFind) return null;
+        return contacts.find((contact) => resolveMatrixUserId(contact) === userIdToFind) || null;
+    };
+
     const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
-        if (!canTranslate || isMeMessage) return false;
+        if (!canTranslate || translationBlocked || isMeMessage) return false;
         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
         if (!content?.body) return false;
         if (content.msgtype && content.msgtype !== MsgType.Text) return false;
+        if (userType === "client") return false;
+        if (userType === "staff") {
+            const senderId = event.getSender() ?? "";
+            const senderContact = resolveContactForUser(senderId || null);
+            if (
+                senderContact?.user_type === "staff" &&
+                senderContact.company_name &&
+                companyName &&
+                senderContact.company_name === companyName
+            ) {
+                return false;
+            }
+            if (!senderContact && matrixHost && senderId && senderId.endsWith(`:${matrixHost}`)) {
+                return false;
+            }
+        }
         return true;
     };
 
     const translateEvent = async (event: MatrixEvent, messageText: string): Promise<void> => {
         if (!translateAccessToken) return;
+        const messageId = event.getId();
+        if (!messageId) return;
         const key = getEventKey(event);
         setTranslationMap((prev) => {
             if (prev[key]?.loading || prev[key]?.text) return prev;
@@ -318,13 +350,29 @@ export const ChatRoom: React.FC = () => {
                 accessToken: translateAccessToken,
                 text: messageText,
                 targetLang: targetLanguage,
-                chatLinkId: activeRoomId ?? undefined,
+                roomId: activeRoomId ?? undefined,
+                messageId,
                 hsUrl: translateHsUrl,
                 matrixUserId: translateMatrixUserId,
             });
             setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false } }));
             setTranslationView((prev) => (prev[key] === undefined ? { ...prev, [key]: true } : prev));
-        } catch {
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : typeof error === "string"
+                        ? error
+                        : "";
+            if (
+                message.includes("NOT_SUBSCRIBED") ||
+                message.includes("QUOTA_EXCEEDED") ||
+                message.includes("CLIENT_TRANSLATION_DISABLED") ||
+                message.includes("Missing chat_link_id") ||
+                message.includes("Chat link not active")
+            ) {
+                setTranslationBlocked(true);
+            }
             setTranslationMap((prev) => ({ ...prev, [key]: { text: null, loading: false } }));
         }
     };
@@ -423,6 +471,32 @@ export const ChatRoom: React.FC = () => {
     }, [showInviteMembersModal, isGroupChat, inviteAccessToken, inviteHsUrl, t]);
 
     useEffect(() => {
+        if (!canTranslate || translationContactsLoaded) return;
+        if (!inviteAccessToken) return;
+        let alive = true;
+        if (contacts.length) {
+            setTranslationContactsLoaded(true);
+            return;
+        }
+        setContactsLoading(true);
+        setContactsError(null);
+        void listContacts(inviteAccessToken, inviteHsUrl)
+            .then((items) => {
+                if (!alive) return;
+                setContacts(items);
+                setTranslationContactsLoaded(true);
+            })
+            .catch(() => {
+                if (!alive) return;
+                setTranslationContactsLoaded(true);
+            })
+            .finally(() => setContactsLoading(false));
+        return () => {
+            alive = false;
+        };
+    }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
+
+    useEffect(() => {
         if (!canTranslate) return;
         mergedEvents.forEach((event) => {
             const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
@@ -434,6 +508,12 @@ export const ChatRoom: React.FC = () => {
             void translateEvent(event, messageText);
         });
     }, [canTranslate, mergedEvents, translationMap, targetLanguage, userId]);
+
+    useEffect(() => {
+        setTranslationMap({});
+        setTranslationView({});
+        setTranslationBlocked(false);
+    }, [targetLanguage, activeRoomId]);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {

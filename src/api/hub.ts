@@ -234,6 +234,8 @@ export async function hubTranslate(params: {
     targetLang: string;
     sourceLangHint?: string;
     chatLinkId?: string;
+    roomId?: string;
+    messageId?: string;
     hsUrl?: string | null;
     matrixUserId?: string | null;
 }): Promise<HubTranslateResponse> {
@@ -253,6 +255,8 @@ export async function hubTranslate(params: {
             target_lang: params.targetLang,
             source_lang_hint: params.sourceLangHint,
             chat_link_id: params.chatLinkId,
+            room_id: params.roomId,
+            message_id: params.messageId,
         },
         params.accessToken,
     );
