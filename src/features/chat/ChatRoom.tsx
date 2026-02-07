@@ -21,13 +21,12 @@ import { hubTranslate } from "../../api/hub";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
-const EMOJI_GROUPS: Array<{ id: string; label: string; emojis: string[] }> = [
-    { id: "recent", label: "Recent", emojis: [] },
-    { id: "smileys", label: "Smileys", emojis: ["😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩"] },
-    { id: "people", label: "People", emojis: ["👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "🫶", "🤔", "🤗", "🎉", "🔥"] },
-    { id: "nature", label: "Nature", emojis: ["🌞", "🌙", "⭐", "🌈", "☔", "❄", "🌊", "🌸", "🌻", "🍀", "🌲", "🌍"] },
-    { id: "food", label: "Food", emojis: ["🍎", "🍌", "🍓", "🍇", "🍑", "🍕", "🍔", "🍟", "🍜", "🍣", "☕", "🍺"] },
-    { id: "symbols", label: "Symbols", emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "✅", "❌", "⚠️", "❓", "💬", "📌"] },
+const EMOJI_LIST: string[] = [
+    "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
+    "👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "🫶", "🤔", "🤗", "🎉", "🔥",
+    "🌞", "🌙", "⭐", "🌈", "☔", "❄", "🌊", "🌸", "🌻", "🍀", "🌲", "🌍",
+    "🍎", "🍌", "🍓", "🍇", "🍑", "🍕", "🍔", "🍟", "🍜", "🍣", "☕", "🍺",
+    "❤️", "🧡", "💛", "💚", "💙", "💜", "✅", "❌", "⚠️", "❓", "💬", "📌",
 ];
 
 type MessageBubbleProps = {
@@ -239,7 +238,6 @@ export const ChatRoom: React.FC = () => {
     const [renameBusy, setRenameBusy] = useState(false);
     const [renameError, setRenameError] = useState<string | null>(null);
     const [showEmojiBoard, setShowEmojiBoard] = useState(false);
-    const [emojiTab, setEmojiTab] = useState<string>("recent");
     const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
     const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -703,10 +701,10 @@ export const ChatRoom: React.FC = () => {
         });
     };
 
-    const activeEmojiGroup = useMemo(() => {
-        if (emojiTab === "recent") return recentEmojis;
-        return EMOJI_GROUPS.find((group) => group.id === emojiTab)?.emojis ?? [];
-    }, [emojiTab, recentEmojis]);
+    const visibleEmojis = useMemo(() => {
+        const merged = [...recentEmojis, ...EMOJI_LIST];
+        return Array.from(new Set(merged));
+    }, [recentEmojis]);
 
     if (!activeRoomId) {
         return <div className="flex-1" />;
@@ -1009,26 +1007,11 @@ export const ChatRoom: React.FC = () => {
                         ref={emojiBoardRef}
                         className="absolute bottom-[90px] left-4 z-30 w-[320px] rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                     >
-                        <div className="mb-2 flex gap-1 overflow-x-auto pb-1">
-                            {EMOJI_GROUPS.map((group) => (
-                                <button
-                                    key={group.id}
-                                    type="button"
-                                    onClick={() => setEmojiTab(group.id)}
-                                    className={`rounded-full px-2 py-1 text-xs whitespace-nowrap ${emojiTab === group.id
-                                        ? "bg-emerald-500 text-white"
-                                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                                        }`}
-                                >
-                                    {group.label}
-                                </button>
-                            ))}
-                        </div>
                         <div className="grid max-h-56 grid-cols-8 gap-1 overflow-y-auto pr-1">
-                            {activeEmojiGroup.length > 0 ? (
-                                activeEmojiGroup.map((emoji) => (
+                            {visibleEmojis.length > 0 ? (
+                                visibleEmojis.map((emoji) => (
                                     <button
-                                        key={`${emojiTab}-${emoji}`}
+                                        key={emoji}
                                         type="button"
                                         onClick={() => insertEmojiToComposer(emoji)}
                                         className="rounded p-1 text-xl hover:bg-slate-100 dark:hover:bg-slate-800"
