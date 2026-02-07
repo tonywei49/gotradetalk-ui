@@ -94,6 +94,13 @@ function getMatrixHost(hsUrl: string | null): string | null {
     }
 }
 
+function getMyIdMessage(client: MatrixClient): string {
+    const myUserId = client.getUserId() ?? "";
+    if (!myUserId) return "unknown";
+    const withoutAt = myUserId.startsWith("@") ? myUserId.slice(1) : myUserId;
+    return withoutAt.split(":")[0]?.trim() || withoutAt;
+}
+
 function getLastMessagePreview(room: Room): string {
     const events = room.getLiveTimeline().getEvents();
     for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -293,13 +300,6 @@ export function RoomList({
     const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
     const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
     const [contactSort, setContactSort] = useState<"company" | "name">("company");
-    // 選中的搜索結果和初始消息（用於發送好友請求）
-    const [selectedSearchItem, setSelectedSearchItem] = useState<{
-        id: string;
-        matrixUserId: string | null;
-        displayName: string | null;
-    } | null>(null);
-    const [initialMessage, setInitialMessage] = useState("");
     const [sendingRequest, setSendingRequest] = useState(false);
 
     const refresh = useMemo(() => {
@@ -720,25 +720,22 @@ export function RoomList({
         };
     }, [showSearchModal, searchToken, searchHsUrl]);
 
-    const onRequestContact = async (targetId: string, targetMatrixUserId: string | null, initialMessage: string): Promise<void> => {
+    const onRequestContact = async (targetId: string, targetMatrixUserId: string | null): Promise<void> => {
         if (!searchToken || !client || !targetMatrixUserId) return;
         if (sendingRequest) return; // 防止重複點擊
-        if (!initialMessage.trim()) {
-            setSearchError(t("roomList.errors.greetingRequired"));
-            return;
-        }
+        const initialMessage = getMyIdMessage(client);
         setSendingRequest(true);
         try {
             // 1. 創建房間並發送初始消息
             const roomId = await createDirectRoomWithMessage(
                 client,
                 targetMatrixUserId,
-                initialMessage.trim(),
+                initialMessage,
                 true,
             );
 
             // 2. 將房間 ID 傳給 Hub API
-            const result = await requestContact(searchToken, targetId, initialMessage.trim(), roomId, searchHsUrl);
+            const result = await requestContact(searchToken, targetId, initialMessage, roomId, searchHsUrl);
             if (result.status === "pending") {
                 setRequestedIds((prev) => new Set(prev).add(targetId));
             }
@@ -1320,50 +1317,6 @@ export function RoomList({
                         )}
                         {searchError && <div className="mt-3 text-xs text-rose-500">{searchError}</div>}
                         <div className="mt-4 max-h-72 overflow-y-auto">
-                            {/* 已選中用戶的消息輸入框 */}
-                            {selectedSearchItem && (
-                                <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg border border-emerald-200 dark:border-emerald-700">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                                            {t("roomList.search.sendRequestTo")}{selectedSearchItem.displayName || selectedSearchItem.id}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedSearchItem(null);
-                                                setInitialMessage("");
-                                                setSearchError(null);
-                                            }}
-                                            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400"
-                                        >{t("common.cancel")}</button>
-                                    </div>
-                                    <textarea
-                                        placeholder={t("roomList.search.greetingPlaceholder")}
-                                        value={initialMessage}
-                                        onChange={(e) => setInitialMessage(e.target.value)}
-                                        className="w-full px-2 py-1 text-sm rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                        rows={2}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            void onRequestContact(
-                                                selectedSearchItem.id,
-                                                selectedSearchItem.matrixUserId,
-                                                initialMessage,
-                                            ).then(() => {
-                                                setSelectedSearchItem(null);
-                                                setInitialMessage("");
-                                            });
-                                        }}
-                                        disabled={!initialMessage.trim() || sendingRequest}
-                                        className={`mt-2 w-full py-1.5 text-sm font-medium rounded ${initialMessage.trim() && !sendingRequest
-                                            ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                                            : "bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-600"
-                                            }`}
-                                    >{sendingRequest ? t("common.sending", "Sending...") : t("roomList.search.sendRequest")}</button>
-                                </div>
-                            )}
                             {searchResults.length === 0 &&
                                 (isStructuredSearch
                                     ? staffSearchMode === "customer"
@@ -1378,20 +1331,14 @@ export function RoomList({
                                         type="button"
                                         onClick={() => {
                                             if (!requestedIds.has(item.id) && !acceptedIds.has(item.id)) {
-                                                setSelectedSearchItem({
-                                                    id: item.id,
-                                                    matrixUserId: item.matrixUserId,
-                                                    displayName: item.displayName,
-                                                });
                                                 setSearchError(null);
+                                                void onRequestContact(item.id, item.matrixUserId);
                                             }
                                         }}
-                                        disabled={requestedIds.has(item.id) || acceptedIds.has(item.id)}
+                                        disabled={requestedIds.has(item.id) || acceptedIds.has(item.id) || sendingRequest}
                                         className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${requestedIds.has(item.id) || acceptedIds.has(item.id)
                                             ? "opacity-50 cursor-not-allowed"
-                                            : selectedSearchItem?.id === item.id
-                                                ? "bg-emerald-50 dark:bg-emerald-900/20 ring-1 ring-emerald-300"
-                                                : ""
+                                            : ""
                                             }`}
                                     >
                                         <div className="min-w-0">
@@ -1403,7 +1350,11 @@ export function RoomList({
                                             </div>
                                         </div>
                                         <span className="text-lg font-semibold text-emerald-500">
-                                            {requestedIds.has(item.id) || acceptedIds.has(item.id) ? t("roomList.search.invited") : "+"}
+                                            {requestedIds.has(item.id) || acceptedIds.has(item.id)
+                                                ? t("roomList.search.invited")
+                                                : sendingRequest
+                                                    ? t("common.sending", "Sending...")
+                                                    : "+"}
                                         </span>
                                     </button>
                                 ))
