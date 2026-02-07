@@ -21,6 +21,15 @@ import { hubTranslate } from "../../api/hub";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
+const EMOJI_GROUPS: Array<{ id: string; label: string; emojis: string[] }> = [
+    { id: "recent", label: "Recent", emojis: [] },
+    { id: "smileys", label: "Smileys", emojis: ["😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩"] },
+    { id: "people", label: "People", emojis: ["👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "🫶", "🤔", "🤗", "🎉", "🔥"] },
+    { id: "nature", label: "Nature", emojis: ["🌞", "🌙", "⭐", "🌈", "☔", "❄", "🌊", "🌸", "🌻", "🍀", "🌲", "🌍"] },
+    { id: "food", label: "Food", emojis: ["🍎", "🍌", "🍓", "🍇", "🍑", "🍕", "🍔", "🍟", "🍜", "🍣", "☕", "🍺"] },
+    { id: "symbols", label: "Symbols", emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "✅", "❌", "⚠️", "❓", "💬", "📌"] },
+];
+
 type MessageBubbleProps = {
     event: MatrixEvent;
     isMe: boolean;
@@ -229,8 +238,14 @@ export const ChatRoom: React.FC = () => {
     const [renameValue, setRenameValue] = useState("");
     const [renameBusy, setRenameBusy] = useState(false);
     const [renameError, setRenameError] = useState<string | null>(null);
+    const [showEmojiBoard, setShowEmojiBoard] = useState(false);
+    const [emojiTab, setEmojiTab] = useState<string>("recent");
+    const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
     const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
+    const emojiBoardRef = useRef<HTMLDivElement | null>(null);
+    const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+    const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -254,6 +269,7 @@ export const ChatRoom: React.FC = () => {
         }
         return localpart || displayName || userId || t("common.unknown");
     };
+    const emojiStorageKey = useMemo(() => `gtt_recent_emojis:${userId ?? "guest"}`, [userId]);
 
     const getMatrixHost = (hsUrl: string | null): string | null => {
         if (!hsUrl) return null;
@@ -276,6 +292,31 @@ export const ChatRoom: React.FC = () => {
             document.removeEventListener("click", handleClick);
         };
     }, [showActionsMenu]);
+
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem(emojiStorageKey);
+            if (!saved) {
+                setRecentEmojis([]);
+                return;
+            }
+            const parsed = JSON.parse(saved) as string[];
+            setRecentEmojis(Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string").slice(0, 24) : []);
+        } catch {
+            setRecentEmojis([]);
+        }
+    }, [emojiStorageKey]);
+
+    useEffect(() => {
+        if (!showEmojiBoard) return;
+        const onClickOutside = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (emojiBoardRef.current?.contains(target) || emojiButtonRef.current?.contains(target)) return;
+            setShowEmojiBoard(false);
+        };
+        document.addEventListener("click", onClickOutside);
+        return () => document.removeEventListener("click", onClickOutside);
+    }, [showEmojiBoard]);
 
     const mergedEvents = useMemo(() => {
         if (!room) return [];
@@ -636,6 +677,37 @@ export const ChatRoom: React.FC = () => {
         setMediaOffset({ x: 0, y: 0 });
     };
 
+    const addRecentEmoji = (emoji: string): void => {
+        setRecentEmojis((prev) => {
+            const next = [emoji, ...prev.filter((value) => value !== emoji)].slice(0, 24);
+            localStorage.setItem(emojiStorageKey, JSON.stringify(next));
+            return next;
+        });
+    };
+
+    const insertEmojiToComposer = (emoji: string): void => {
+        addRecentEmoji(emoji);
+        const input = composerRef.current;
+        if (!input) {
+            setComposerText((prev) => `${prev}${emoji}`);
+            return;
+        }
+        const start = input.selectionStart ?? composerText.length;
+        const end = input.selectionEnd ?? start;
+        const nextText = `${composerText.slice(0, start)}${emoji}${composerText.slice(end)}`;
+        setComposerText(nextText);
+        requestAnimationFrame(() => {
+            const cursor = start + emoji.length;
+            input.focus();
+            input.setSelectionRange(cursor, cursor);
+        });
+    };
+
+    const activeEmojiGroup = useMemo(() => {
+        if (emojiTab === "recent") return recentEmojis;
+        return EMOJI_GROUPS.find((group) => group.id === emojiTab)?.emojis ?? [];
+    }, [emojiTab, recentEmojis]);
+
     if (!activeRoomId) {
         return <div className="flex-1" />;
     }
@@ -887,16 +959,21 @@ export const ChatRoom: React.FC = () => {
             )}
 
             {/* Composer */}
-            <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800">
+            <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800 relative">
                 {/* Toolbar */}
                 <div className="flex gap-4 mb-2 px-1 text-gray-400 dark:text-slate-500">
-                    <button className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
+                    <button
+                        ref={emojiButtonRef}
+                        type="button"
+                        className={`hover:text-[#2F5C56] dark:hover:text-emerald-400 ${showEmojiBoard ? "text-[#2F5C56] dark:text-emerald-400" : ""}`}
+                        onClick={() => setShowEmojiBoard((prev) => !prev)}
+                    >
                         <FaceSmileIcon className="w-6 h-6" />
                     </button>
-                    <button className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
+                    <button type="button" className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
                         <PaperClipIcon className="w-6 h-6" />
                     </button>
-                    <button className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
+                    <button type="button" className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
                         <MicrophoneIcon className="w-6 h-6" />
                     </button>
                 </div>
@@ -904,6 +981,7 @@ export const ChatRoom: React.FC = () => {
                 {/* Input Area */}
                 <div className="flex gap-3 items-end">
                     <textarea
+                        ref={composerRef}
                         value={composerText}
                         onChange={(event) => setComposerText(event.target.value)}
                         onKeyDown={(event) => {
@@ -926,6 +1004,46 @@ export const ChatRoom: React.FC = () => {
                         <PaperAirplaneIcon className="w-5 h-5" />
                     </button>
                 </div>
+                {showEmojiBoard && (
+                    <div
+                        ref={emojiBoardRef}
+                        className="absolute bottom-[90px] left-4 z-30 w-[320px] rounded-xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                    >
+                        <div className="mb-2 flex gap-1 overflow-x-auto pb-1">
+                            {EMOJI_GROUPS.map((group) => (
+                                <button
+                                    key={group.id}
+                                    type="button"
+                                    onClick={() => setEmojiTab(group.id)}
+                                    className={`rounded-full px-2 py-1 text-xs whitespace-nowrap ${emojiTab === group.id
+                                        ? "bg-emerald-500 text-white"
+                                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                        }`}
+                                >
+                                    {group.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="grid max-h-56 grid-cols-8 gap-1 overflow-y-auto pr-1">
+                            {activeEmojiGroup.length > 0 ? (
+                                activeEmojiGroup.map((emoji) => (
+                                    <button
+                                        key={`${emojiTab}-${emoji}`}
+                                        type="button"
+                                        onClick={() => insertEmojiToComposer(emoji)}
+                                        className="rounded p-1 text-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        {emoji}
+                                    </button>
+                                ))
+                            ) : (
+                                <div className="col-span-8 py-6 text-center text-xs text-slate-400">
+                                    No emojis
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {showMembersModal && isGroupChat && (
