@@ -68,6 +68,7 @@ type RoomListProps = {
     activeContactId?: string | null;
     contactsRefreshToken?: number;
     pinnedRoomIds?: string[];
+    enableContactPolling?: boolean;
 };
 
 const EMPTY_STATE: ChatRoomEntry[] = [];
@@ -271,6 +272,7 @@ export function RoomList({
     activeContactId,
     contactsRefreshToken,
     pinnedRoomIds = [],
+    enableContactPolling = true,
 }: RoomListProps) {
     const { t } = useTranslation();
     const [rooms, setRooms] = useState<ChatRoomEntry[]>(EMPTY_STATE);
@@ -721,11 +723,12 @@ export function RoomList({
     useEffect(() => {
         if (!searchToken) return;
         void refreshContacts();
+        if (!enableContactPolling) return;
         const timer = window.setInterval(() => {
             void refreshContacts();
         }, 6000);
         return () => window.clearInterval(timer);
-    }, [searchToken, searchHsUrl, contactsRefreshToken, client, matrixHost, pendingInviteRooms]);
+    }, [searchToken, searchHsUrl, contactsRefreshToken, client, matrixHost, pendingInviteRooms, enableContactPolling]);
 
     useEffect(() => {
         if (!onInviteBadgeChange) return;

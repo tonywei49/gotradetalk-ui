@@ -229,6 +229,12 @@ export const MainLayout: React.FC = () => {
     }, [activeTab]);
 
     useEffect(() => {
+        if (activeTab === "contacts") {
+            setContactsRefreshToken((prev) => prev + 1);
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
             const target = event.target as Node;
             if (contactMenuRef.current?.contains(target) || contactMenuButtonRef.current?.contains(target)) return;
@@ -677,6 +683,7 @@ export const MainLayout: React.FC = () => {
                             activeContactId={activeContact?.id ?? null}
                             contactsRefreshToken={contactsRefreshToken}
                             pinnedRoomIds={pinnedRoomIds}
+                            enableContactPolling={activeTab === "contacts"}
                         />
                     </>
                 )}
