@@ -615,16 +615,6 @@ export const ChatRoom: React.FC = () => {
                                             type="button"
                                             onClick={() => {
                                                 setShowActionsMenu(false);
-                                                setShowRoomInfoModal(true);
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                                        >
-                                            {t("chat.roomInfo")}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setShowActionsMenu(false);
                                                 onHideRoom?.();
                                             }}
                                             className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -1101,7 +1091,7 @@ export const ChatRoom: React.FC = () => {
                     </div>
                 </div>
             )}
-            {showRoomInfoModal && room && (
+            {showRoomInfoModal && isGroupChat && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
@@ -1114,7 +1104,7 @@ export const ChatRoom: React.FC = () => {
                                 className="rounded-full p-1 text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
                                 aria-label={t("common.close")}
                             >
-                                ✕
+                                鉁?
                             </button>
                         </div>
                         <div className="space-y-3 text-sm text-slate-700 dark:text-slate-200">
