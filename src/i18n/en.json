@@ -279,6 +279,7 @@
         "showTranslation": "Show translation",
         "showOriginal": "Show original",
         "translationPending": "Translating...",
+        "translationUnavailable": "Translation unavailable",
         "playVideo": "Play video",
         "removeMember": "Remove",
         "removeMemberConfirm": "Remove this member?",

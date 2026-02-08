@@ -279,6 +279,7 @@
         "showTranslation": "显示翻译",
         "showOriginal": "显示原文",
         "translationPending": "翻译中...",
+        "translationUnavailable": "译文不可用",
         "playVideo": "播放视频",
         "removeMember": "移除",
         "removeMemberConfirm": "是否移除该成员？",
