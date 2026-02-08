@@ -491,11 +491,14 @@ export const ChatRoom: React.FC = () => {
             return { ...prev, [key]: { text: null, loading: true, error: false } };
         });
         try {
+            const normalizedTargetLang = targetLanguage === "zh-TW" ? "Traditional Chinese" : targetLanguage;
+            const normalizedSourceLangHint =
+                senderLangHint === "zh-TW" ? "Traditional Chinese" : senderLangHint;
             const result = await hubTranslate({
                 accessToken: translateAccessToken,
                 text: messageText,
-                targetLang: targetLanguage,
-                sourceLangHint: senderLangHint,
+                targetLang: normalizedTargetLang,
+                sourceLangHint: normalizedSourceLangHint,
                 roomId: activeRoomId ?? undefined,
                 messageId,
                 sourceMatrixUserId: event.getSender() ?? undefined,
@@ -753,11 +756,14 @@ export const ChatRoom: React.FC = () => {
             Boolean(translateAccessToken && peerLang && sentEventId);
 
         if (shouldPretranslateForClient && sentEventId) {
+            const normalizedTargetLang = peerLang === "zh-TW" ? "Traditional Chinese" : peerLang;
+            const normalizedSourceLangHint =
+                (chatReceiveLanguage || "").trim() === "zh-TW" ? "Traditional Chinese" : (chatReceiveLanguage || "").trim() || undefined;
             void hubTranslate({
                 accessToken: translateAccessToken as string,
                 text: trimmed,
-                targetLang: peerLang,
-                sourceLangHint: (chatReceiveLanguage || "").trim() || undefined,
+                targetLang: normalizedTargetLang,
+                sourceLangHint: normalizedSourceLangHint,
                 roomId: activeRoomId,
                 messageId: sentEventId,
                 sourceMatrixUserId: userId ?? undefined,
@@ -782,11 +788,14 @@ export const ChatRoom: React.FC = () => {
                     if (lang) targetLangs.add(lang);
                 });
             targetLangs.forEach((lang) => {
+                const normalizedTargetLang = lang === "zh-TW" ? "Traditional Chinese" : lang;
+                const normalizedSourceLangHint =
+                    (chatReceiveLanguage || "").trim() === "zh-TW" ? "Traditional Chinese" : (chatReceiveLanguage || "").trim() || undefined;
                 void hubTranslate({
                     accessToken: translateAccessToken as string,
                     text: trimmed,
-                    targetLang: lang,
-                    sourceLangHint: (chatReceiveLanguage || "").trim() || undefined,
+                    targetLang: normalizedTargetLang,
+                    sourceLangHint: normalizedSourceLangHint,
                     roomId: activeRoomId,
                     messageId: sentEventId,
                     sourceMatrixUserId: userId ?? undefined,
