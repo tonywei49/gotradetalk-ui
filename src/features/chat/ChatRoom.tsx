@@ -437,6 +437,11 @@ export const ChatRoom: React.FC = () => {
         const messageId = event.getId();
         if (!messageId) return;
         const key = getEventKey(event);
+        const senderId = event.getSender() ?? null;
+        const senderLangHint =
+            senderId && senderId === directPeerUserId
+                ? (directPeerContact?.translation_locale || directPeerContact?.locale || "").trim() || undefined
+                : undefined;
         setTranslationMap((prev) => {
             if (prev[key]?.loading) return prev;
             if (!forceRetry && prev[key]) return prev;
@@ -447,6 +452,7 @@ export const ChatRoom: React.FC = () => {
                 accessToken: translateAccessToken,
                 text: messageText,
                 targetLang: targetLanguage,
+                sourceLangHint: senderLangHint,
                 roomId: activeRoomId ?? undefined,
                 messageId,
                 sourceMatrixUserId: event.getSender() ?? undefined,
@@ -707,6 +713,7 @@ export const ChatRoom: React.FC = () => {
                 accessToken: translateAccessToken as string,
                 text: trimmed,
                 targetLang: peerLang,
+                sourceLangHint: (chatReceiveLanguage || "").trim() || undefined,
                 roomId: activeRoomId,
                 messageId: sentEventId,
                 sourceMatrixUserId: userId ?? undefined,
