@@ -82,10 +82,6 @@ export async function createGroupChat(
         // 娉ㄦ剰锛氫笉浣跨敤 invite 鍙冩暩锛屽洜鐐鸿法鏈嶅嫏鍣ㄥ彲鑳藉皫鑷撮個璜嬪け鏁?
         initial_state: initialState,
         power_level_content_override: powerLevelContentOverride,
-        room_version: "10",
-        creation_content: {
-            "m.federate": true,
-        },
     };
     const result = await client.createRoom(createRoomOpts);
     const roomId = result.room_id;
