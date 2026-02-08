@@ -351,8 +351,31 @@ export const ChatRoom: React.FC = () => {
         const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
         return (kindEvent?.getContent() as { kind?: string } | undefined)?.kind ?? null;
     }, [room]);
-    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && roomKind === ROOM_KIND_GROUP;
-    const isDirectRoom = Boolean(room) && roomKind === ROOM_KIND_DIRECT;
+    const isDirectByAccountData = useMemo(() => {
+        if (!matrixClient || !activeRoomId) return false;
+        const event = matrixClient.getAccountData("m.direct" as never);
+        const content = event?.getContent() as Record<string, unknown> | undefined;
+        if (!content || typeof content !== "object") return false;
+        return Object.values(content).some((value) => {
+            if (!Array.isArray(value)) return false;
+            return value.some((roomId) => roomId === activeRoomId);
+        });
+    }, [activeRoomId, matrixClient]);
+    const isDirectByMembers = useMemo(() => {
+        if (!room || room.isSpaceRoom()) return false;
+        const joined = room.getJoinedMembers().map((member) => member.userId);
+        const invited = room.getMembersWithMembership("invite").map((member) => member.userId);
+        const others = Array.from(new Set([...joined, ...invited])).filter((memberId) => memberId && memberId !== userId);
+        return others.length === 1;
+    }, [room, userId]);
+    const isDirectRoom = useMemo(() => {
+        if (!room || room.isSpaceRoom()) return false;
+        if (roomKind === ROOM_KIND_DIRECT) return true;
+        if (roomKind === ROOM_KIND_GROUP) return false;
+        if (isDirectByAccountData) return true;
+        return isDirectByMembers;
+    }, [isDirectByAccountData, isDirectByMembers, room, roomKind]);
+    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom && roomKind === ROOM_KIND_GROUP;
     const directPeerUserId = useMemo(() => {
         if (!room || !isDirectRoom) return null;
         const joined = room.getJoinedMembers().map((member) => member.userId);
