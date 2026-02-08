@@ -355,6 +355,18 @@ export const ChatRoom: React.FC = () => {
         if (contact.user_local_id && matrixHost) return `@${contact.user_local_id}:${matrixHost}`;
         return null;
     };
+    const contactLookup = useMemo(() => {
+        const map = new Map<string, ContactEntry>();
+        contacts.forEach((contact) => {
+            const matrixUserId = resolveMatrixUserId(contact);
+            if (matrixUserId) map.set(matrixUserId, contact);
+        });
+        return map;
+    }, [contacts, matrixHost]);
+    const resolveContactByMatrixUserId = (matrixUserId?: string | null): ContactEntry | null => {
+        if (!matrixUserId) return null;
+        return contactLookup.get(matrixUserId) ?? null;
+    };
 
     const roomKind = useMemo(() => {
         if (!room) return null;
@@ -395,8 +407,8 @@ export const ChatRoom: React.FC = () => {
     }, [isDirectRoom, room, userId]);
     const directPeerContact = useMemo(() => {
         if (!directPeerUserId) return null;
-        return contacts.find((contact) => resolveMatrixUserId(contact) === directPeerUserId) || null;
-    }, [contacts, directPeerUserId]);
+        return resolveContactByMatrixUserId(directPeerUserId);
+    }, [directPeerUserId, resolveContactByMatrixUserId]);
     const directTranslationEnabled = useMemo(() => {
         if (!isDirectRoom || !translationContactsLoaded) return false;
         const peerHost = directPeerUserId?.split(":")[1] || null;
@@ -422,13 +434,44 @@ export const ChatRoom: React.FC = () => {
         }
         return false;
     }, [companyName, directPeerContact, directPeerUserId, isDirectRoom, translationContactsLoaded, userId, userType]);
+    const groupTranslationEnabled = useMemo(() => {
+        if (!isGroupChat || !translationContactsLoaded) return false;
+        return true;
+    }, [isGroupChat, translationContactsLoaded]);
 
     const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
         if (!canTranslate || translationBlocked || isMeMessage) return false;
-        if (!directTranslationEnabled) return false;
+        if (isDirectRoom && !directTranslationEnabled) return false;
+        if (isGroupChat && !groupTranslationEnabled) return false;
         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
         if (!content?.body) return false;
         if (content.msgtype && content.msgtype !== MsgType.Text) return false;
+        if (isGroupChat) {
+            const senderId = event.getSender() ?? null;
+            const senderContact = resolveContactByMatrixUserId(senderId);
+            const senderHost = senderId?.split(":")[1] || null;
+            const selfHost = userId?.split(":")[1] || null;
+            if (userType === "client") {
+                if (senderContact?.user_type === "client") return true;
+                if (senderContact?.user_type === "staff") return true;
+                return Boolean(senderHost && selfHost && senderHost !== selfHost);
+            }
+            if (userType === "staff") {
+                if (senderContact?.user_type === "client") return true;
+                if (senderContact?.user_type === "staff") {
+                    if (
+                        senderContact.company_name &&
+                        companyName &&
+                        senderContact.company_name === companyName
+                    ) {
+                        return false;
+                    }
+                    return true;
+                }
+                return Boolean(senderHost && selfHost && senderHost !== selfHost);
+            }
+            return false;
+        }
         return true;
     };
 
@@ -438,10 +481,9 @@ export const ChatRoom: React.FC = () => {
         if (!messageId) return;
         const key = getEventKey(event);
         const senderId = event.getSender() ?? null;
+        const senderContact = resolveContactByMatrixUserId(senderId);
         const senderLangHint =
-            senderId && senderId === directPeerUserId
-                ? (directPeerContact?.translation_locale || directPeerContact?.locale || "").trim() || undefined
-                : undefined;
+            (senderContact?.translation_locale || senderContact?.locale || "").trim() || undefined;
         setTranslationMap((prev) => {
             if (prev[key]?.loading) return prev;
             if (!forceRetry && prev[key]) return prev;
@@ -595,7 +637,7 @@ export const ChatRoom: React.FC = () => {
     }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
 
     useEffect(() => {
-        if (!canTranslate || !translationContactsLoaded || !isDirectRoom || !directTranslationEnabled) return;
+        if (!canTranslate || !translationContactsLoaded || (!isDirectRoom && !isGroupChat)) return;
         mergedEvents.forEach((event) => {
             const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
             const messageText = content?.body ?? "";
@@ -609,10 +651,12 @@ export const ChatRoom: React.FC = () => {
         canTranslate,
         directTranslationEnabled,
         isDirectRoom,
+        isGroupChat,
         mergedEvents,
         targetLanguage,
         translationContactsLoaded,
         translationMap,
+        groupTranslationEnabled,
         userId,
     ]);
 
@@ -720,6 +764,36 @@ export const ChatRoom: React.FC = () => {
                 hsUrl: translateHsUrl,
                 matrixUserId: translateMatrixUserId,
             }).catch(() => undefined);
+        }
+        const shouldPretranslateForGroupClients =
+            userType === "staff" &&
+            isGroupChat &&
+            translationContactsLoaded &&
+            Boolean(translateAccessToken && sentEventId);
+        if (shouldPretranslateForGroupClients && sentEventId) {
+            const targetLangs = new Set<string>();
+            groupMembers
+                .map((member) => member.userId)
+                .filter((memberId) => memberId && memberId !== userId)
+                .forEach((memberId) => {
+                    const contact = resolveContactByMatrixUserId(memberId);
+                    if (!contact || contact.user_type !== "client") return;
+                    const lang = (contact.translation_locale || contact.locale || "").trim();
+                    if (lang) targetLangs.add(lang);
+                });
+            targetLangs.forEach((lang) => {
+                void hubTranslate({
+                    accessToken: translateAccessToken as string,
+                    text: trimmed,
+                    targetLang: lang,
+                    sourceLangHint: (chatReceiveLanguage || "").trim() || undefined,
+                    roomId: activeRoomId,
+                    messageId: sentEventId,
+                    sourceMatrixUserId: userId ?? undefined,
+                    hsUrl: translateHsUrl,
+                    matrixUserId: translateMatrixUserId,
+                }).catch(() => undefined);
+            });
         }
     };
 
