@@ -346,11 +346,6 @@ export const ChatRoom: React.FC = () => {
         return null;
     };
 
-    const resolveContactForUser = (userIdToFind: string | null): ContactEntry | null => {
-        if (!userIdToFind) return null;
-        return contacts.find((contact) => resolveMatrixUserId(contact) === userIdToFind) || null;
-    };
-
     const roomKind = useMemo(() => {
         if (!room) return null;
         const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
@@ -358,31 +353,49 @@ export const ChatRoom: React.FC = () => {
     }, [room]);
     const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && roomKind === ROOM_KIND_GROUP;
     const isDirectRoom = Boolean(room) && roomKind === ROOM_KIND_DIRECT;
+    const directPeerUserId = useMemo(() => {
+        if (!room || !isDirectRoom) return null;
+        const joined = room.getJoinedMembers().map((member) => member.userId);
+        const invited = room.getMembersWithMembership("invite").map((member) => member.userId);
+        const allMembers = Array.from(new Set([...joined, ...invited]));
+        return allMembers.find((memberId) => memberId && memberId !== userId) ?? null;
+    }, [isDirectRoom, room, userId]);
+    const directPeerContact = useMemo(() => {
+        if (!directPeerUserId) return null;
+        return contacts.find((contact) => resolveMatrixUserId(contact) === directPeerUserId) || null;
+    }, [contacts, directPeerUserId]);
+    const directTranslationEnabled = useMemo(() => {
+        if (!isDirectRoom || !translationContactsLoaded) return false;
+        const peerHost = directPeerUserId?.split(":")[1] || null;
+        const selfHost = userId?.split(":")[1] || null;
+        if (userType === "client") {
+            if (directPeerContact?.user_type === "staff") return true;
+            if (directPeerContact?.user_type === "client") return false;
+            return Boolean(peerHost && selfHost && peerHost !== selfHost);
+        }
+        if (userType === "staff") {
+            if (directPeerContact?.user_type === "client") return true;
+            if (directPeerContact?.user_type === "staff") {
+                if (
+                    directPeerContact.company_name &&
+                    companyName &&
+                    directPeerContact.company_name === companyName
+                ) {
+                    return false;
+                }
+                return true;
+            }
+            return Boolean(peerHost && selfHost && peerHost !== selfHost);
+        }
+        return false;
+    }, [companyName, directPeerContact, directPeerUserId, isDirectRoom, translationContactsLoaded, userId, userType]);
 
     const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
         if (!canTranslate || translationBlocked || isMeMessage) return false;
-        if (!isDirectRoom) return false;
+        if (!directTranslationEnabled) return false;
         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
         if (!content?.body) return false;
         if (content.msgtype && content.msgtype !== MsgType.Text) return false;
-        const senderId = event.getSender() ?? "";
-        const senderContact = resolveContactForUser(senderId || null);
-        if (userType === "client") {
-            return senderContact?.user_type === "staff";
-        }
-        if (userType === "staff") {
-            if (senderContact?.user_type === "client") return true;
-            if (
-                senderContact?.user_type === "staff" &&
-                senderContact.company_name &&
-                companyName &&
-                senderContact.company_name === companyName
-            ) {
-                return false;
-            }
-            if (senderContact?.user_type === "staff") return true;
-            if (!senderContact) return false;
-        }
         return true;
     };
 
@@ -542,7 +555,7 @@ export const ChatRoom: React.FC = () => {
     }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
 
     useEffect(() => {
-        if (!canTranslate || !translationContactsLoaded || !isDirectRoom) return;
+        if (!canTranslate || !translationContactsLoaded || !isDirectRoom || !directTranslationEnabled) return;
         mergedEvents.forEach((event) => {
             const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
             const messageText = content?.body ?? "";
@@ -552,7 +565,16 @@ export const ChatRoom: React.FC = () => {
             if (translationMap[key]?.text || translationMap[key]?.loading) return;
             void translateEvent(event, messageText);
         });
-    }, [canTranslate, isDirectRoom, mergedEvents, targetLanguage, translationContactsLoaded, translationMap, userId]);
+    }, [
+        canTranslate,
+        directTranslationEnabled,
+        isDirectRoom,
+        mergedEvents,
+        targetLanguage,
+        translationContactsLoaded,
+        translationMap,
+        userId,
+    ]);
 
     useEffect(() => {
         setTranslationMap({});
