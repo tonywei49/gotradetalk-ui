@@ -350,6 +350,7 @@ export const ChatRoom: React.FC = () => {
     const getEventKey = (event: MatrixEvent): string =>
         event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
 
+    const matrixHost = getMatrixHost(matrixHsUrl);
     const resolveMatrixUserId = (contact: ContactEntry): string | null => {
         if (contact.matrix_user_id) return contact.matrix_user_id;
         if (contact.user_local_id && matrixHost) return `@${contact.user_local_id}:${matrixHost}`;
@@ -555,7 +556,6 @@ export const ChatRoom: React.FC = () => {
     const canInviteMembers = userPowerLevel >= inviteLevel;
     const canRenameGroup = userPowerLevel >= 50;
     const canRemoveMembers = userPowerLevel >= 50;
-    const matrixHost = getMatrixHost(matrixHsUrl);
     const memberIdSet = useMemo(() => new Set(groupMembers.map((member) => member.userId)), [groupMembers]);
     const filteredContacts = useMemo(() => {
         const needle = contactFilter.trim().toLowerCase();
