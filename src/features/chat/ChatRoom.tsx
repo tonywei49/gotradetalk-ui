@@ -351,15 +351,27 @@ export const ChatRoom: React.FC = () => {
         return contacts.find((contact) => resolveMatrixUserId(contact) === userIdToFind) || null;
     };
 
+    const roomKind = useMemo(() => {
+        if (!room) return null;
+        const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
+        return (kindEvent?.getContent() as { kind?: string } | undefined)?.kind ?? null;
+    }, [room]);
+    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && roomKind === ROOM_KIND_GROUP;
+    const isDirectRoom = Boolean(room) && roomKind === ROOM_KIND_DIRECT;
+
     const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
         if (!canTranslate || translationBlocked || isMeMessage) return false;
+        if (!isDirectRoom) return false;
         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
         if (!content?.body) return false;
         if (content.msgtype && content.msgtype !== MsgType.Text) return false;
-        if (userType === "client") return false;
+        const senderId = event.getSender() ?? "";
+        const senderContact = resolveContactForUser(senderId || null);
+        if (userType === "client") {
+            return senderContact?.user_type === "staff";
+        }
         if (userType === "staff") {
-            const senderId = event.getSender() ?? "";
-            const senderContact = resolveContactForUser(senderId || null);
+            if (senderContact?.user_type === "client") return true;
             if (
                 senderContact?.user_type === "staff" &&
                 senderContact.company_name &&
@@ -368,9 +380,8 @@ export const ChatRoom: React.FC = () => {
             ) {
                 return false;
             }
-            if (!senderContact && matrixHost && senderId && senderId.endsWith(`:${matrixHost}`)) {
-                return false;
-            }
+            if (senderContact?.user_type === "staff") return true;
+            if (!senderContact) return false;
         }
         return true;
     };
@@ -391,6 +402,7 @@ export const ChatRoom: React.FC = () => {
                 targetLang: targetLanguage,
                 roomId: activeRoomId ?? undefined,
                 messageId,
+                sourceMatrixUserId: event.getSender() ?? undefined,
                 hsUrl: translateHsUrl,
                 matrixUserId: translateMatrixUserId,
             });
@@ -407,6 +419,7 @@ export const ChatRoom: React.FC = () => {
                 message.includes("NOT_SUBSCRIBED") ||
                 message.includes("QUOTA_EXCEEDED") ||
                 message.includes("CLIENT_TRANSLATION_DISABLED") ||
+                message.includes("TRANSLATION_NOT_ALLOWED") ||
                 message.includes("Missing chat_link_id") ||
                 message.includes("Chat link not active")
             ) {
@@ -421,13 +434,6 @@ export const ChatRoom: React.FC = () => {
         return Boolean(eventId && eventId.startsWith("$"));
     };
 
-    const roomKind = useMemo(() => {
-        if (!room) return null;
-        const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-        return (kindEvent?.getContent() as { kind?: string } | undefined)?.kind ?? null;
-    }, [room]);
-    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && roomKind === ROOM_KIND_GROUP;
-    const isDirectRoom = Boolean(room) && roomKind === ROOM_KIND_DIRECT;
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
     const groupMembers = room?.getJoinedMembers() ?? [];
     const invitedMembers = room?.getMembersWithMembership("invite") ?? [];
@@ -536,7 +542,7 @@ export const ChatRoom: React.FC = () => {
     }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
 
     useEffect(() => {
-        if (!canTranslate) return;
+        if (!canTranslate || !translationContactsLoaded || !isDirectRoom) return;
         mergedEvents.forEach((event) => {
             const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
             const messageText = content?.body ?? "";
@@ -546,7 +552,7 @@ export const ChatRoom: React.FC = () => {
             if (translationMap[key]?.text || translationMap[key]?.loading) return;
             void translateEvent(event, messageText);
         });
-    }, [canTranslate, mergedEvents, translationMap, targetLanguage, userId]);
+    }, [canTranslate, isDirectRoom, mergedEvents, targetLanguage, translationContactsLoaded, translationMap, userId]);
 
     useEffect(() => {
         setTranslationMap({});
