@@ -108,8 +108,36 @@ export async function createGroupChat(
         if (failures.length > 0) {
             throw new Error(`Invite failed: ${failures.join("; ")}`);
         }
+        const inviteStatus = await waitForInviteState(client, roomId, invitees, 8000);
+        if (inviteStatus.missing.length > 0) {
+            throw new Error(`Invite not delivered: ${inviteStatus.missing.join(", ")}`);
+        }
     }
 
     return roomId;
+}
+
+async function waitForInviteState(
+    client: MatrixClient,
+    roomId: string,
+    invitees: string[],
+    timeoutMs: number
+): Promise<{ missing: string[] }> {
+    const start = Date.now();
+    const pending = new Set(invitees);
+    while (pending.size > 0 && Date.now() - start < timeoutMs) {
+        const room = client.getRoom(roomId);
+        if (room) {
+            for (const userId of Array.from(pending)) {
+                const membership = room.getMember(userId)?.membership;
+                if (membership === "invite" || membership === "join") {
+                    pending.delete(userId);
+                }
+            }
+        }
+        if (pending.size === 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return { missing: Array.from(pending) };
 }
 

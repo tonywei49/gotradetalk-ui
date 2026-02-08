@@ -32,6 +32,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
     const { t } = useTranslation();
     const [invites, setInvites] = useState<GroupInvite[]>([]);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+    const [joinError, setJoinError] = useState<string | null>(null);
 
     // 妲嬪缓缇ょ祫閭€璜嬪垪琛?
     const buildGroupInvites = (): GroupInvite[] => {
@@ -122,6 +123,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
     const handleAccept = async (roomId: string) => {
         if (!client || processingIds.has(roomId)) return;
         setProcessingIds((prev) => new Set(prev).add(roomId));
+        setJoinError(null);
         try {
             const room = client.getRoom(roomId);
             const myUserId = client.getUserId();
@@ -138,6 +140,13 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             refresh();
         } catch (err) {
             console.error("Failed to accept group invite:", err);
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : typeof err === "string"
+                        ? err
+                        : t("group.acceptFailed", "Failed to accept invite");
+            setJoinError(message);
         } finally {
             setProcessingIds((prev) => {
                 const next = new Set(prev);
@@ -175,6 +184,11 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                     {t("group.inviteTitle", "Group Invitations")} ({invites.length})
                 </span>
             </div>
+            {joinError && (
+                <div className="mx-4 mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-900/20 dark:text-rose-300">
+                    {joinError}
+                </div>
+            )}
             <div className="space-y-1 px-2">
                 {invites.map((invite) => {
                     const isProcessing = processingIds.has(invite.roomId);
