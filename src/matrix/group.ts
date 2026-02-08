@@ -95,12 +95,22 @@ export async function createGroupChat(
 
     // 閫愪竴閭€璜嬬敤鎴讹紝纰轰繚璺ㄦ湇鍕欏櫒閭€璜嬫纰虹櫦閫?
     if (invitees.length > 0) {
+        const failures: string[] = [];
         for (const invitee of invitees) {
             try {
                 await client.invite(roomId, invitee);
-            } catch {
-                // 绻肩簩閭€璜嬪叾浠栫敤鎴讹紝涓嶅洜鍠€嬪け鏁楄€屼腑鏂?
+            } catch (error) {
+                const message =
+                    error instanceof Error
+                        ? error.message
+                        : typeof error === "string"
+                            ? error
+                            : "Invite failed";
+                failures.push(`${invitee}: ${message}`);
             }
+        }
+        if (failures.length > 0) {
+            throw new Error(`Invite failed: ${failures.join("; ")}`);
         }
     }
 
