@@ -34,6 +34,17 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
     const [joinError, setJoinError] = useState<string | null>(null);
 
+    const waitForJoinMembership = async (roomId: string, timeoutMs = 6000): Promise<boolean> => {
+        if (!client) return false;
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeoutMs) {
+            const room = client.getRoom(roomId);
+            if (room?.getMyMembership() === "join") return true;
+            await new Promise((resolve) => window.setTimeout(resolve, 150));
+        }
+        return false;
+    };
+
     // 妲嬪缓缇ょ祫閭€璜嬪垪琛?
     const buildGroupInvites = (): GroupInvite[] => {
         if (!client) return [];
@@ -136,6 +147,16 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             } else {
                 await client.joinRoom(roomId);
             }
+            const joined = await waitForJoinMembership(roomId);
+            if (!joined) {
+                // Retry once without via hint in case homeserver-side routing succeeded but membership update is delayed.
+                await client.joinRoom(roomId);
+                const joinedAfterRetry = await waitForJoinMembership(roomId, 5000);
+                if (!joinedAfterRetry) {
+                    throw new Error(t("group.acceptFailed", "Failed to accept invite"));
+                }
+            }
+            setInvites((prev) => prev.filter((item) => item.roomId !== roomId));
             onAccept(roomId);
             refresh();
         } catch (err) {
