@@ -147,15 +147,16 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             } else {
                 await client.joinRoom(roomId);
             }
-            const joined = await waitForJoinMembership(roomId);
-            if (!joined) {
-                // Retry once without via hint in case homeserver-side routing succeeded but membership update is delayed.
-                await client.joinRoom(roomId);
-                const joinedAfterRetry = await waitForJoinMembership(roomId, 5000);
-                if (!joinedAfterRetry) {
-                    throw new Error(t("group.acceptFailed", "Failed to accept invite"));
+            // Matrix sync can lag behind /join response in some staff flows.
+            // Do not block UI transition on local membership cache propagation.
+            void (async () => {
+                const joined = await waitForJoinMembership(roomId);
+                if (!joined) {
+                    await client.joinRoom(roomId).catch(() => undefined);
+                    await waitForJoinMembership(roomId, 5000);
                 }
-            }
+                refresh();
+            })();
             setInvites((prev) => prev.filter((item) => item.roomId !== roomId));
             onAccept(roomId);
             refresh();
