@@ -33,6 +33,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
     const [invites, setInvites] = useState<GroupInvite[]>([]);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
     const [joinError, setJoinError] = useState<string | null>(null);
+    const [suppressedInviteIds, setSuppressedInviteIds] = useState<Set<string>>(new Set());
 
     const waitForJoinMembership = async (roomId: string, timeoutMs = 6000): Promise<boolean> => {
         if (!client) return false;
@@ -62,6 +63,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
         return client
             .getRooms()
             .filter((room) => {
+                if (suppressedInviteIds.has(room.roomId)) return false;
                 const membership = room.getMyMembership();
                 const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
                 const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
@@ -129,11 +131,12 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             client.off(RoomEvent.MyMembership, onMembership);
             client.off(ClientEvent.Sync, refresh);
         };
-    }, [client]);
+    }, [client, suppressedInviteIds]);
 
     const handleAccept = async (roomId: string) => {
         if (!client || processingIds.has(roomId)) return;
         setProcessingIds((prev) => new Set(prev).add(roomId));
+        setSuppressedInviteIds((prev) => new Set(prev).add(roomId));
         setJoinError(null);
         try {
             const room = client.getRoom(roomId);
@@ -161,6 +164,11 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             onAccept(roomId);
             refresh();
         } catch (err) {
+            setSuppressedInviteIds((prev) => {
+                const next = new Set(prev);
+                next.delete(roomId);
+                return next;
+            });
             console.error("Failed to accept group invite:", err);
             const message =
                 err instanceof Error

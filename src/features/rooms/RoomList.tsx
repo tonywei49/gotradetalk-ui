@@ -458,16 +458,18 @@ export function RoomList({
 
     useEffect(() => {
         if (!rooms.length) return;
+        const hasActiveInClient = Boolean(activeRoomId && client?.getRoom(activeRoomId));
         const hasActive =
             Boolean(activeRoomId) &&
             rooms.some((room) => room.roomId === activeRoomId);
-        if (!hasActive) {
+        // Keep current selection while Matrix sync catches up after join/accept.
+        if (!hasActive && !hasActiveInClient) {
             const nextRoom = rooms.find((room) => room.myMembership !== "invite") ?? rooms[0];
             if (nextRoom) {
                 onSelectRoom(nextRoom.roomId);
             }
         }
-    }, [rooms, activeRoomId, onSelectRoom]);
+    }, [rooms, activeRoomId, onSelectRoom, client]);
 
     // 計算總未讀數並通知父組件
     useEffect(() => {
