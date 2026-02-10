@@ -5,7 +5,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
-import { EventType } from "matrix-js-sdk";
+import { EventType, RoomEvent } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -247,6 +247,22 @@ export const MainLayout: React.FC = () => {
             document.removeEventListener("click", onClickOutside);
         };
     }, [showContactMenu]);
+
+    useEffect(() => {
+        if (!matrixClient || !activeRoomId) return undefined;
+
+        const onMyMembership = (room: { roomId: string }, membership: string): void => {
+            if (room.roomId !== activeRoomId) return;
+            if (membership === "join" || membership === "invite") return;
+            setActiveRoomId(null);
+            setMobileView("list");
+        };
+
+        matrixClient.on(RoomEvent.MyMembership, onMyMembership);
+        return () => {
+            matrixClient.off(RoomEvent.MyMembership, onMyMembership);
+        };
+    }, [matrixClient, activeRoomId]);
 
     useEffect(() => {
         if (!isNotificationSoundSupported()) return;
