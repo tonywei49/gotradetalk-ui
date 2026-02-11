@@ -200,16 +200,6 @@ type RemoveTarget = {
     membership: "join" | "invite";
 };
 
-type LeaveHistoryEntry = {
-    eventId: string;
-    targetUserId: string;
-    targetLabel: string;
-    actorUserId: string | null;
-    actorLabel: string | null;
-    at: number;
-    kind: "left" | "removed";
-};
-
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
     const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned, chatReceiveLanguage, companyName } =
@@ -852,42 +842,6 @@ export const ChatRoom: React.FC = () => {
                 return a.name.localeCompare(b.name);
             });
     }, [invitedMembers, powerLevels]);
-    const leaveHistoryEntries = useMemo(() => {
-        if (!room || !isGroupChat) return [];
-        const sourceEvents = room.getLiveTimeline().getEvents();
-        const entries: LeaveHistoryEntry[] = [];
-
-        for (const event of sourceEvents) {
-            if (event.getType() !== EventType.RoomMember) continue;
-            const content = (event.getContent() ?? {}) as { membership?: string; reason?: string };
-            if (content.membership !== "leave") continue;
-            const prev = (event.getPrevContent() ?? {}) as { membership?: string; displayname?: string };
-            if (prev.membership !== "join" && prev.membership !== "invite") continue;
-
-            const targetUserId = event.getStateKey();
-            if (!targetUserId) continue;
-            const eventId = event.getId();
-            if (!eventId) continue;
-
-            const actorUserId = event.getSender() ?? null;
-            const targetMember = room.getMember(targetUserId);
-            const actorMember = actorUserId ? room.getMember(actorUserId) : null;
-            const isSelfLeave = actorUserId === targetUserId;
-
-            entries.push({
-                eventId,
-                targetUserId,
-                targetLabel: getUserLabel(targetUserId, targetMember?.name ?? prev.displayname),
-                actorUserId,
-                actorLabel: actorUserId ? getUserLabel(actorUserId, actorMember?.name) : null,
-                at: event.getTs(),
-                kind: isSelfLeave ? "left" : "removed",
-            });
-        }
-
-        entries.sort((a, b) => b.at - a.at);
-        return entries.slice(0, 20);
-    }, [room, isGroupChat]);
     const openMediaPreview = (payload: { url: string; type: "image" | "video" }): void => {
         setMediaPreview(payload);
         setMediaZoom(1);
@@ -1361,39 +1315,6 @@ export const ChatRoom: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                            {canManageInvites && (
-                                <div>
-                                    <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                        {t("chat.recentLeavesTitle", "Recent departures")}
-                                    </div>
-                                    {leaveHistoryEntries.length === 0 ? (
-                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                            {t("chat.recentLeavesEmpty", "No recent departures")}
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {leaveHistoryEntries.map((entry) => (
-                                                <div
-                                                    key={entry.eventId}
-                                                    className="rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
-                                                >
-                                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                        {entry.targetLabel}
-                                                    </div>
-                                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                                        {entry.kind === "left"
-                                                            ? t("chat.memberLeft", "Left the room")
-                                                            : `${t("chat.memberRemovedBy", "Removed by")} ${entry.actorLabel ?? t("common.unknown")}`}
-                                                    </div>
-                                                    <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                                                        {new Date(entry.at).toLocaleString()}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>
