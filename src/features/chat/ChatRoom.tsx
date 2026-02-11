@@ -40,6 +40,7 @@ type MessageBubbleProps = {
     showTranslation?: boolean;
     translationLoading?: boolean;
     translationError?: boolean;
+    onToggleTranslation?: () => void;
 };
 
 const MessageBubble = ({
@@ -54,6 +55,7 @@ const MessageBubble = ({
     showTranslation,
     translationLoading,
     translationError,
+    onToggleTranslation,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
@@ -156,6 +158,20 @@ const MessageBubble = ({
                         {t("chat.resend")}
                     </button>
                 )}
+            {isText && !isMe && onToggleTranslation && (
+                <button
+                    type="button"
+                    className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-300"
+                    onClick={onToggleTranslation}
+                    disabled={translationLoading}
+                >
+                    {translationLoading
+                        ? t("chat.translationPending")
+                        : showTranslated
+                            ? t("chat.showOriginal")
+                            : t("chat.showTranslation")}
+                </button>
+            )}
             </div>
         </div>
     );
@@ -347,6 +363,7 @@ export const ChatRoom: React.FC = () => {
     const [translationMap, setTranslationMap] = useState<
         Record<string, { text: string | null; loading: boolean; error: boolean }>
     >({});
+    const [translationView, setTranslationView] = useState<Record<string, boolean>>({});
     const [translationDisplayMode, setTranslationDisplayMode] = useState<"translated" | "original">("translated");
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
@@ -511,6 +528,7 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: translateMatrixUserId,
             });
             setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false, error: false } }));
+            setTranslationView((prev) => (prev[key] === undefined ? { ...prev, [key]: true } : prev));
         } catch (error) {
             const message =
                 error instanceof Error
@@ -669,6 +687,7 @@ export const ChatRoom: React.FC = () => {
 
     useEffect(() => {
         setTranslationMap({});
+        setTranslationView({});
         setTranslationDisplayMode("translated");
         setTranslationBlocked(false);
     }, [targetLanguage, activeRoomId]);
@@ -1167,11 +1186,23 @@ export const ChatRoom: React.FC = () => {
                             translatedText={translationMap[getEventKey(event)]?.text ?? null}
                             translationLoading={translationMap[getEventKey(event)]?.loading ?? false}
                             translationError={translationMap[getEventKey(event)]?.error ?? false}
-                            showTranslation={
-                                translationDisplayMode === "translated" &&
-                                Boolean(translationMap[getEventKey(event)]?.text) &&
-                                !isMe
-                            }
+                            showTranslation={(() => {
+                                if (translationDisplayMode === "original" || isMe) return false;
+                                const key = getEventKey(event);
+                                return translationView[key] ?? (translationMap[key]?.text ? true : false);
+                            })()}
+                            onToggleTranslation={() => {
+                                const key = getEventKey(event);
+                                const nextValue = !(translationView[key] ?? false);
+                                setTranslationView((prev) => ({ ...prev, [key]: nextValue }));
+                                if (nextValue) {
+                                    const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
+                                    const messageText = content?.body ?? "";
+                                    if (messageText) {
+                                        void translateEvent(event, messageText, true);
+                                    }
+                                }
+                            }}
                         />
                     );
                 })}
