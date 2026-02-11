@@ -5,7 +5,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
-import { EventType } from "matrix-js-sdk";
+import { EventType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -74,6 +74,7 @@ export const MainLayout: React.FC = () => {
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+    const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
     const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
@@ -155,6 +156,39 @@ export const MainLayout: React.FC = () => {
             matrixClient.stopClient();
         };
     }, [matrixClient]);
+
+    useEffect(() => {
+        if (!matrixClient || !matrixCredentials?.user_id) return undefined;
+        const myUserId = matrixCredentials.user_id;
+        const seen = new Set<string>();
+
+        const onTimeline = (
+            event: MatrixEvent,
+            room: Room | undefined,
+            toStartOfTimeline: boolean | undefined,
+            removed: boolean,
+        ): void => {
+            if (!room || removed || toStartOfTimeline) return;
+            if (event.getType() !== EventType.RoomMember) return;
+            if (event.getStateKey() !== myUserId) return;
+            const eventId = event.getId();
+            if (eventId && seen.has(eventId)) return;
+            if (eventId) seen.add(eventId);
+            const content = (event.getContent() ?? {}) as { membership?: string };
+            const prev = (event.getPrevContent() ?? {}) as { membership?: string };
+            if (content.membership !== "leave" && content.membership !== "ban") return;
+            if (prev.membership !== "join" && prev.membership !== "invite") return;
+            if (event.getSender() === myUserId) return;
+            setRemovedFromRoomNotice({
+                roomName: room.name || room.roomId,
+            });
+        };
+
+        matrixClient.on(RoomEvent.Timeline, onTimeline);
+        return () => {
+            matrixClient.off(RoomEvent.Timeline, onTimeline);
+        };
+    }, [matrixClient, matrixCredentials?.user_id]);
 
     useEffect(() => {
         if (matrixCredentials?.user_id) {
@@ -928,6 +962,29 @@ export const MainLayout: React.FC = () => {
                 accessToken={hubAccessToken || matrixAccessToken}
                 hsUrl={matrixHsUrl}
             />
+            {removedFromRoomNotice && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+                        <div className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-3">
+                            {t("chat.removedPopupTitle", "Notice")}
+                        </div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+                            {t(
+                                "chat.removedPopupMessage",
+                                "You have been removed from room - {{roomName}}",
+                                { roomName: removedFromRoomNotice.roomName },
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setRemovedFromRoomNotice(null)}
+                            className="w-full rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                        >
+                            {t("common.confirm")}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

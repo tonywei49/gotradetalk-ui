@@ -200,6 +200,16 @@ type RemoveTarget = {
     membership: "join" | "invite";
 };
 
+function formatNoticeTimestamp(ts: number): string {
+    const date = new Date(ts);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    const hh = String(date.getHours()).padStart(2, "0");
+    const min = String(date.getMinutes()).padStart(2, "0");
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+}
+
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
     const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned, chatReceiveLanguage, companyName } =
@@ -329,7 +339,14 @@ export const ChatRoom: React.FC = () => {
         const combined = [...events];
         const seen = new Set<string>();
         const filtered = combined.filter((event) => {
-            if (event.getType() !== EventType.RoomMessage) return false;
+            const type = event.getType();
+            if (type !== EventType.RoomMessage && type !== EventType.RoomMember) return false;
+            if (type === EventType.RoomMember) {
+                const content = (event.getContent() ?? {}) as { membership?: string };
+                const prevContent = (event.getPrevContent() ?? {}) as { membership?: string };
+                if (content.membership !== "leave") return false;
+                if (prevContent.membership !== "join" && prevContent.membership !== "invite") return false;
+            }
             const key = event.getId() ?? event.getTxnId() ?? String(event.getTs());
             if (seen.has(key)) return false;
             seen.add(key);
@@ -1080,6 +1097,33 @@ export const ChatRoom: React.FC = () => {
                     </div>
                 )}
                 {mergedEvents.map((event) => {
+                    if (event.getType() === EventType.RoomMember) {
+                        if (!isGroupChat || !canManageInvites) return null;
+                        const content = (event.getContent() ?? {}) as { membership?: string };
+                        const prevContent = (event.getPrevContent() ?? {}) as { membership?: string; displayname?: string };
+                        if (content.membership !== "leave") return null;
+                        if (prevContent.membership !== "join" && prevContent.membership !== "invite") return null;
+                        const targetUserId = event.getStateKey() ?? "";
+                        if (!targetUserId) return null;
+                        const targetMember = room.getMember(targetUserId);
+                        const targetLabel = getUserLabel(targetUserId, targetMember?.name ?? prevContent.displayname);
+                        const actorUserId = event.getSender();
+                        const isSelfLeave = actorUserId === targetUserId;
+                        const noticeText = isSelfLeave
+                            ? t("chat.memberLeftNotice", { name: targetLabel, defaultValue: `${targetLabel} left the room` })
+                            : t("chat.memberKickedNotice", { name: targetLabel, defaultValue: `${targetLabel} was removed from the room` });
+                        const noticeTime = formatNoticeTimestamp(event.getTs());
+                        return (
+                            <div
+                                key={event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${targetUserId}`}
+                                className="mb-3 flex justify-center"
+                            >
+                                <div className="rounded-full bg-slate-200 px-3 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    {noticeTime} {noticeText}
+                                </div>
+                            </div>
+                        );
+                    }
                     const status = event.getAssociatedStatus?.() ?? event.status ?? null;
                     const isMe = event.getSender() === userId;
                     const content = event.getContent() as { url?: string; msgtype?: string } | undefined;
