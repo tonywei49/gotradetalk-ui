@@ -1101,7 +1101,7 @@ export const ChatRoom: React.FC = () => {
                 )}
                 {mergedEvents.map((event) => {
                     if (event.getType() === EventType.RoomMember) {
-                        if (!isGroupChat) return null;
+                        if (!room || room.isSpaceRoom() || isDirectRoom) return null;
                         const content = (event.getContent() ?? {}) as { membership?: string };
                         const prevContent = (event.getPrevContent() ?? {}) as { membership?: string; displayname?: string };
                         if (content.membership !== "join" && content.membership !== "leave") return null;
