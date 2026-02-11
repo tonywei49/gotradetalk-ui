@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
     MagnifyingGlassIcon,
-    LanguageIcon,
     EllipsisVerticalIcon,
     FaceSmileIcon,
     PaperClipIcon,
@@ -907,6 +906,13 @@ export const ChatRoom: React.FC = () => {
             </div>
         );
     }
+    if (room.getMyMembership() !== "join") {
+        return (
+            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                {t("chat.notInRoomPlaceholder", "This room is no longer available")}
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col h-full w-full min-h-0">
@@ -958,9 +964,6 @@ export const ChatRoom: React.FC = () => {
                 <div className="flex items-center gap-4 text-gray-500 dark:text-slate-400">
                     <button className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800">
                         <MagnifyingGlassIcon className="w-6 h-6" />
-                    </button>
-                    <button className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800">
-                        <LanguageIcon className="w-6 h-6" />
                     </button>
                     <div className="relative">
                         <button
@@ -1098,20 +1101,34 @@ export const ChatRoom: React.FC = () => {
                 )}
                 {mergedEvents.map((event) => {
                     if (event.getType() === EventType.RoomMember) {
-                        if (!isGroupChat || !canManageInvites) return null;
+                        if (!isGroupChat) return null;
                         const content = (event.getContent() ?? {}) as { membership?: string };
                         const prevContent = (event.getPrevContent() ?? {}) as { membership?: string; displayname?: string };
-                        if (content.membership !== "leave") return null;
-                        if (prevContent.membership !== "join" && prevContent.membership !== "invite") return null;
+                        if (content.membership !== "join" && content.membership !== "leave") return null;
+                        if (content.membership === "leave" && prevContent.membership !== "join" && prevContent.membership !== "invite") {
+                            return null;
+                        }
+                        if (content.membership === "join" && prevContent.membership === "join") return null;
                         const targetUserId = event.getStateKey() ?? "";
                         if (!targetUserId) return null;
                         const targetMember = room.getMember(targetUserId);
                         const targetLabel = getUserLabel(targetUserId, targetMember?.name ?? prevContent.displayname);
                         const actorUserId = event.getSender();
-                        const isSelfLeave = actorUserId === targetUserId;
-                        const noticeText = isSelfLeave
-                            ? t("chat.memberLeftNotice", { name: targetLabel, defaultValue: `${targetLabel} left the room` })
-                            : t("chat.memberKickedNotice", { name: targetLabel, defaultValue: `${targetLabel} was removed from the room` });
+                        const noticeText =
+                            content.membership === "join"
+                                ? t("chat.memberJoinedNotice", {
+                                    name: targetLabel,
+                                    defaultValue: `${targetLabel} joined the room`,
+                                })
+                                : actorUserId === targetUserId
+                                    ? t("chat.memberLeftNotice", {
+                                        name: targetLabel,
+                                        defaultValue: `${targetLabel} left the room`,
+                                    })
+                                    : t("chat.memberKickedNotice", {
+                                        name: targetLabel,
+                                        defaultValue: `${targetLabel} was removed from the room`,
+                                    });
                         const noticeTime = formatNoticeTimestamp(event.getTs());
                         return (
                             <div

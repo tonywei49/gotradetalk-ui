@@ -288,6 +288,8 @@
         "inviteContactsEmpty": "沒有可邀請的好友。",
         "inviteContactsAuthMissing": "缺少邀請權限。",
         "inviteContactsFailed": "載入好友清單失敗。",
+        "notInRoomPlaceholder": "你已不在此聊天室",
+        "memberJoinedNotice": "{{name}}加入聊天室",
         "memberLeftNotice": "{{name}}離開聊天室",
         "memberKickedNotice": "{{name}}被踢出聊天室",
         "removedPopupTitle": "通知",
