@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
     MagnifyingGlassIcon,
+    LanguageIcon,
     EllipsisVerticalIcon,
     FaceSmileIcon,
     PaperClipIcon,
@@ -40,6 +41,7 @@ type MessageBubbleProps = {
     showTranslation?: boolean;
     translationLoading?: boolean;
     translationError?: boolean;
+    onToggleTranslation?: () => void;
 };
 
 const MessageBubble = ({
@@ -54,6 +56,7 @@ const MessageBubble = ({
     showTranslation,
     translationLoading,
     translationError,
+    onToggleTranslation,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
@@ -147,6 +150,20 @@ const MessageBubble = ({
                     <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
                 )}
             </div>
+            {isText && !isMe && onToggleTranslation && (
+                <button
+                    type="button"
+                    className={`mt-1 text-[11px] ${isMe ? "text-emerald-100/80" : "text-emerald-600 dark:text-emerald-300"}`}
+                    onClick={onToggleTranslation}
+                    disabled={translationLoading}
+                >
+                    {translationLoading
+                        ? t("chat.translationPending")
+                        : showTranslated
+                            ? t("chat.showOriginal")
+                            : t("chat.showTranslation")}
+                </button>
+            )}
             {isFailed && (
                 <button
                     type="button"
@@ -327,13 +344,8 @@ export const ChatRoom: React.FC = () => {
             if (type === EventType.RoomMember) {
                 const content = (event.getContent() ?? {}) as { membership?: string };
                 const prevContent = (event.getPrevContent() ?? {}) as { membership?: string };
-                if (content.membership === "join") {
-                    if (prevContent.membership === "join") return false;
-                } else if (content.membership === "leave") {
-                    if (prevContent.membership !== "join" && prevContent.membership !== "invite") return false;
-                } else {
-                    return false;
-                }
+                if (content.membership !== "leave") return false;
+                if (prevContent.membership !== "join" && prevContent.membership !== "invite") return false;
             }
             const key = event.getId() ?? event.getTxnId() ?? String(event.getTs());
             if (seen.has(key)) return false;
@@ -347,7 +359,7 @@ export const ChatRoom: React.FC = () => {
     const [translationMap, setTranslationMap] = useState<
         Record<string, { text: string | null; loading: boolean; error: boolean }>
     >({});
-    const [translationDisplayMode, setTranslationDisplayMode] = useState<"translated" | "original">("translated");
+    const [translationView, setTranslationView] = useState<Record<string, boolean>>({});
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
     const [translationBlocked, setTranslationBlocked] = useState(false);
@@ -511,6 +523,7 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: translateMatrixUserId,
             });
             setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false, error: false } }));
+            setTranslationView((prev) => (prev[key] === undefined ? { ...prev, [key]: true } : prev));
         } catch (error) {
             const message =
                 error instanceof Error
@@ -669,7 +682,7 @@ export const ChatRoom: React.FC = () => {
 
     useEffect(() => {
         setTranslationMap({});
-        setTranslationDisplayMode("translated");
+        setTranslationView({});
         setTranslationBlocked(false);
     }, [targetLanguage, activeRoomId]);
 
@@ -894,13 +907,6 @@ export const ChatRoom: React.FC = () => {
             </div>
         );
     }
-    if (room.getMyMembership() !== "join") {
-        return (
-            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                {t("chat.notInRoomPlaceholder", "This room is no longer available")}
-            </div>
-        );
-    }
 
     return (
         <div className="flex flex-col h-full w-full min-h-0">
@@ -953,18 +959,8 @@ export const ChatRoom: React.FC = () => {
                     <button className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800">
                         <MagnifyingGlassIcon className="w-6 h-6" />
                     </button>
-                    <button
-                        type="button"
-                        onClick={() =>
-                            setTranslationDisplayMode((prev) =>
-                                prev === "translated" ? "original" : "translated",
-                            )
-                        }
-                        className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
-                    >
-                        {translationDisplayMode === "translated"
-                            ? t("chat.translationModeTranslated", "Translation")
-                            : t("chat.translationModeOriginal", "Original")}
+                    <button className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800">
+                        <LanguageIcon className="w-6 h-6" />
                     </button>
                     <div className="relative">
                         <button
@@ -1102,34 +1098,20 @@ export const ChatRoom: React.FC = () => {
                 )}
                 {mergedEvents.map((event) => {
                     if (event.getType() === EventType.RoomMember) {
-                        if (!isGroupChat) return null;
+                        if (!isGroupChat || !canManageInvites) return null;
                         const content = (event.getContent() ?? {}) as { membership?: string };
                         const prevContent = (event.getPrevContent() ?? {}) as { membership?: string; displayname?: string };
-                        if (content.membership !== "join" && content.membership !== "leave") return null;
-                        if (content.membership === "leave" && prevContent.membership !== "join" && prevContent.membership !== "invite") {
-                            return null;
-                        }
-                        if (content.membership === "join" && prevContent.membership === "join") return null;
+                        if (content.membership !== "leave") return null;
+                        if (prevContent.membership !== "join" && prevContent.membership !== "invite") return null;
                         const targetUserId = event.getStateKey() ?? "";
                         if (!targetUserId) return null;
                         const targetMember = room.getMember(targetUserId);
                         const targetLabel = getUserLabel(targetUserId, targetMember?.name ?? prevContent.displayname);
                         const actorUserId = event.getSender();
-                        const noticeText =
-                            content.membership === "join"
-                                ? t("chat.memberJoinedNotice", {
-                                    name: targetLabel,
-                                    defaultValue: `${targetLabel} joined the room`,
-                                })
-                                : actorUserId === targetUserId
-                                    ? t("chat.memberLeftNotice", {
-                                        name: targetLabel,
-                                        defaultValue: `${targetLabel} left the room`,
-                                    })
-                                    : t("chat.memberKickedNotice", {
-                                        name: targetLabel,
-                                        defaultValue: `${targetLabel} was removed from the room`,
-                                    });
+                        const isSelfLeave = actorUserId === targetUserId;
+                        const noticeText = isSelfLeave
+                            ? t("chat.memberLeftNotice", { name: targetLabel, defaultValue: `${targetLabel} left the room` })
+                            : t("chat.memberKickedNotice", { name: targetLabel, defaultValue: `${targetLabel} was removed from the room` });
                         const noticeTime = formatNoticeTimestamp(event.getTs());
                         return (
                             <div
@@ -1168,10 +1150,21 @@ export const ChatRoom: React.FC = () => {
                             translationLoading={translationMap[getEventKey(event)]?.loading ?? false}
                             translationError={translationMap[getEventKey(event)]?.error ?? false}
                             showTranslation={
-                                translationDisplayMode === "translated" &&
-                                Boolean(translationMap[getEventKey(event)]?.text) &&
-                                !isMe
+                                translationView[getEventKey(event)] ??
+                                (translationMap[getEventKey(event)]?.text ? !isMe : false)
                             }
+                            onToggleTranslation={() => {
+                                const key = getEventKey(event);
+                                const nextValue = !(translationView[key] ?? false);
+                                setTranslationView((prev) => ({ ...prev, [key]: nextValue }));
+                                if (nextValue) {
+                                    const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
+                                    const messageText = content?.body ?? "";
+                                    if (messageText) {
+                                        void translateEvent(event, messageText, true);
+                                    }
+                                }
+                            }}
                         />
                     );
                 })}
