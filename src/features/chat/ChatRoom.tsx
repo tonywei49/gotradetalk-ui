@@ -343,8 +343,13 @@ export const ChatRoom: React.FC = () => {
             if (type === EventType.RoomMember) {
                 const content = (event.getContent() ?? {}) as { membership?: string };
                 const prevContent = (event.getPrevContent() ?? {}) as { membership?: string };
-                if (content.membership !== "leave") return false;
-                if (prevContent.membership !== "join" && prevContent.membership !== "invite") return false;
+                if (content.membership === "join") {
+                    if (prevContent.membership === "join") return false;
+                } else if (content.membership === "leave") {
+                    if (prevContent.membership !== "join" && prevContent.membership !== "invite") return false;
+                } else {
+                    return false;
+                }
             }
             const key = event.getId() ?? event.getTxnId() ?? String(event.getTs());
             if (seen.has(key)) return false;
