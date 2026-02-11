@@ -5,7 +5,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
-import { EventType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { EventType, RoomEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -160,33 +160,25 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) return undefined;
         const myUserId = matrixCredentials.user_id;
-        const seen = new Set<string>();
+        const shownForRoom = new Set<string>();
 
-        const onTimeline = (
-            event: MatrixEvent,
-            room: Room | undefined,
-            toStartOfTimeline: boolean | undefined,
-            removed: boolean,
-        ): void => {
-            if (!room || removed || toStartOfTimeline) return;
-            if (event.getType() !== EventType.RoomMember) return;
-            if (event.getStateKey() !== myUserId) return;
-            const eventId = event.getId();
-            if (eventId && seen.has(eventId)) return;
-            if (eventId) seen.add(eventId);
-            const content = (event.getContent() ?? {}) as { membership?: string };
-            const prev = (event.getPrevContent() ?? {}) as { membership?: string };
-            if (content.membership !== "leave" && content.membership !== "ban") return;
-            if (prev.membership !== "join" && prev.membership !== "invite") return;
-            if (event.getSender() === myUserId) return;
+        const onMyMembership = (room: Room, membership: string, prevMembership?: string): void => {
+            if (!room) return;
+            if (membership !== "leave" && membership !== "ban") return;
+            if (prevMembership !== "join" && prevMembership !== "invite") return;
+            if (shownForRoom.has(room.roomId)) return;
+            const selfMemberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
+            const sender = selfMemberEvent?.getSender();
+            if (!sender || sender === myUserId) return;
+            shownForRoom.add(room.roomId);
             setRemovedFromRoomNotice({
                 roomName: room.name || room.roomId,
             });
         };
 
-        matrixClient.on(RoomEvent.Timeline, onTimeline);
+        matrixClient.on(RoomEvent.MyMembership, onMyMembership);
         return () => {
-            matrixClient.off(RoomEvent.Timeline, onTimeline);
+            matrixClient.off(RoomEvent.MyMembership, onMyMembership);
         };
     }, [matrixClient, matrixCredentials?.user_id]);
 
