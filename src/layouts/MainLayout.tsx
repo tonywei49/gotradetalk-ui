@@ -5,7 +5,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
 } from "@heroicons/react/24/outline";
-import { EventType, RoomEvent, type Room } from "matrix-js-sdk";
+import { ClientEvent, EventType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -25,6 +25,7 @@ import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/prof
 import { setLanguage } from "../i18n";
 import { markRoomDeprecated } from "../services/matrix";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
+import { traceEvent } from "../utils/debugTrace";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -171,6 +172,14 @@ export const MainLayout: React.FC = () => {
             const sender = selfMemberEvent?.getSender();
             if (!sender || sender === myUserId) return;
             shownForRoom.add(room.roomId);
+            traceEvent("popup.removed_from_room", {
+                roomId: room.roomId,
+                roomName: room.name || room.roomId,
+                membership,
+                prevMembership,
+                sender,
+                myUserId,
+            });
             setRemovedFromRoomNotice({
                 roomName: room.name || room.roomId,
             });
@@ -181,6 +190,61 @@ export const MainLayout: React.FC = () => {
             matrixClient.off(RoomEvent.MyMembership, onMyMembership);
         };
     }, [matrixClient, matrixCredentials?.user_id]);
+
+    useEffect(() => {
+        if (!matrixClient || !matrixCredentials?.user_id) return undefined;
+        const myUserId = matrixCredentials.user_id;
+
+        const onSync = (state: string): void => {
+            traceEvent("matrix.sync", { state, myUserId });
+        };
+
+        const onMyMembership = (room: Room, membership: string, prevMembership?: string): void => {
+            traceEvent("matrix.my_membership", {
+                roomId: room.roomId,
+                roomName: room.name || room.roomId,
+                membership,
+                prevMembership: prevMembership ?? null,
+                myUserId,
+                activeRoomId,
+            });
+        };
+
+        const onTimeline = (
+            event: MatrixEvent,
+            room: Room | undefined,
+            toStartOfTimeline: boolean | undefined,
+            removed: boolean,
+        ): void => {
+            if (!room || removed || toStartOfTimeline) return;
+            if (event.getType() !== EventType.RoomMember) return;
+            const content = (event.getContent() ?? {}) as { membership?: string };
+            const prev = (event.getPrevContent() ?? {}) as { membership?: string };
+            traceEvent("matrix.member_timeline", {
+                roomId: room.roomId,
+                roomName: room.name || room.roomId,
+                sender: event.getSender() ?? null,
+                stateKey: event.getStateKey() ?? null,
+                membership: content.membership ?? null,
+                prevMembership: prev.membership ?? null,
+                myUserId,
+                activeRoomId,
+            });
+        };
+
+        matrixClient.on(ClientEvent.Sync, onSync);
+        matrixClient.on(RoomEvent.MyMembership, onMyMembership);
+        matrixClient.on(RoomEvent.Timeline, onTimeline);
+        return () => {
+            matrixClient.off(ClientEvent.Sync, onSync);
+            matrixClient.off(RoomEvent.MyMembership, onMyMembership);
+            matrixClient.off(RoomEvent.Timeline, onTimeline);
+        };
+    }, [matrixClient, matrixCredentials?.user_id, activeRoomId]);
+
+    useEffect(() => {
+        traceEvent("ui.active_room_changed", { activeRoomId: activeRoomId ?? null, activeTab });
+    }, [activeRoomId, activeTab]);
 
     useEffect(() => {
         if (matrixCredentials?.user_id) {
