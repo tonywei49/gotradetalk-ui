@@ -19,6 +19,7 @@ import { listContacts, type ContactEntry } from "../../api/contacts";
 import { hubTranslate } from "../../api/hub";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
+import { traceEvent } from "../../utils/debugTrace";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -59,7 +60,14 @@ type PendingAttachment = {
     error?: string;
 };
 
-const FILE_REVOKE_WINDOW_MS = 5 * 60 * 1000;
+const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
+const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
+
+type DraftMediaRegistryEntry = {
+    mxcUrl: string;
+    createdAt: number;
+    ownerUserId: string;
+};
 
 const MessageBubble = ({
     event,
@@ -374,6 +382,64 @@ async function cleanupUploadedMedia(
     return false;
 }
 
+function readDraftMediaRegistry(): DraftMediaRegistryEntry[] {
+    try {
+        const raw = localStorage.getItem(DRAFT_MEDIA_REGISTRY_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as DraftMediaRegistryEntry[];
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(
+            (item) =>
+                item &&
+                typeof item.mxcUrl === "string" &&
+                typeof item.createdAt === "number" &&
+                typeof item.ownerUserId === "string",
+        );
+    } catch {
+        return [];
+    }
+}
+
+function writeDraftMediaRegistry(items: DraftMediaRegistryEntry[]): void {
+    localStorage.setItem(DRAFT_MEDIA_REGISTRY_KEY, JSON.stringify(items));
+}
+
+function upsertDraftMediaEntry(entry: DraftMediaRegistryEntry): void {
+    const prev = readDraftMediaRegistry();
+    const next = prev.filter((item) => item.mxcUrl !== entry.mxcUrl);
+    next.push(entry);
+    writeDraftMediaRegistry(next);
+}
+
+function removeDraftMediaEntries(mxcUrls: string[]): void {
+    if (mxcUrls.length === 0) return;
+    const removalSet = new Set(mxcUrls);
+    const prev = readDraftMediaRegistry();
+    const next = prev.filter((item) => !removalSet.has(item.mxcUrl));
+    writeDraftMediaRegistry(next);
+}
+
+function mapMediaActionError(error: unknown): "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" {
+    const maybeObj = error as { errcode?: string; statusCode?: number; message?: string } | null;
+    const message = typeof maybeObj?.message === "string" ? maybeObj.message : String(error ?? "");
+    const errcode = typeof maybeObj?.errcode === "string" ? maybeObj.errcode : "";
+    const statusCode = typeof maybeObj?.statusCode === "number" ? maybeObj.statusCode : null;
+    const normalized = `${errcode} ${message}`.toUpperCase();
+
+    if (
+        normalized.includes("M_LIMIT_EXCEEDED") ||
+        normalized.includes("QUOTA") ||
+        normalized.includes("STORAGE") ||
+        statusCode === 413
+    ) {
+        return "STORAGE_QUOTA_EXCEEDED";
+    }
+    if (normalized.includes("M_FORBIDDEN") || statusCode === 401 || statusCode === 403) {
+        return "NO_PERMISSION";
+    }
+    return "GENERIC";
+}
+
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
     const {
@@ -467,6 +533,25 @@ export const ChatRoom: React.FC = () => {
     useEffect(() => {
         matrixCredentialsRef.current = matrixCredentials;
     }, [matrixCredentials]);
+
+    useEffect(() => {
+        if (!matrixCredentials?.hs_url || !matrixCredentials.access_token || !userId) return;
+        const now = Date.now();
+        const registry = readDraftMediaRegistry();
+        const expired = registry.filter(
+            (item) => item.ownerUserId === userId && now - item.createdAt > DRAFT_ATTACHMENT_TTL_MS,
+        );
+        if (expired.length === 0) return;
+        traceEvent("chat.draft_ttl_cleanup_start", { userId, count: expired.length });
+        void Promise.allSettled(
+            expired.map((item) =>
+                cleanupUploadedMedia(matrixCredentials.hs_url!, matrixCredentials.access_token!, item.mxcUrl),
+            ),
+        ).finally(() => {
+            removeDraftMediaEntries(expired.map((item) => item.mxcUrl));
+            traceEvent("chat.draft_ttl_cleanup_done", { userId, count: expired.length });
+        });
+    }, [matrixCredentials?.hs_url, matrixCredentials?.access_token, userId]);
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -906,13 +991,16 @@ export const ChatRoom: React.FC = () => {
         return () => {
             const creds = matrixCredentialsRef.current;
             if (!creds?.hs_url || !creds.access_token) return;
+            const pendingMxcUrls: string[] = [];
             Object.values(pendingAttachmentsByRoomRef.current).forEach((items) => {
                 items.forEach((item) => {
                     if (item.mxcUrl) {
+                        pendingMxcUrls.push(item.mxcUrl);
                         void cleanupUploadedMedia(creds.hs_url, creds.access_token, item.mxcUrl);
                     }
                 });
             });
+            removeDraftMediaEntries(pendingMxcUrls);
         };
     }, []);
 
@@ -987,11 +1075,17 @@ export const ChatRoom: React.FC = () => {
     const onSend = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
         const trimmed = composerText.trim();
+        const readyAttachments = pendingAttachments.filter((item) => item.status === "ready" && item.mxcUrl);
+        traceEvent("chat.send_start", {
+            roomId: activeRoomId,
+            textLength: trimmed.length,
+            readyAttachments: readyAttachments.length,
+            userId,
+        });
         if (hasPendingUpload) {
             setUploadError(t("chat.uploadStillInProgress"));
             return;
         }
-        const readyAttachments = pendingAttachments.filter((item) => item.status === "ready" && item.mxcUrl);
         if (!trimmed && readyAttachments.length === 0) return;
         setComposerText("");
         setUploadError(null);
@@ -1078,7 +1172,13 @@ export const ChatRoom: React.FC = () => {
             setPendingAttachmentsByRoom((prev) =>
                 withUpdatedRoomAttachments(prev, roomId, (items) => items.filter((item) => item.status !== "ready")),
             );
+            removeDraftMediaEntries(readyAttachments.map((item) => item.mxcUrl!).filter(Boolean));
         }
+        traceEvent("chat.send_success", {
+            roomId: activeRoomId,
+            sentAttachments: readyAttachments.length,
+            userId,
+        });
     };
 
     const onResend = async (event: MatrixEvent): Promise<void> => {
@@ -1105,7 +1205,7 @@ export const ChatRoom: React.FC = () => {
     const canDeleteFileEvent = (event: MatrixEvent): boolean => {
         if (!isOwnFileEvent(event)) return false;
         if (!event.getId()) return false;
-        return Date.now() - event.getTs() <= FILE_REVOKE_WINDOW_MS;
+        return true;
     };
 
     const onDeleteFileEvent = async (event: MatrixEvent): Promise<void> => {
@@ -1115,21 +1215,33 @@ export const ChatRoom: React.FC = () => {
             setUploadError(t("chat.deleteFileExpired"));
             return;
         }
+        traceEvent("chat.file_delete_start", { roomId: activeRoomId, eventId, userId });
         setDeletingEventId(eventId);
         try {
             await matrixClient.redactEvent(activeRoomId, eventId);
             const content = event.getContent() as { url?: string } | undefined;
             if (content?.url && matrixCredentials?.hs_url && matrixCredentials?.access_token) {
                 await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, content.url);
+                removeDraftMediaEntries([content.url]);
             }
             const selfLabel = getLocalPart(userId) || userId;
             await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, {
                 msgtype: MsgType.Notice,
                 body: t("chat.fileRevokedNotice", { name: selfLabel }),
             } as never);
+            traceEvent("chat.file_delete_success", { roomId: activeRoomId, eventId, userId });
         } catch (error) {
-            const message = error instanceof Error ? error.message : t("chat.deleteFileFailed");
+            const mapped = mapMediaActionError(error);
+            const message =
+                mapped === "STORAGE_QUOTA_EXCEEDED"
+                    ? t("chat.storageQuotaExceeded")
+                    : mapped === "NO_PERMISSION"
+                        ? t("chat.noPermission")
+                        : error instanceof Error
+                            ? error.message
+                            : t("chat.deleteFileFailed");
             setUploadError(message || t("chat.deleteFileFailed"));
+            traceEvent("chat.file_delete_failed", { roomId: activeRoomId, eventId, userId, reason: mapped });
         } finally {
             setDeletingEventId(null);
         }
@@ -1212,6 +1324,13 @@ export const ChatRoom: React.FC = () => {
             ]),
         );
         setUploadError(null);
+        traceEvent("chat.upload_start", {
+            roomId,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType,
+            userId,
+        });
 
         try {
             const uploadResult = (await matrixClient.uploadContent(file, {
@@ -1235,6 +1354,13 @@ export const ChatRoom: React.FC = () => {
             if (!mxcUrl) {
                 throw new Error("upload content_uri missing");
             }
+            if (userId) {
+                upsertDraftMediaEntry({
+                    mxcUrl,
+                    createdAt: Date.now(),
+                    ownerUserId: userId,
+                });
+            }
             setPendingAttachmentsByRoom((prev) =>
                 withUpdatedRoomAttachments(prev, roomId, (items) =>
                     items.map((item) =>
@@ -1244,9 +1370,19 @@ export const ChatRoom: React.FC = () => {
                     ),
                 ),
             );
+            traceEvent("chat.upload_success", { roomId, fileName: file.name, mxcUrl, userId });
         } catch (error) {
+            const mapped = mapMediaActionError(error);
             const message =
-                error instanceof Error ? error.message : typeof error === "string" ? error : t("chat.uploadFailed");
+                mapped === "STORAGE_QUOTA_EXCEEDED"
+                    ? t("chat.storageQuotaExceeded")
+                    : mapped === "NO_PERMISSION"
+                        ? t("chat.noPermission")
+                        : error instanceof Error
+                            ? error.message
+                            : typeof error === "string"
+                                ? error
+                                : t("chat.uploadFailed");
             setPendingAttachmentsByRoom((prev) =>
                 withUpdatedRoomAttachments(prev, roomId, (items) =>
                     items.map((item) =>
@@ -1254,6 +1390,7 @@ export const ChatRoom: React.FC = () => {
                     ),
                 ),
             );
+            traceEvent("chat.upload_failed", { roomId, fileName: file.name, userId, reason: mapped });
         }
     };
 
@@ -1262,6 +1399,7 @@ export const ChatRoom: React.FC = () => {
         const roomId = activeRoomId;
         const target = pendingAttachments.find((item) => item.id === attachmentId);
         if (!target || target.status === "uploading") return;
+        traceEvent("chat.upload_cancel", { roomId, attachmentId, fileName: target.fileName, userId });
         setPendingAttachmentsByRoom((prev) =>
             withUpdatedRoomAttachments(prev, roomId, (items) =>
                 items.map((item) => (item.id === attachmentId ? { ...item, status: "removing" } : item)),
@@ -1269,6 +1407,7 @@ export const ChatRoom: React.FC = () => {
         );
         if (target.mxcUrl && matrixCredentials?.hs_url && matrixCredentials?.access_token) {
             await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, target.mxcUrl);
+            removeDraftMediaEntries([target.mxcUrl]);
         }
         setPendingAttachmentsByRoom((prev) =>
             withUpdatedRoomAttachments(prev, roomId, (items) => items.filter((item) => item.id !== attachmentId)),
