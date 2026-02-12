@@ -107,6 +107,12 @@ function getFileTypeGroup(item: { msgtype: string; mimeType?: string }): "image"
     return "other";
 }
 
+function getFilePreviewType(item: { msgtype: string; mimeType?: string }): "image" | "video" | "audio" | "pdf" | null {
+    const type = getFileTypeGroup(item);
+    if (type === "image" || type === "video" || type === "audio" || type === "pdf") return type;
+    return null;
+}
+
 function formatBytesToMb(value: number): string {
     const mb = value / (1024 * 1024);
     return mb >= 100 ? mb.toFixed(0) : mb.toFixed(2);
@@ -143,6 +149,12 @@ export const MainLayout: React.FC = () => {
     const [activeFileMenuEventId, setActiveFileMenuEventId] = useState<string | null>(null);
     const [showFileToolbarMenu, setShowFileToolbarMenu] = useState(false);
     const [fileActionError, setFileActionError] = useState<string | null>(null);
+    const [filePreview, setFilePreview] = useState<{ url: string; type: "image" | "video" | "audio" | "pdf"; name: string } | null>(null);
+    const [previewZoom, setPreviewZoom] = useState(1);
+    const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+    const previewDraggingRef = useRef(false);
+    const previewDragStartRef = useRef({ x: 0, y: 0 });
+    const previewDragOriginRef = useRef({ x: 0, y: 0 });
     const [jumpToEventId, setJumpToEventId] = useState<string | null>(null);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
     const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language">("none");
@@ -724,6 +736,15 @@ export const MainLayout: React.FC = () => {
         document.body.appendChild(anchor);
         anchor.click();
         document.body.removeChild(anchor);
+    };
+
+    const onPreviewFileItem = (item: FileLibraryItem): void => {
+        const previewType = getFilePreviewType(item);
+        const url = getHttpFileUrl(item);
+        if (!previewType || !url) return;
+        setPreviewZoom(1);
+        setPreviewOffset({ x: 0, y: 0 });
+        setFilePreview({ url, type: previewType, name: item.body });
     };
 
     const onJumpToFileMessage = (item: FileLibraryItem): void => {
@@ -1415,13 +1436,22 @@ export const MainLayout: React.FC = () => {
                                                     </div>
                                                     <div className="h-14 w-20 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                                                         {fileType === "image" && httpUrl ? (
-                                                            <img src={httpUrl} alt={item.body} className="h-full w-full object-cover" />
+                                                            <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
+                                                                <img src={httpUrl} alt={item.body} className="h-full w-full object-cover" />
+                                                            </button>
                                                         ) : fileType === "video" && httpUrl ? (
-                                                            <video src={httpUrl} className="h-full w-full object-cover" muted preload="metadata" />
+                                                            <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
+                                                                <video src={httpUrl} className="h-full w-full object-cover" muted preload="metadata" />
+                                                            </button>
                                                         ) : (
-                                                            <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500 dark:text-slate-300">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onPreviewFileItem(item)}
+                                                                disabled={fileType === "other"}
+                                                                className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500 disabled:cursor-default dark:text-slate-300"
+                                                            >
                                                                 {ext}
-                                                            </div>
+                                                            </button>
                                                         )}
                                                     </div>
                                                     <div className="text-sm text-slate-700 dark:text-slate-200">{ext}</div>
@@ -1443,6 +1473,18 @@ export const MainLayout: React.FC = () => {
                                                         )}
                                                         {!fileBatchMode && activeFileMenuEventId === item.eventId && (
                                                             <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                                                {getFilePreviewType(item) && (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                        onClick={() => {
+                                                                            setActiveFileMenuEventId(null);
+                                                                            onPreviewFileItem(item);
+                                                                        }}
+                                                                    >
+                                                                        {t("layout.fileActionPreview")}
+                                                                    </button>
+                                                                )}
                                                                 <button
                                                                     type="button"
                                                                     className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -1596,6 +1638,69 @@ export const MainLayout: React.FC = () => {
                             {t("common.confirm")}
                         </button>
                     </div>
+                </div>
+            )}
+            {filePreview && (
+                <div
+                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4"
+                    onMouseMove={(event) => {
+                        if (!previewDraggingRef.current) return;
+                        const dx = event.clientX - previewDragStartRef.current.x;
+                        const dy = event.clientY - previewDragStartRef.current.y;
+                        setPreviewOffset({
+                            x: previewDragOriginRef.current.x + dx,
+                            y: previewDragOriginRef.current.y + dy,
+                        });
+                    }}
+                    onMouseUp={() => {
+                        previewDraggingRef.current = false;
+                    }}
+                    onMouseLeave={() => {
+                        previewDraggingRef.current = false;
+                    }}
+                >
+                    <button
+                        type="button"
+                        onClick={() => setFilePreview(null)}
+                        className="absolute top-6 right-6 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
+                    >
+                        {t("common.close")}
+                    </button>
+                    {filePreview.type === "image" ? (
+                        <div
+                            className="max-h-[90vh] max-w-[90vw] cursor-grab"
+                            onMouseDown={(event) => {
+                                previewDraggingRef.current = true;
+                                previewDragStartRef.current = { x: event.clientX, y: event.clientY };
+                                previewDragOriginRef.current = previewOffset;
+                            }}
+                            onWheel={(event) => {
+                                event.preventDefault();
+                                const next = Math.min(3, Math.max(0.5, previewZoom - event.deltaY * 0.001));
+                                setPreviewZoom(next);
+                            }}
+                        >
+                            <img
+                                src={filePreview.url}
+                                alt={filePreview.name}
+                                className="max-h-[90vh] max-w-[90vw] select-none"
+                                style={{
+                                    transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewZoom})`,
+                                    transition: previewDraggingRef.current ? "none" : "transform 120ms ease",
+                                }}
+                                draggable={false}
+                            />
+                        </div>
+                    ) : filePreview.type === "pdf" ? (
+                        <iframe src={filePreview.url} title={filePreview.name} className="h-[90vh] w-[90vw] rounded-lg bg-white" />
+                    ) : filePreview.type === "audio" ? (
+                        <div className="w-full max-w-xl rounded-xl bg-slate-900 p-6">
+                            <div className="mb-3 text-sm text-slate-200">{filePreview.name}</div>
+                            <audio src={filePreview.url} controls autoPlay className="w-full" />
+                        </div>
+                    ) : (
+                        <video src={filePreview.url} controls autoPlay className="max-h-[90vh] max-w-[90vw] rounded-lg" />
+                    )}
                 </div>
             )}
         </div>

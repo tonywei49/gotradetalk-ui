@@ -192,6 +192,7 @@
         "fileColumnSize": "Size (MB)",
         "fileColumnActions": "Actions",
         "fileActionDownload": "Download",
+        "fileActionPreview": "Preview",
         "fileActionOpen": "Open",
         "fileActionJump": "Jump to message",
         "fileActionDelete": "Delete",

@@ -192,6 +192,7 @@
         "fileColumnSize": "大小(MB)",
         "fileColumnActions": "操作",
         "fileActionDownload": "下載",
+        "fileActionPreview": "預覽",
         "fileActionOpen": "打開",
         "fileActionJump": "跳到聊天記錄點",
         "fileActionDelete": "刪除",
