@@ -86,16 +86,19 @@ const MessageBubble = ({
         status === EventStatus.SENDING || status === EventStatus.ENCRYPTING || status === EventStatus.QUEUED;
     const isFailed = status === EventStatus.NOT_SENT;
     const timeLabel = new Date(event.getTs()).toLocaleTimeString();
-    const isImage = content?.msgtype === MsgType.Image && mediaUrl;
-    const isVideo = content?.msgtype === MsgType.Video && mediaUrl;
-    const isAudio = content?.msgtype === MsgType.Audio && mediaUrl;
+    const isImageMsg = content?.msgtype === MsgType.Image;
+    const isVideoMsg = content?.msgtype === MsgType.Video;
+    const isAudioMsg = content?.msgtype === MsgType.Audio;
     const isFile = content?.msgtype === MsgType.File;
+    const isImage = isImageMsg && mediaUrl;
+    const isVideo = isVideoMsg && mediaUrl;
+    const isAudio = isAudioMsg && mediaUrl;
     const isPdf =
         Boolean(isFile) &&
         ((content?.info?.mimetype ?? "").toLowerCase().includes("application/pdf") ||
             messageText.toLowerCase().endsWith(".pdf"));
     const isText = !isImage && !isVideo && !isAudio && !isFile;
-    const isFileLike = Boolean(isImage || isVideo || isAudio || isFile);
+    const isFileLike = Boolean(isImageMsg || isVideoMsg || isAudioMsg || isFile);
     const showTranslated = Boolean(isText && showTranslation);
     const displayText = showTranslated
         ? translationLoading
@@ -122,6 +125,34 @@ const MessageBubble = ({
                         <div className="flex flex-col items-end justify-end text-[9px] text-gray-400 min-w-[56px] mb-1">
                             {isFailed && <span className="text-rose-500 font-medium">{t("chat.failed")}</span>}
                             <span className="text-gray-400 dark:text-slate-500">{timeLabel}</span>
+                        </div>
+                    )}
+                    {isMe && isFileLike && canDeleteFile && onDeleteFile && (
+                        <div className="relative self-end mb-1">
+                            <button
+                                type="button"
+                                onClick={() => setShowFileMenu((prev) => !prev)}
+                                className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                aria-label={t("chat.fileActions")}
+                                disabled={deleteBusy}
+                            >
+                                <EllipsisVerticalIcon className="h-4 w-4" />
+                            </button>
+                            {showFileMenu && (
+                                <div className="absolute right-0 z-20 mt-1 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                    <button
+                                        type="button"
+                                        className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-slate-800"
+                                        onClick={() => {
+                                            setShowFileMenu(false);
+                                            onDeleteFile(event);
+                                        }}
+                                        disabled={deleteBusy}
+                                    >
+                                        {deleteBusy ? t("common.loading") : t("chat.deleteFileAction")}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -199,7 +230,7 @@ const MessageBubble = ({
                     {!isMe && (
                         <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
                     )}
-                    {isFileLike && canDeleteFile && onDeleteFile && (
+                    {!isMe && isFileLike && canDeleteFile && onDeleteFile && (
                         <div className="relative self-end mb-1">
                             <button
                                 type="button"
