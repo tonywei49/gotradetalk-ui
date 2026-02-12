@@ -104,6 +104,21 @@ function getFileTypeGroup(item: { msgtype: string; mimeType?: string }): "image"
     return "other";
 }
 
+function formatBytesToMb(value: number): string {
+    const mb = value / (1024 * 1024);
+    return mb >= 100 ? mb.toFixed(0) : mb.toFixed(2);
+}
+
+function getFileExtension(fileName: string, mimeType?: string): string {
+    const idx = fileName.lastIndexOf(".");
+    if (idx >= 0 && idx < fileName.length - 1) {
+        return fileName.slice(idx + 1).toUpperCase();
+    }
+    if (!mimeType) return "FILE";
+    const simplified = mimeType.split("/")[1] || "file";
+    return simplified.toUpperCase();
+}
+
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "files" | "orders" | "settings" | "account">("chat");
@@ -116,10 +131,8 @@ export const MainLayout: React.FC = () => {
     const [showRemoveContactConfirm, setShowRemoveContactConfirm] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
     const [fileLibraryTick, setFileLibraryTick] = useState(0);
-    const [fileSearch, setFileSearch] = useState("");
-    const [fileTypeFilter, setFileTypeFilter] = useState<"all" | "image" | "video" | "audio" | "pdf" | "other">("all");
-    const [fileRoomFilter, setFileRoomFilter] = useState<string>("all");
-    const [selectedFileEventId, setSelectedFileEventId] = useState<string | null>(null);
+    const [fileRoomSearch, setFileRoomSearch] = useState("");
+    const [selectedFileRoomId, setSelectedFileRoomId] = useState<string | null>(null);
     const [fileBatchMode, setFileBatchMode] = useState(false);
     const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
     const [activeFileMenuEventId, setActiveFileMenuEventId] = useState<string | null>(null);
@@ -598,7 +611,7 @@ export const MainLayout: React.FC = () => {
                     msgtype?: string;
                     body?: string;
                     url?: string;
-                    info?: { mimetype?: string };
+                    info?: { mimetype?: string; size?: number };
                 } | null;
                 if (!content?.url) return;
                 const msgtype = content.msgtype || "";
@@ -619,6 +632,7 @@ export const MainLayout: React.FC = () => {
                     msgtype,
                     mxcUrl: content.url,
                     mimeType: content.info?.mimetype,
+                    sizeBytes: typeof content.info?.size === "number" ? content.info.size : null,
                 });
             });
         });
@@ -626,60 +640,54 @@ export const MainLayout: React.FC = () => {
         return rows;
     }, [matrixClient, matrixCredentials?.user_id, fileLibraryTick]);
 
-    const filteredFileLibrary = useMemo(() => {
-        const keyword = fileSearch.trim().toLowerCase();
-        return myFileLibrary.filter((item) => {
-            if (fileRoomFilter !== "all" && item.roomId !== fileRoomFilter) return false;
-            const itemType = getFileTypeGroup(item);
-            if (fileTypeFilter !== "all" && itemType !== fileTypeFilter) return false;
-            if (!keyword) return true;
-            return item.body.toLowerCase().includes(keyword);
-        });
-    }, [fileSearch, myFileLibrary, fileRoomFilter, fileTypeFilter]);
-
-    const fileRoomOptions = useMemo(() => {
-        const map = new Map<string, string>();
+    const roomSummaryList = useMemo<FileLibraryRoomSummary[]>(() => {
+        const map = new Map<string, FileLibraryRoomSummary>();
         myFileLibrary.forEach((item) => {
-            if (!map.has(item.roomId)) {
-                map.set(item.roomId, item.roomName);
-            }
-        });
-        return Array.from(map.entries())
-            .map(([roomId, roomName]) => ({ roomId, roomName }))
-            .sort((a, b) => a.roomName.localeCompare(b.roomName));
-    }, [myFileLibrary]);
-
-    const groupedFileLibrary = useMemo(() => {
-        const map = new Map<string, { roomId: string; roomName: string; items: FileLibraryItem[] }>();
-        filteredFileLibrary.forEach((item) => {
             const existing = map.get(item.roomId);
-            if (existing) {
-                existing.items.push(item);
+            if (!existing) {
+                map.set(item.roomId, {
+                    roomId: item.roomId,
+                    roomName: item.roomName,
+                    attachmentCount: 1,
+                    totalKnownBytes: item.sizeBytes ?? 0,
+                    unknownSizeCount: item.sizeBytes == null ? 1 : 0,
+                    latestTs: item.ts,
+                });
                 return;
             }
-            map.set(item.roomId, {
-                roomId: item.roomId,
-                roomName: item.roomName,
-                items: [item],
-            });
+            existing.attachmentCount += 1;
+            if (item.sizeBytes != null) existing.totalKnownBytes += item.sizeBytes;
+            else existing.unknownSizeCount += 1;
+            if (item.ts > existing.latestTs) existing.latestTs = item.ts;
         });
-        return Array.from(map.values());
-    }, [filteredFileLibrary]);
+        return Array.from(map.values()).sort((a, b) => b.latestTs - a.latestTs);
+    }, [myFileLibrary]);
 
-    const selectedFileItem = useMemo(
-        () => filteredFileLibrary.find((item) => item.eventId === selectedFileEventId) ?? null,
-        [filteredFileLibrary, selectedFileEventId],
+    const filteredRoomSummaryList = useMemo(() => {
+        const keyword = fileRoomSearch.trim().toLowerCase();
+        if (!keyword) return roomSummaryList;
+        return roomSummaryList.filter((item) => item.roomName.toLowerCase().includes(keyword));
+    }, [roomSummaryList, fileRoomSearch]);
+
+    const selectedRoomFiles = useMemo(() => {
+        if (!selectedFileRoomId) return [];
+        return myFileLibrary.filter((item) => item.roomId === selectedFileRoomId).sort((a, b) => b.ts - a.ts);
+    }, [myFileLibrary, selectedFileRoomId]);
+
+    const selectedRoomSummary = useMemo(
+        () => roomSummaryList.find((item) => item.roomId === selectedFileRoomId) ?? null,
+        [roomSummaryList, selectedFileRoomId],
     );
 
     useEffect(() => {
         if (activeTab !== "files") return;
-        if (selectedFileEventId && filteredFileLibrary.some((item) => item.eventId === selectedFileEventId)) return;
-        setSelectedFileEventId(filteredFileLibrary[0]?.eventId ?? null);
-    }, [activeTab, filteredFileLibrary, selectedFileEventId]);
+        if (selectedFileRoomId && filteredRoomSummaryList.some((item) => item.roomId === selectedFileRoomId)) return;
+        setSelectedFileRoomId(filteredRoomSummaryList[0]?.roomId ?? null);
+    }, [activeTab, filteredRoomSummaryList, selectedFileRoomId]);
 
     useEffect(() => {
-        setSelectedFileIds((prev) => prev.filter((eventId) => filteredFileLibrary.some((item) => item.eventId === eventId)));
-    }, [filteredFileLibrary]);
+        setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
+    }, [selectedRoomFiles]);
 
     const getHttpFileUrl = (item: FileLibraryItem): string | null => {
         if (!matrixClient) return null;
@@ -697,7 +705,13 @@ export const MainLayout: React.FC = () => {
     const onOpenFileItem = (item: FileLibraryItem): void => {
         const url = getHttpFileUrl(item);
         if (!url) return;
-        window.open(url, "_blank", "noopener,noreferrer");
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = item.body || "file";
+        anchor.rel = "noopener noreferrer";
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
     };
 
     const onJumpToFileMessage = (item: FileLibraryItem): void => {
@@ -725,7 +739,6 @@ export const MainLayout: React.FC = () => {
                 body: t("chat.fileRevokedNotice", { name: selfLabel }),
             } as never);
             setActiveFileMenuEventId(null);
-            setSelectedFileEventId((prev) => (prev === item.eventId ? null : prev));
             setSelectedFileIds((prev) => prev.filter((id) => id !== item.eventId));
             setFileLibraryTick((prev) => prev + 1);
         } catch {
@@ -735,7 +748,7 @@ export const MainLayout: React.FC = () => {
 
     const onDeleteBatchFiles = async (): Promise<void> => {
         if (selectedFileIds.length === 0) return;
-        const targets = filteredFileLibrary.filter((item) => selectedFileIds.includes(item.eventId));
+        const targets = selectedRoomFiles.filter((item) => selectedFileIds.includes(item.eventId));
         if (targets.length === 0) return;
         let failed = 0;
         for (const item of targets) {
@@ -967,30 +980,6 @@ export const MainLayout: React.FC = () => {
                             <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                                 {t("layout.filesTitle")}
                             </div>
-                            <div className="relative">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowFileToolbarMenu((prev) => !prev)}
-                                    className="h-8 rounded-lg border border-gray-200 px-2 text-xs text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                >
-                                    ...
-                                </button>
-                                {showFileToolbarMenu && (
-                                    <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                                        <button
-                                            type="button"
-                                            className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                            onClick={() => {
-                                                setFileBatchMode((prev) => !prev);
-                                                setSelectedFileIds([]);
-                                                setShowFileToolbarMenu(false);
-                                            }}
-                                        >
-                                            {fileBatchMode ? t("layout.fileBatchCancel") : t("layout.fileBatchSelect")}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
                         </div>
                         <div className="p-3">
                             <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
@@ -1009,156 +998,47 @@ export const MainLayout: React.FC = () => {
                                 </svg>
                                 <input
                                     type="text"
-                                    value={fileSearch}
-                                    onChange={(event) => setFileSearch(event.target.value)}
-                                    placeholder={t("layout.filesSearchPlaceholder")}
+                                    value={fileRoomSearch}
+                                    onChange={(event) => setFileRoomSearch(event.target.value)}
+                                    placeholder={t("layout.filesRoomSearchPlaceholder")}
                                     className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
                                 />
                             </div>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                                <select
-                                    value={fileTypeFilter}
-                                    onChange={(event) =>
-                                        setFileTypeFilter(
-                                            event.target.value as "all" | "image" | "video" | "audio" | "pdf" | "other",
-                                        )
-                                    }
-                                    className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                >
-                                    <option value="all">{t("layout.fileFilterTypeAll")}</option>
-                                    <option value="image">{t("layout.fileFilterTypeImage")}</option>
-                                    <option value="video">{t("layout.fileFilterTypeVideo")}</option>
-                                    <option value="audio">{t("layout.fileFilterTypeAudio")}</option>
-                                    <option value="pdf">{t("layout.fileFilterTypePdf")}</option>
-                                    <option value="other">{t("layout.fileFilterTypeOther")}</option>
-                                </select>
-                                <select
-                                    value={fileRoomFilter}
-                                    onChange={(event) => setFileRoomFilter(event.target.value)}
-                                    className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                >
-                                    <option value="all">{t("layout.fileFilterRoomAll")}</option>
-                                    {fileRoomOptions.map((room) => (
-                                        <option key={room.roomId} value={room.roomId}>
-                                            {room.roomName}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            {fileBatchMode && (
-                                <div className="mt-2 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
-                                    <span>{t("layout.fileBatchSelectedCount", { count: selectedFileIds.length })}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => void onDeleteBatchFiles()}
-                                        className="rounded-md bg-rose-500 px-2 py-1 text-white hover:bg-rose-600"
-                                    >
-                                        {t("layout.fileBatchDelete")}
-                                    </button>
-                                </div>
-                            )}
                         </div>
-                        <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-3">
-                            {groupedFileLibrary.length === 0 ? (
+                        <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
+                            {filteredRoomSummaryList.length === 0 ? (
                                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
-                                    {t("layout.filesEmpty")}
+                                    {t("layout.filesRoomsEmpty")}
                                 </div>
                             ) : (
-                                groupedFileLibrary.map((group) => (
-                                    <div key={group.roomId} className="rounded-xl border border-gray-100 bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
-                                        <div className="px-2 pb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                            {group.roomName} ({group.items.length})
-                                        </div>
-                                        <div className="space-y-1">
-                                            {group.items.map((item) => {
-                                                const isActive = selectedFileEventId === item.eventId;
-                                                return (
-                                                    <div
-                                                        key={item.eventId}
-                                                        className={`rounded-lg border px-2 py-2 ${isActive
-                                                            ? "border-emerald-400 bg-emerald-50/70 dark:bg-emerald-900/20"
-                                                            : "border-transparent hover:border-gray-200 hover:bg-gray-50 dark:hover:border-slate-700 dark:hover:bg-slate-800"
-                                                            }`}
-                                                    >
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            {fileBatchMode && (
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={isFileSelected(item.eventId)}
-                                                                    onChange={() => toggleFileSelection(item.eventId)}
-                                                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900"
-                                                                />
-                                                            )}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    if (fileBatchMode) {
-                                                                        toggleFileSelection(item.eventId);
-                                                                        return;
-                                                                    }
-                                                                    setSelectedFileEventId(item.eventId);
-                                                                    setMobileView("detail");
-                                                                }}
-                                                                className="min-w-0 flex-1 text-left"
-                                                            >
-                                                                <div className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">
-                                                                    {item.body}
-                                                                </div>
-                                                                <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                                                                    {new Date(item.ts).toLocaleString()}
-                                                                </div>
-                                                            </button>
-                                                            {!fileBatchMode && (
-                                                                <div className="relative">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            setActiveFileMenuEventId((prev) => (prev === item.eventId ? null : item.eventId))
-                                                                        }
-                                                                        className="rounded-full px-2 text-slate-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-                                                                    >
-                                                                        ...
-                                                                    </button>
-                                                                    {activeFileMenuEventId === item.eventId && (
-                                                                        <div className="absolute right-0 z-20 mt-1 w-28 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                                                                            <button
-                                                                                type="button"
-                                                                                className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                                                onClick={() => {
-                                                                                    setActiveFileMenuEventId(null);
-                                                                                    onOpenFileItem(item);
-                                                                                }}
-                                                                            >
-                                                                                {t("layout.fileActionOpen")}
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                                                onClick={() => {
-                                                                                    setActiveFileMenuEventId(null);
-                                                                                    onJumpToFileMessage(item);
-                                                                                }}
-                                                                            >
-                                                                                {t("layout.fileActionJump")}
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
-                                                                                onClick={() => void onDeleteFileItem(item)}
-                                                                            >
-                                                                                {t("layout.fileActionDelete")}
-                                                                            </button>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                ))
+                                filteredRoomSummaryList.map((room) => {
+                                    const active = room.roomId === selectedFileRoomId;
+                                    const sizeText =
+                                        room.unknownSizeCount > 0
+                                            ? `${formatBytesToMb(room.totalKnownBytes)} MB+`
+                                            : `${formatBytesToMb(room.totalKnownBytes)} MB`;
+                                    return (
+                                        <button
+                                            key={room.roomId}
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedFileRoomId(room.roomId);
+                                                setMobileView("detail");
+                                            }}
+                                            className={`w-full rounded-xl border px-3 py-2 text-left ${active
+                                                ? "border-emerald-400 bg-emerald-50/70 dark:bg-emerald-900/20"
+                                                : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800"
+                                                }`}
+                                        >
+                                            <div className="truncate text-sm font-semibold text-slate-700 dark:text-slate-100">
+                                                {room.roomName} ({room.attachmentCount})
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                {t("layout.filesRoomSizeLabel", { size: sizeText })}
+                                            </div>
+                                        </button>
+                                    );
+                                })
                             )}
                         </div>
                     </>
@@ -1403,20 +1283,13 @@ export const MainLayout: React.FC = () => {
                     </div>
                 ) : activeTab === "files" ? (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
-                        {fileBatchMode ? (
-                            <div className="flex-1 flex items-center justify-center p-6 text-center text-slate-500 dark:text-slate-400">
-                                <div>
-                                    <div className="text-base font-semibold text-slate-700 dark:text-slate-200">
-                                        {t("layout.fileBatchModeTitle")}
-                                    </div>
-                                    <div className="mt-2 text-sm">
-                                        {t("layout.fileBatchModeHint")}
-                                    </div>
-                                </div>
+                        {!selectedRoomSummary ? (
+                            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                                {t("layout.fileNoRoomSelected")}
                             </div>
-                        ) : selectedFileItem ? (
+                        ) : (
                             <div className="flex-1 flex flex-col">
-                                <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-100 dark:border-slate-800">
+                                <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-100 dark:border-slate-800">
                                     <button
                                         type="button"
                                         onClick={() => setMobileView("list")}
@@ -1427,43 +1300,143 @@ export const MainLayout: React.FC = () => {
                                     </button>
                                     <div className="min-w-0">
                                         <div className="text-base font-semibold text-slate-800 truncate dark:text-slate-100">
-                                            {selectedFileItem.body}
+                                            {selectedRoomSummary.roomName}
                                         </div>
                                         <div className="text-xs text-slate-500 dark:text-slate-400">
-                                            {selectedFileItem.roomName} · {new Date(selectedFileItem.ts).toLocaleString()}
+                                            {t("layout.filesCountLabel", { count: selectedRoomSummary.attachmentCount })}
                                         </div>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowFileToolbarMenu((prev) => !prev)}
+                                        className="h-8 rounded-lg border border-gray-200 px-2 text-xs text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                    >
+                                        ...
+                                    </button>
                                 </div>
-                                <div className="p-6 space-y-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => onOpenFileItem(selectedFileItem)}
-                                        className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                    >
-                                        {t("layout.fileActionOpen")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => onJumpToFileMessage(selectedFileItem)}
-                                        className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                    >
-                                        {t("layout.fileActionJump")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => void onDeleteFileItem(selectedFileItem)}
-                                        className="w-full text-left rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-500 hover:bg-rose-50 dark:border-rose-900/40 dark:text-rose-300 dark:hover:bg-slate-800"
-                                    >
-                                        {t("layout.fileActionDelete")}
-                                    </button>
-                                    {fileActionError && (
-                                        <div className="text-sm text-rose-500">{fileActionError}</div>
+                                {showFileToolbarMenu && (
+                                    <div className="mx-6 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                        <button
+                                            type="button"
+                                            className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                            onClick={() => {
+                                                setFileBatchMode((prev) => !prev);
+                                                setSelectedFileIds([]);
+                                                setShowFileToolbarMenu(false);
+                                            }}
+                                        >
+                                            {fileBatchMode ? t("layout.fileBatchCancel") : t("layout.fileBatchSelect")}
+                                        </button>
+                                    </div>
+                                )}
+                                {fileBatchMode && (
+                                    <div className="mx-6 mt-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
+                                        <span>{t("layout.fileBatchSelectedCount", { count: selectedFileIds.length })}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => void onDeleteBatchFiles()}
+                                            className="rounded-md bg-rose-500 px-2 py-1 text-white hover:bg-rose-600"
+                                        >
+                                            {t("layout.fileBatchDelete")}
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="px-6 pt-4 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                                    <div className="grid grid-cols-[84px_90px_90px_1fr] gap-2">
+                                        <span>{t("layout.fileColumnPreview")}</span>
+                                        <span>{t("layout.fileColumnType")}</span>
+                                        <span>{t("layout.fileColumnSize")}</span>
+                                        <span>{t("layout.fileColumnActions")}</span>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-2">
+                                    {selectedRoomFiles.length === 0 ? (
+                                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                                            {t("layout.fileListEmptyInRoom")}
+                                        </div>
+                                    ) : (
+                                        selectedRoomFiles.map((item) => {
+                                            const fileType = getFileTypeGroup(item);
+                                            const ext = getFileExtension(item.body, item.mimeType);
+                                            const httpUrl = getHttpFileUrl(item);
+                                            return (
+                                                <div key={item.eventId} className="grid grid-cols-[84px_90px_90px_1fr] items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                                    <div className="h-14 w-20 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                                                        {fileType === "image" && httpUrl ? (
+                                                            <img src={httpUrl} alt={item.body} className="h-full w-full object-cover" />
+                                                        ) : fileType === "video" && httpUrl ? (
+                                                            <video src={httpUrl} className="h-full w-full object-cover" muted preload="metadata" />
+                                                        ) : (
+                                                            <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500 dark:text-slate-300">
+                                                                {ext}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-sm text-slate-700 dark:text-slate-200">{ext}</div>
+                                                    <div className="text-sm text-slate-700 dark:text-slate-200">
+                                                        {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
+                                                    </div>
+                                                    <div className="relative flex items-center justify-between gap-2">
+                                                        {fileBatchMode && (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isFileSelected(item.eventId)}
+                                                                onChange={() => toggleFileSelection(item.eventId)}
+                                                                className="h-4 w-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900"
+                                                            />
+                                                        )}
+                                                        <div className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                                                            {new Date(item.ts).toLocaleString()}
+                                                        </div>
+                                                        {!fileBatchMode && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setActiveFileMenuEventId((prev) => (prev === item.eventId ? null : item.eventId))}
+                                                                className="rounded-full px-2 text-slate-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                                            >
+                                                                ...
+                                                            </button>
+                                                        )}
+                                                        {!fileBatchMode && activeFileMenuEventId === item.eventId && (
+                                                            <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                                                <button
+                                                                    type="button"
+                                                                    className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                    onClick={() => {
+                                                                        setActiveFileMenuEventId(null);
+                                                                        onOpenFileItem(item);
+                                                                    }}
+                                                                >
+                                                                    {t("layout.fileActionDownload")}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                    onClick={() => {
+                                                                        setActiveFileMenuEventId(null);
+                                                                        onJumpToFileMessage(item);
+                                                                    }}
+                                                                >
+                                                                    {t("layout.fileActionJump")}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
+                                                                    onClick={() => void onDeleteFileItem(item)}
+                                                                >
+                                                                    {t("layout.fileActionDelete")}
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
                                     )}
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                                {t("layout.filesEmpty")}
+                                {fileActionError && (
+                                    <div className="px-6 pb-4 text-sm text-rose-500">{fileActionError}</div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1594,6 +1567,16 @@ type FileLibraryItem = {
     msgtype: string;
     mxcUrl: string;
     mimeType?: string;
+    sizeBytes: number | null;
+};
+
+type FileLibraryRoomSummary = {
+    roomId: string;
+    roomName: string;
+    attachmentCount: number;
+    totalKnownBytes: number;
+    unknownSizeCount: number;
+    latestTs: number;
 };
 
 const FILE_REVOKE_WINDOW_MS = 5 * 60 * 1000;
