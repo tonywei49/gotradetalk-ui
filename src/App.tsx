@@ -8,7 +8,6 @@ import { useThemeStore } from "./stores/ThemeStore";
 
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
-    const userType = useAuthStore((state) => state.userType);
     const initTheme = useThemeStore((state) => state.initTheme);
 
     useEffect(() => {
@@ -18,36 +17,11 @@ export function App() {
     return (
         <BrowserRouter>
             <Routes>
-                <Route
-                    path="/auth"
-                    element={
-                        !isAuthenticated ? (
-                            <AuthPage />
-                        ) : (
-                            <Navigate
-                                to={userType === "staff" ? "/company/admin/dashboard" : "/app"}
-                            />
-                        )
-                    }
-                />
+                <Route path="/auth" element={!isAuthenticated ? <AuthPage /> : <Navigate to="/" />} />
 
                 <Route path="/" element={isAuthenticated ? <MainLayout /> : <Navigate to="/auth" />}>
                     <Route index element={<ChatRoom />} />
-                </Route>
-                <Route path="/app" element={isAuthenticated ? <MainLayout /> : <Navigate to="/auth" />}>
-                    <Route index element={<ChatRoom />} />
-                </Route>
-                <Route
-                    path="/company/admin/dashboard"
-                    element={isAuthenticated ? <MainLayout /> : <Navigate to="/auth" />}
-                >
-                    <Route index element={<ChatRoom />} />
-                </Route>
-                <Route
-                    path="/company/console"
-                    element={isAuthenticated ? <MainLayout /> : <Navigate to="/auth" />}
-                >
-                    <Route index element={<ChatRoom />} />
+                    {/* Add more routes here later */}
                 </Route>
             </Routes>
         </BrowserRouter>

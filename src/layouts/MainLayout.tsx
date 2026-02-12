@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import {
     ChatBubbleLeftRightIcon,
     UserGroupIcon,
@@ -11,15 +11,7 @@ import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
 import type { ContactSummary } from "../features/rooms/RoomList";
-import {
-    hubGetMe,
-    hubMeUpdateLocale,
-    hubMeUpdateTranslationLocale,
-    hubStaffCompanyMediaPolicy,
-    hubStaffMediaPolicy,
-    hubStaffUpdateCompanyMediaPolicy,
-    hubStaffUpdateMediaPolicy,
-} from "../api/hub";
+import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
@@ -78,25 +70,11 @@ export const MainLayout: React.FC = () => {
     const [showRemoveContactConfirm, setShowRemoveContactConfirm] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
-    const [settingsDetail, setSettingsDetail] = useState<
-        "none" | "chat-language" | "media-policy" | "company-media-policy"
-    >("none");
+    const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language">("none");
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-    const [mediaQuotaInput, setMediaQuotaInput] = useState<string>("0");
-    const [mediaRetentionInput, setMediaRetentionInput] = useState<string>("0");
-    const [mediaPolicyLoading, setMediaPolicyLoading] = useState(false);
-    const [mediaPolicySaving, setMediaPolicySaving] = useState(false);
-    const [mediaPolicyError, setMediaPolicyError] = useState<string | null>(null);
-    const [mediaPolicySuccess, setMediaPolicySuccess] = useState<string | null>(null);
-    const [companyMediaQuotaInput, setCompanyMediaQuotaInput] = useState<string>("0");
-    const [companyMediaRetentionInput, setCompanyMediaRetentionInput] = useState<string>("0");
-    const [companyMediaPolicyLoading, setCompanyMediaPolicyLoading] = useState(false);
-    const [companyMediaPolicySaving, setCompanyMediaPolicySaving] = useState(false);
-    const [companyMediaPolicyError, setCompanyMediaPolicyError] = useState<string | null>(null);
-    const [companyMediaPolicySuccess, setCompanyMediaPolicySuccess] = useState<string | null>(null);
     const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
     const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -110,7 +88,6 @@ export const MainLayout: React.FC = () => {
     const matrixAccessToken = useAuthStore((state) => state.matrixCredentials?.access_token ?? null);
     const matrixHsUrl = useAuthStore((state) => state.matrixCredentials?.hs_url ?? null);
     const userType = useAuthStore((state) => state.userType);
-    const location = useLocation();
     const clearSession = useAuthStore((state) => state.clearSession);
     const navigate = useNavigate();
     const [showAccountMenu, setShowAccountMenu] = useState(false);
@@ -126,8 +103,6 @@ export const MainLayout: React.FC = () => {
     const accountSubtitle = accountSubtitleParts.length
         ? accountSubtitleParts.join(" · ")
         : t("layout.accountSubtitleFallback");
-    const isCompanyConsoleEntry = location.pathname.startsWith("/company/console");
-    const isCompanyAdminDashboardEntry = location.pathname.startsWith("/company/admin");
     const displayLangOptions = [
         { value: "en", label: t("language.english") },
         { value: "zh-CN", label: t("language.chineseSimplified") },
@@ -527,120 +502,6 @@ export const MainLayout: React.FC = () => {
         }
     };
 
-    const openMediaPolicySettings = async (): Promise<void> => {
-        if (!matrixAccessToken || !matrixHsUrl) return;
-        setMediaPolicyError(null);
-        setMediaPolicySuccess(null);
-        setMediaPolicyLoading(true);
-        try {
-            const policy = await hubStaffMediaPolicy(matrixAccessToken, matrixHsUrl);
-            setMediaQuotaInput(String(policy.media_user_quota_bytes ?? 0));
-            setMediaRetentionInput(String(policy.media_local_retention_days ?? 0));
-            setSettingsDetail("media-policy");
-            setMobileView("detail");
-        } catch (error) {
-            const message = error instanceof Error ? error.message : t("common.failed");
-            setMediaPolicyError(message);
-            setSettingsDetail("media-policy");
-            setMobileView("detail");
-        } finally {
-            setMediaPolicyLoading(false);
-        }
-    };
-
-    const submitMediaPolicy = async (): Promise<void> => {
-        if (!matrixAccessToken || !matrixHsUrl) {
-            setMediaPolicyError(t("common.unauthorized", "Unauthorized"));
-            return;
-        }
-        const quota = Number(mediaQuotaInput);
-        const retention = Number(mediaRetentionInput);
-        if (!Number.isInteger(quota) || quota < 0 || !Number.isInteger(retention) || retention < 0) {
-            setMediaPolicyError(t("layout.mediaPolicyValidation", "Please enter non-negative integers."));
-            return;
-        }
-
-        setMediaPolicySaving(true);
-        setMediaPolicyError(null);
-        setMediaPolicySuccess(null);
-        try {
-            const updated = await hubStaffUpdateMediaPolicy(matrixAccessToken, matrixHsUrl, {
-                media_user_quota_bytes: quota,
-                media_local_retention_days: retention,
-            });
-            setMediaQuotaInput(String(updated.media_user_quota_bytes ?? 0));
-            setMediaRetentionInput(String(updated.media_local_retention_days ?? 0));
-            setMediaPolicySuccess(t("common.saved", "Saved"));
-        } catch (error) {
-            const message = error instanceof Error ? error.message : t("common.failed");
-            setMediaPolicyError(message);
-        } finally {
-            setMediaPolicySaving(false);
-        }
-    };
-
-    const openCompanyMediaPolicySettings = async (): Promise<void> => {
-        if (!matrixAccessToken || !matrixHsUrl) return;
-        setCompanyMediaPolicyError(null);
-        setCompanyMediaPolicySuccess(null);
-        setCompanyMediaPolicyLoading(true);
-        try {
-            const policy = await hubStaffCompanyMediaPolicy(matrixAccessToken, matrixHsUrl);
-            setCompanyMediaQuotaInput(String(policy.employee_media_user_quota_bytes ?? 0));
-            setCompanyMediaRetentionInput(String(policy.employee_media_local_retention_days ?? 0));
-            setSettingsDetail("company-media-policy");
-            setMobileView("detail");
-        } catch (error) {
-            const message = error instanceof Error ? error.message : t("common.failed");
-            setCompanyMediaPolicyError(message);
-            setSettingsDetail("company-media-policy");
-            setMobileView("detail");
-        } finally {
-            setCompanyMediaPolicyLoading(false);
-        }
-    };
-
-    const submitCompanyMediaPolicy = async (): Promise<void> => {
-        if (!matrixAccessToken || !matrixHsUrl) {
-            setCompanyMediaPolicyError(t("common.unauthorized", "Unauthorized"));
-            return;
-        }
-
-        const quota = Number(companyMediaQuotaInput);
-        const retention = Number(companyMediaRetentionInput);
-        if (!Number.isInteger(quota) || quota < 0 || !Number.isInteger(retention) || retention < 0) {
-            setCompanyMediaPolicyError(t("layout.mediaPolicyValidation", "Please enter non-negative integers."));
-            return;
-        }
-
-        setCompanyMediaPolicySaving(true);
-        setCompanyMediaPolicyError(null);
-        setCompanyMediaPolicySuccess(null);
-        try {
-            const updated = await hubStaffUpdateCompanyMediaPolicy(matrixAccessToken, matrixHsUrl, {
-                employee_media_user_quota_bytes: quota,
-                employee_media_local_retention_days: retention,
-            });
-            setCompanyMediaQuotaInput(String(updated.employee_media_user_quota_bytes ?? 0));
-            setCompanyMediaRetentionInput(String(updated.employee_media_local_retention_days ?? 0));
-            setCompanyMediaPolicySuccess(t("common.saved", "Saved"));
-        } catch (error) {
-            const message = error instanceof Error ? error.message : t("common.failed");
-            setCompanyMediaPolicyError(message);
-        } finally {
-            setCompanyMediaPolicySaving(false);
-        }
-    };
-
-    useEffect(() => {
-        if (settingsDetail === "media-policy" && isCompanyConsoleEntry) {
-            setSettingsDetail("none");
-        }
-        if (settingsDetail === "company-media-policy" && isCompanyAdminDashboardEntry) {
-            setSettingsDetail("none");
-        }
-    }, [isCompanyAdminDashboardEntry, isCompanyConsoleEntry, settingsDetail]);
-
     return (
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
             {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
@@ -801,28 +662,6 @@ export const MainLayout: React.FC = () => {
                             >
                                 {t("layout.chatReceiveLanguage")}
                             </button>
-                            {userType === "staff" ? (
-                                <>
-                                    {!isCompanyConsoleEntry ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => void openMediaPolicySettings()}
-                                            className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                        >
-                                            {t("layout.clientMediaPolicy", "Client media policy")}
-                                        </button>
-                                    ) : null}
-                                    {!isCompanyAdminDashboardEntry ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => void openCompanyMediaPolicySettings()}
-                                            className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                        >
-                                            {t("layout.companyMediaPolicy", "Company employee media policy")}
-                                        </button>
-                                    ) : null}
-                                </>
-                            ) : null}
                         </div>
                     </>
                 ) : activeTab === "account" ? (
@@ -1139,154 +978,6 @@ export const MainLayout: React.FC = () => {
                                         className="w-full rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
                                     >
                                         {t("common.confirm")}
-                                    </button>
-                                </div>
-                            </>
-                        ) : activeTab === "settings" && settingsDetail === "media-policy" ? (
-                            <>
-                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    {t("layout.selectItem")}
-                                </div>
-                                <div className="px-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMobileView("list")}
-                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label={t("layout.backToList")}
-                                        >
-                                            &lt;
-                                        </button>
-                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            {t("layout.clientMediaPolicy", "Client media policy")}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-lg border border-gray-200 p-4 space-y-3 dark:border-slate-800">
-                                        <label className="block">
-                                            <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">
-                                                {t("layout.mediaQuotaBytes", "Per-user quota (bytes, 0 = disabled)")}
-                                            </div>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                inputMode="numeric"
-                                                value={mediaQuotaInput}
-                                                onChange={(event) => setMediaQuotaInput(event.target.value)}
-                                                className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            />
-                                        </label>
-                                        <label className="block">
-                                            <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">
-                                                {t("layout.mediaRetentionDays", "Local retention (days, 0 = disabled)")}
-                                            </div>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                inputMode="numeric"
-                                                value={mediaRetentionInput}
-                                                onChange={(event) => setMediaRetentionInput(event.target.value)}
-                                                className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            />
-                                        </label>
-                                        {mediaPolicyLoading ? (
-                                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                {t("common.loading", "Loading...")}
-                                            </div>
-                                        ) : null}
-                                        {mediaPolicyError ? (
-                                            <div className="text-xs text-rose-500">{mediaPolicyError}</div>
-                                        ) : null}
-                                        {mediaPolicySuccess ? (
-                                            <div className="text-xs text-emerald-600 dark:text-emerald-300">{mediaPolicySuccess}</div>
-                                        ) : null}
-                                    </div>
-                                </div>
-                                <div className="mt-auto px-6 pb-6">
-                                    <button
-                                        type="button"
-                                        onClick={() => void submitMediaPolicy()}
-                                        disabled={mediaPolicySaving || mediaPolicyLoading}
-                                        className="w-full rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] disabled:opacity-60 disabled:cursor-not-allowed dark:bg-emerald-500 dark:hover:bg-emerald-400"
-                                    >
-                                        {mediaPolicySaving ? t("common.saving", "Saving...") : t("common.confirm")}
-                                    </button>
-                                </div>
-                            </>
-                        ) : activeTab === "settings" && settingsDetail === "company-media-policy" ? (
-                            <>
-                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    {t("layout.selectItem")}
-                                </div>
-                                <div className="px-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMobileView("list")}
-                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label={t("layout.backToList")}
-                                        >
-                                            &lt;
-                                        </button>
-                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            {t("layout.companyMediaPolicy", "Company employee media policy")}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-lg border border-gray-200 p-4 space-y-3 dark:border-slate-800">
-                                        <label className="block">
-                                            <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">
-                                                {t("layout.companyMediaQuotaBytes", "Employee quota (bytes, 0 = disabled)")}
-                                            </div>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                inputMode="numeric"
-                                                value={companyMediaQuotaInput}
-                                                onChange={(event) => setCompanyMediaQuotaInput(event.target.value)}
-                                                className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            />
-                                        </label>
-                                        <label className="block">
-                                            <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">
-                                                {t("layout.companyMediaRetentionDays", "Employee retention (days, 0 = disabled)")}
-                                            </div>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                inputMode="numeric"
-                                                value={companyMediaRetentionInput}
-                                                onChange={(event) => setCompanyMediaRetentionInput(event.target.value)}
-                                                className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            />
-                                        </label>
-                                        {companyMediaPolicyLoading ? (
-                                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                {t("common.loading", "Loading...")}
-                                            </div>
-                                        ) : null}
-                                        {companyMediaPolicyError ? (
-                                            <div className="text-xs text-rose-500">{companyMediaPolicyError}</div>
-                                        ) : null}
-                                        {companyMediaPolicySuccess ? (
-                                            <div className="text-xs text-emerald-600 dark:text-emerald-300">
-                                                {companyMediaPolicySuccess}
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                </div>
-                                <div className="mt-auto px-6 pb-6">
-                                    <button
-                                        type="button"
-                                        onClick={() => void submitCompanyMediaPolicy()}
-                                        disabled={companyMediaPolicySaving || companyMediaPolicyLoading}
-                                        className="w-full rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] disabled:opacity-60 disabled:cursor-not-allowed dark:bg-emerald-500 dark:hover:bg-emerald-400"
-                                    >
-                                        {companyMediaPolicySaving ? t("common.saving", "Saving...") : t("common.confirm")}
                                     </button>
                                 </div>
                             </>

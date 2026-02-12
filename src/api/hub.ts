@@ -102,11 +102,6 @@ export type HubStaffPasswordStateResponse = {
     password_state: string;
 };
 
-export type HubStaffMediaPolicyResponse = {
-    media_user_quota_bytes: number;
-    media_local_retention_days: number;
-};
-
 export async function hubStaffPasswordState(
     accessToken: string,
     hsUrl: string,
@@ -167,63 +162,6 @@ export async function hubStaffUpdateTranslationLocaleSelf(
         { hs_url: hsUrl, translation_locale: translationLocale },
         accessToken,
     );
-}
-
-export async function hubStaffMediaPolicy(
-    accessToken: string,
-    hsUrl: string,
-): Promise<HubStaffMediaPolicyResponse> {
-    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = withQuery(joinUrl(hubBaseUrl, "/staff/media-policy"), { hs_url: hsUrl });
-    return getJson<HubStaffMediaPolicyResponse>(url, accessToken);
-}
-
-export async function hubStaffUpdateMediaPolicy(
-	accessToken: string,
-	hsUrl: string,
-	payload: HubStaffMediaPolicyResponse,
-): Promise<HubStaffMediaPolicyResponse> {
-    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    return postJson<HubStaffMediaPolicyResponse>(
-        `${hubBaseUrl}/staff/media-policy`,
-        {
-            hs_url: hsUrl,
-            media_user_quota_bytes: payload.media_user_quota_bytes,
-            media_local_retention_days: payload.media_local_retention_days,
-        },
-        accessToken,
-	);
-}
-
-export type HubStaffCompanyMediaPolicyResponse = {
-	employee_media_user_quota_bytes: number;
-	employee_media_local_retention_days: number;
-};
-
-export async function hubStaffCompanyMediaPolicy(
-	accessToken: string,
-	hsUrl: string,
-): Promise<HubStaffCompanyMediaPolicyResponse> {
-	const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-	const url = withQuery(joinUrl(hubBaseUrl, "/staff/company-media-policy"), { hs_url: hsUrl });
-	return getJson<HubStaffCompanyMediaPolicyResponse>(url, accessToken);
-}
-
-export async function hubStaffUpdateCompanyMediaPolicy(
-	accessToken: string,
-	hsUrl: string,
-	payload: HubStaffCompanyMediaPolicyResponse,
-): Promise<HubStaffCompanyMediaPolicyResponse> {
-	const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-	return postJson<HubStaffCompanyMediaPolicyResponse>(
-		`${hubBaseUrl}/staff/company-media-policy`,
-		{
-			hs_url: hsUrl,
-			employee_media_user_quota_bytes: payload.employee_media_user_quota_bytes,
-			employee_media_local_retention_days: payload.employee_media_local_retention_days,
-		},
-		accessToken,
-	);
 }
 
 export async function hubGetMe(params: {
