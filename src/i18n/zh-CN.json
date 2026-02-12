@@ -180,6 +180,7 @@
         "filesTitle": "檔案中心",
         "filesSearchPlaceholder": "搜尋檔案",
         "filesRoomSearchPlaceholder": "搜尋聊天室",
+        "filesListSearchPlaceholder": "搜尋此聊天室的附件",
         "filesEmpty": "暫無檔案。",
         "filesRoomsEmpty": "目前沒有任何已上傳附件的聊天室。",
         "filesRoomSizeLabel": "上傳總容量：{{size}}",

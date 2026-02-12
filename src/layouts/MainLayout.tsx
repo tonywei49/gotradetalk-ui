@@ -136,6 +136,8 @@ export const MainLayout: React.FC = () => {
     const [fileLibraryTick, setFileLibraryTick] = useState(0);
     const [fileRoomSearch, setFileRoomSearch] = useState("");
     const [selectedFileRoomId, setSelectedFileRoomId] = useState<string | null>(null);
+    const [fileListSearch, setFileListSearch] = useState("");
+    const [fileListTypeFilter, setFileListTypeFilter] = useState<"all" | "image" | "video" | "audio" | "pdf" | "other">("all");
     const [fileBatchMode, setFileBatchMode] = useState(false);
     const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
     const [activeFileMenuEventId, setActiveFileMenuEventId] = useState<string | null>(null);
@@ -681,6 +683,15 @@ export const MainLayout: React.FC = () => {
         () => roomSummaryList.find((item) => item.roomId === selectedFileRoomId) ?? null,
         [roomSummaryList, selectedFileRoomId],
     );
+
+    const visibleSelectedRoomFiles = useMemo(() => {
+        const keyword = fileListSearch.trim().toLowerCase();
+        return selectedRoomFiles.filter((item) => {
+            if (fileListTypeFilter !== "all" && getFileTypeGroup(item) !== fileListTypeFilter) return false;
+            if (!keyword) return true;
+            return item.body.toLowerCase().includes(keyword);
+        });
+    }, [selectedRoomFiles, fileListSearch, fileListTypeFilter]);
 
     useEffect(() => {
         if (activeTab !== "files") return;
@@ -1344,7 +1355,34 @@ export const MainLayout: React.FC = () => {
                                         </button>
                                     </div>
                                 )}
-                                <div className="px-6 pt-4 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                                <div className="px-6 pt-4">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px]">
+                                        <input
+                                            type="text"
+                                            value={fileListSearch}
+                                            onChange={(event) => setFileListSearch(event.target.value)}
+                                            placeholder={t("layout.filesListSearchPlaceholder")}
+                                            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                        />
+                                        <select
+                                            value={fileListTypeFilter}
+                                            onChange={(event) =>
+                                                setFileListTypeFilter(
+                                                    event.target.value as "all" | "image" | "video" | "audio" | "pdf" | "other",
+                                                )
+                                            }
+                                            className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                        >
+                                            <option value="all">{t("layout.fileFilterTypeAll")}</option>
+                                            <option value="image">{t("layout.fileFilterTypeImage")}</option>
+                                            <option value="video">{t("layout.fileFilterTypeVideo")}</option>
+                                            <option value="audio">{t("layout.fileFilterTypeAudio")}</option>
+                                            <option value="pdf">{t("layout.fileFilterTypePdf")}</option>
+                                            <option value="other">{t("layout.fileFilterTypeOther")}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="px-6 pt-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
                                     <div className="grid grid-cols-[32px_84px_90px_90px_1fr] gap-2">
                                         <span />
                                         <span>{t("layout.fileColumnPreview")}</span>
@@ -1354,12 +1392,12 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-2">
-                                    {selectedRoomFiles.length === 0 ? (
+                                    {visibleSelectedRoomFiles.length === 0 ? (
                                         <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                                             {t("layout.fileListEmptyInRoom")}
                                         </div>
                                     ) : (
-                                        selectedRoomFiles.map((item) => {
+                                        visibleSelectedRoomFiles.map((item) => {
                                             const fileType = getFileTypeGroup(item);
                                             const ext = getFileExtension(item.body, item.mimeType);
                                             const httpUrl = getHttpFileUrl(item);

@@ -180,6 +180,7 @@
         "filesTitle": "Files",
         "filesSearchPlaceholder": "Search files",
         "filesRoomSearchPlaceholder": "Search rooms",
+        "filesListSearchPlaceholder": "Search files in this room",
         "filesEmpty": "No files found.",
         "filesRoomsEmpty": "No room has uploaded files yet.",
         "filesRoomSizeLabel": "Total uploaded size: {{size}}",
