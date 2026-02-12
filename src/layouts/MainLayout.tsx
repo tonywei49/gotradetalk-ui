@@ -35,14 +35,17 @@ type NavBarItemProps = {
     active?: boolean;
     onClick?: () => void;
     badgeCount?: number;
+    className?: string;
 };
 
-const NavBarItem = ({ icon: Icon, active, onClick, badgeCount }: NavBarItemProps) => (
+const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "" }: NavBarItemProps) => (
     <div
         onClick={onClick}
         className={`
-            w-full h-16 flex items-center justify-center cursor-pointer transition-colors
+            h-10 w-10 rounded-lg flex items-center justify-center cursor-pointer transition-colors
+            lg:h-16 lg:w-full lg:rounded-none
             ${active ? "text-[#2F5C56] bg-gray-800" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}
+            ${className}
         `}
     >
         <div className="relative">
@@ -53,7 +56,7 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount }: NavBarItemProps
                 </span>
             ) : null}
             {active && (
-                <div className="absolute -left-5 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#2F5C56] rounded-r-full" />
+                <div className="absolute -left-5 top-1/2 hidden h-8 w-1 -translate-y-1/2 rounded-r-full bg-[#2F5C56] lg:block" />
             )}
         </div>
     </div>
@@ -813,7 +816,7 @@ export const MainLayout: React.FC = () => {
                 </div>
 
                 {/* Nav Items */}
-                <div className="flex-1 w-full flex items-center justify-center gap-2 lg:flex-col">
+                <div className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-slate-700/70 bg-slate-800/60 px-1 py-1 sm:gap-2 lg:w-full lg:flex-col lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
                     <NavBarItem
                         icon={ChatBubbleLeftRightIcon}
                         active={activeTab === "chat"}
@@ -831,10 +834,20 @@ export const MainLayout: React.FC = () => {
                         active={activeTab === "files"}
                         onClick={() => setActiveTab("files")}
                     />
+                    <NavBarItem
+                        icon={Cog6ToothIcon}
+                        active={activeTab === "settings"}
+                        onClick={() => {
+                            setActiveTab("settings");
+                            setSettingsDetail("none");
+                            setMobileView("list");
+                        }}
+                        className="lg:hidden"
+                    />
                 </div>
 
                 {/* Bottom Actions */}
-                <div className="w-full flex items-center justify-end gap-2 lg:flex-col lg:mb-4">
+                <div className="hidden w-full items-center justify-end gap-2 lg:mb-4 lg:flex lg:flex-col">
                     <button
                         type="button"
                         onClick={() => {
