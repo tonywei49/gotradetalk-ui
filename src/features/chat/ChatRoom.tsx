@@ -295,6 +295,8 @@ type ChatRoomContext = {
     isRoomPinned?: boolean;
     chatReceiveLanguage?: string;
     companyName?: string | null;
+    jumpToEventId?: string | null;
+    onJumpHandled?: () => void;
 };
 
 type PowerLevelContent = {
@@ -374,7 +376,17 @@ async function cleanupUploadedMedia(
 
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
-    const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned, chatReceiveLanguage, companyName } =
+    const {
+        activeRoomId,
+        onMobileBack,
+        onHideRoom,
+        onTogglePin,
+        isRoomPinned,
+        chatReceiveLanguage,
+        companyName,
+        jumpToEventId,
+        onJumpHandled,
+    } =
         useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
@@ -430,6 +442,7 @@ export const ChatRoom: React.FC = () => {
     const [pendingAttachmentsByRoom, setPendingAttachmentsByRoom] = useState<Record<string, PendingAttachment[]>>({});
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -872,6 +885,22 @@ export const ChatRoom: React.FC = () => {
         setTranslationView({});
         setTranslationBlocked(false);
     }, [targetLanguage, activeRoomId]);
+
+    useEffect(() => {
+        if (!jumpToEventId) return;
+        const container = timelineRef.current;
+        if (!container) return;
+        const escapedEventId = jumpToEventId.replace(/'/g, "\\'");
+        const target = container.querySelector(`[data-event-id='${escapedEventId}']`) as HTMLElement | null;
+        if (!target) return;
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedEventId(jumpToEventId);
+        onJumpHandled?.();
+        const timer = window.setTimeout(() => {
+            setHighlightedEventId((prev) => (prev === jumpToEventId ? null : prev));
+        }, 1800);
+        return () => window.clearTimeout(timer);
+    }, [jumpToEventId, mergedEvents.length, onJumpHandled]);
 
     useEffect(() => {
         return () => {
@@ -1548,41 +1577,47 @@ export const ChatRoom: React.FC = () => {
                     const sender = event.getSender();
                     const senderMember = sender ? room?.getMember(sender) : null;
                     const senderLabel = getUserLabel(sender, senderMember?.name);
+                    const eventId = event.getId() ?? "";
                     return (
-                        <MessageBubble
+                        <div
                             key={event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`}
-                            event={event}
-                            isMe={isMe}
-                            status={status}
-                            mediaUrl={mediaUrl}
-                            onResend={onResend}
-                            senderLabel={senderLabel}
-                            onOpenMedia={openMediaPreview}
-                            translatedText={translationMap[getEventKey(event)]?.text ?? null}
-                            translationLoading={translationMap[getEventKey(event)]?.loading ?? false}
-                            translationError={translationMap[getEventKey(event)]?.error ?? false}
-                            showTranslation={
-                                translationView[getEventKey(event)] ??
-                                (translationMap[getEventKey(event)]?.text ? !isMe : false)
-                            }
-                            canDeleteFile={isOwnFileEvent(event)}
-                            deleteBusy={deletingEventId === event.getId()}
-                            onDeleteFile={(targetEvent) => {
-                                void onDeleteFileEvent(targetEvent);
-                            }}
-                            onToggleTranslation={() => {
-                                const key = getEventKey(event);
-                                const nextValue = !(translationView[key] ?? false);
-                                setTranslationView((prev) => ({ ...prev, [key]: nextValue }));
-                                if (nextValue) {
-                                    const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
-                                    const messageText = content?.body ?? "";
-                                    if (messageText) {
-                                        void translateEvent(event, messageText, true);
-                                    }
+                            data-event-id={eventId || undefined}
+                            className={highlightedEventId === eventId ? "rounded-xl ring-2 ring-emerald-400/70" : ""}
+                        >
+                            <MessageBubble
+                                event={event}
+                                isMe={isMe}
+                                status={status}
+                                mediaUrl={mediaUrl}
+                                onResend={onResend}
+                                senderLabel={senderLabel}
+                                onOpenMedia={openMediaPreview}
+                                translatedText={translationMap[getEventKey(event)]?.text ?? null}
+                                translationLoading={translationMap[getEventKey(event)]?.loading ?? false}
+                                translationError={translationMap[getEventKey(event)]?.error ?? false}
+                                showTranslation={
+                                    translationView[getEventKey(event)] ??
+                                    (translationMap[getEventKey(event)]?.text ? !isMe : false)
                                 }
-                            }}
-                        />
+                                canDeleteFile={isOwnFileEvent(event)}
+                                deleteBusy={deletingEventId === event.getId()}
+                                onDeleteFile={(targetEvent) => {
+                                    void onDeleteFileEvent(targetEvent);
+                                }}
+                                onToggleTranslation={() => {
+                                    const key = getEventKey(event);
+                                    const nextValue = !(translationView[key] ?? false);
+                                    setTranslationView((prev) => ({ ...prev, [key]: nextValue }));
+                                    if (nextValue) {
+                                        const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
+                                        const messageText = content?.body ?? "";
+                                        if (messageText) {
+                                            void translateEvent(event, messageText, true);
+                                        }
+                                    }
+                                }}
+                            />
+                        </div>
                     );
                 })}
             </div>
