@@ -694,8 +694,6 @@ export const MainLayout: React.FC = () => {
         return matrixClient.mxcUrlToHttp(item.mxcUrl);
     };
 
-    const canDeleteFileItem = (item: FileLibraryItem): boolean => Date.now() - item.ts <= FILE_REVOKE_WINDOW_MS;
-
     const isFileSelected = (eventId: string): boolean => selectedFileIds.includes(eventId);
 
     const toggleFileSelection = (eventId: string): void => {
@@ -723,10 +721,6 @@ export const MainLayout: React.FC = () => {
 
     const onDeleteFileItem = async (item: FileLibraryItem): Promise<void> => {
         if (!matrixClient || !matrixCredentials?.user_id) return;
-        if (!canDeleteFileItem(item)) {
-            setFileActionError(t("layout.fileDeleteExpired"));
-            return;
-        }
         setFileActionError(null);
         try {
             await matrixClient.redactEvent(item.roomId, item.eventId);
@@ -752,10 +746,6 @@ export const MainLayout: React.FC = () => {
         if (targets.length === 0) return;
         let failed = 0;
         for (const item of targets) {
-            if (!canDeleteFileItem(item)) {
-                failed += 1;
-                continue;
-            }
             try {
                 await matrixClient?.redactEvent(item.roomId, item.eventId);
                 if (matrixCredentials?.hs_url && matrixCredentials.access_token) {
@@ -1342,7 +1332,8 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 )}
                                 <div className="px-6 pt-4 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
-                                    <div className="grid grid-cols-[84px_90px_90px_1fr] gap-2">
+                                    <div className="grid grid-cols-[32px_84px_90px_90px_1fr] gap-2">
+                                        <span />
                                         <span>{t("layout.fileColumnPreview")}</span>
                                         <span>{t("layout.fileColumnType")}</span>
                                         <span>{t("layout.fileColumnSize")}</span>
@@ -1360,7 +1351,17 @@ export const MainLayout: React.FC = () => {
                                             const ext = getFileExtension(item.body, item.mimeType);
                                             const httpUrl = getHttpFileUrl(item);
                                             return (
-                                                <div key={item.eventId} className="grid grid-cols-[84px_90px_90px_1fr] items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                                <div key={item.eventId} className="grid grid-cols-[32px_84px_90px_90px_1fr] items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                                    <div className="flex items-center justify-center">
+                                                        {fileBatchMode ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isFileSelected(item.eventId)}
+                                                                onChange={() => toggleFileSelection(item.eventId)}
+                                                                className="h-4 w-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900"
+                                                            />
+                                                        ) : null}
+                                                    </div>
                                                     <div className="h-14 w-20 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                                                         {fileType === "image" && httpUrl ? (
                                                             <img src={httpUrl} alt={item.body} className="h-full w-full object-cover" />
@@ -1377,14 +1378,6 @@ export const MainLayout: React.FC = () => {
                                                         {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
                                                     </div>
                                                     <div className="relative flex items-center justify-between gap-2">
-                                                        {fileBatchMode && (
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isFileSelected(item.eventId)}
-                                                                onChange={() => toggleFileSelection(item.eventId)}
-                                                                className="h-4 w-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900"
-                                                            />
-                                                        )}
                                                         <div className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
                                                             {new Date(item.ts).toLocaleString()}
                                                         </div>
@@ -1578,5 +1571,3 @@ type FileLibraryRoomSummary = {
     unknownSizeCount: number;
     latestTs: number;
 };
-
-const FILE_REVOKE_WINDOW_MS = 5 * 60 * 1000;
