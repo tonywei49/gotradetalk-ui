@@ -712,6 +712,25 @@ export const MainLayout: React.FC = () => {
     }, [activeTab, filteredRoomSummaryList, selectedFileRoomId]);
 
     useEffect(() => {
+        if (activeTab !== "files") return;
+        traceEvent("files.room_filter_changed", {
+            roomSearch: fileRoomSearch,
+            selectedRoomId: selectedFileRoomId,
+            roomCount: filteredRoomSummaryList.length,
+        });
+    }, [activeTab, fileRoomSearch, selectedFileRoomId, filteredRoomSummaryList.length]);
+
+    useEffect(() => {
+        if (activeTab !== "files" || !selectedFileRoomId) return;
+        traceEvent("files.list_filter_changed", {
+            roomId: selectedFileRoomId,
+            keyword: fileListSearch,
+            typeFilter: fileListTypeFilter,
+            visibleCount: visibleSelectedRoomFiles.length,
+        });
+    }, [activeTab, selectedFileRoomId, fileListSearch, fileListTypeFilter, visibleSelectedRoomFiles.length]);
+
+    useEffect(() => {
         setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
     }, [selectedRoomFiles]);
 
@@ -729,6 +748,11 @@ export const MainLayout: React.FC = () => {
     const onOpenFileItem = (item: FileLibraryItem): void => {
         const url = getHttpFileUrl(item);
         if (!url) return;
+        traceEvent("files.download", {
+            roomId: item.roomId,
+            eventId: item.eventId,
+            fileName: item.body,
+        });
         const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = item.body || "file";
@@ -742,12 +766,23 @@ export const MainLayout: React.FC = () => {
         const previewType = getFilePreviewType(item);
         const url = getHttpFileUrl(item);
         if (!previewType || !url) return;
+        traceEvent("files.preview_open", {
+            roomId: item.roomId,
+            eventId: item.eventId,
+            type: previewType,
+            fileName: item.body,
+        });
         setPreviewZoom(1);
         setPreviewOffset({ x: 0, y: 0 });
         setFilePreview({ url, type: previewType, name: item.body });
     };
 
     const onJumpToFileMessage = (item: FileLibraryItem): void => {
+        traceEvent("files.jump_to_message", {
+            roomId: item.roomId,
+            eventId: item.eventId,
+            fileName: item.body,
+        });
         setActiveRoomId(item.roomId);
         setJumpToEventId(item.eventId);
         setActiveTab("chat");
@@ -757,6 +792,11 @@ export const MainLayout: React.FC = () => {
     const onDeleteFileItem = async (item: FileLibraryItem): Promise<void> => {
         if (!matrixClient || !matrixCredentials?.user_id) return;
         setFileActionError(null);
+        traceEvent("files.delete_start", {
+            roomId: item.roomId,
+            eventId: item.eventId,
+            fileName: item.body,
+        });
         try {
             await matrixClient.redactEvent(item.roomId, item.eventId);
             if (matrixCredentials.hs_url && matrixCredentials.access_token) {
@@ -770,8 +810,16 @@ export const MainLayout: React.FC = () => {
             setActiveFileMenuEventId(null);
             setSelectedFileIds((prev) => prev.filter((id) => id !== item.eventId));
             setFileLibraryTick((prev) => prev + 1);
+            traceEvent("files.delete_success", {
+                roomId: item.roomId,
+                eventId: item.eventId,
+            });
         } catch {
             setFileActionError(t("layout.fileDeleteFailed"));
+            traceEvent("files.delete_failed", {
+                roomId: item.roomId,
+                eventId: item.eventId,
+            });
         }
     };
 
@@ -779,6 +827,11 @@ export const MainLayout: React.FC = () => {
         if (selectedFileIds.length === 0) return;
         const targets = selectedRoomFiles.filter((item) => selectedFileIds.includes(item.eventId));
         if (targets.length === 0) return;
+        traceEvent("files.batch_delete_start", {
+            roomId: selectedFileRoomId,
+            selectedCount: selectedFileIds.length,
+            targetCount: targets.length,
+        });
         let failed = 0;
         for (const item of targets) {
             try {
@@ -801,8 +854,17 @@ export const MainLayout: React.FC = () => {
         setFileLibraryTick((prev) => prev + 1);
         if (failed > 0) {
             setFileActionError(t("layout.fileDeleteFailed"));
+            traceEvent("files.batch_delete_partial_failed", {
+                roomId: selectedFileRoomId,
+                failed,
+                success: targets.length - failed,
+            });
         } else {
             setFileActionError(null);
+            traceEvent("files.batch_delete_success", {
+                roomId: selectedFileRoomId,
+                success: targets.length,
+            });
         }
     };
 
