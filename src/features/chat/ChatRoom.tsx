@@ -41,7 +41,25 @@ type MessageBubbleProps = {
     translationLoading?: boolean;
     translationError?: boolean;
     onToggleTranslation?: () => void;
+    canDeleteFile?: boolean;
+    deleteBusy?: boolean;
+    onDeleteFile?: (event: MatrixEvent) => void;
 };
+
+type PendingAttachment = {
+    id: string;
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    msgtype: MsgType;
+    isPdf: boolean;
+    mxcUrl: string | null;
+    progress: number;
+    status: "uploading" | "ready" | "failed" | "removing";
+    error?: string;
+};
+
+const FILE_REVOKE_WINDOW_MS = 5 * 1000;
 
 const MessageBubble = ({
     event,
@@ -56,8 +74,12 @@ const MessageBubble = ({
     translationLoading,
     translationError,
     onToggleTranslation,
+    canDeleteFile,
+    deleteBusy,
+    onDeleteFile,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
+    const [showFileMenu, setShowFileMenu] = useState(false);
     const content = event.getContent() as { body?: string; msgtype?: string; info?: { mimetype?: string } } | undefined;
     const messageText = content?.body ?? "";
     const isSending =
@@ -73,6 +95,7 @@ const MessageBubble = ({
         ((content?.info?.mimetype ?? "").toLowerCase().includes("application/pdf") ||
             messageText.toLowerCase().endsWith(".pdf"));
     const isText = !isImage && !isVideo && !isAudio && !isFile;
+    const isFileLike = Boolean(isImage || isVideo || isAudio || isFile);
     const showTranslated = Boolean(isText && showTranslation);
     const displayText = showTranslated
         ? translationLoading
@@ -173,10 +196,38 @@ const MessageBubble = ({
                     </div>
 
                     {/* Time (Incoming: Right of bubble) */}
-                {!isMe && (
-                    <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
-                )}
-            </div>
+                    {!isMe && (
+                        <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
+                    )}
+                    {isFileLike && canDeleteFile && onDeleteFile && (
+                        <div className="relative self-end mb-1">
+                            <button
+                                type="button"
+                                onClick={() => setShowFileMenu((prev) => !prev)}
+                                className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                aria-label={t("chat.fileActions")}
+                                disabled={deleteBusy}
+                            >
+                                <EllipsisVerticalIcon className="h-4 w-4" />
+                            </button>
+                            {showFileMenu && (
+                                <div className="absolute right-0 z-20 mt-1 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                    <button
+                                        type="button"
+                                        className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-slate-800"
+                                        onClick={() => {
+                                            setShowFileMenu(false);
+                                            onDeleteFile(event);
+                                        }}
+                                        disabled={deleteBusy}
+                                    >
+                                        {deleteBusy ? t("common.loading") : t("chat.deleteFileAction")}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             {isText && !isMe && onToggleTranslation && (
                 <button
                     type="button"
@@ -237,6 +288,43 @@ function formatNoticeTimestamp(ts: number): string {
     return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
 }
 
+function parseMxcUri(mxcUrl: string): { serverName: string; mediaId: string } | null {
+    const match = /^mxc:\/\/([^/]+)\/(.+)$/.exec(mxcUrl);
+    if (!match) return null;
+    return { serverName: match[1], mediaId: match[2] };
+}
+
+async function cleanupUploadedMedia(
+    hsUrl: string,
+    accessToken: string,
+    mxcUrl: string,
+): Promise<boolean> {
+    const parsed = parseMxcUri(mxcUrl);
+    if (!parsed) return false;
+    const encodedServerName = encodeURIComponent(parsed.serverName);
+    const encodedMediaId = encodeURIComponent(parsed.mediaId);
+    const paths = [
+        `/_matrix/client/v3/media/delete/${encodedServerName}/${encodedMediaId}`,
+        `/_matrix/client/v1/media/delete/${encodedServerName}/${encodedMediaId}`,
+        `/_matrix/media/v3/delete/${encodedServerName}/${encodedMediaId}`,
+    ];
+    for (const path of paths) {
+        try {
+            const endpoint = new URL(path, hsUrl);
+            const response = await fetch(endpoint.toString(), {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+            if (response.ok || response.status === 404) return true;
+        } catch {
+            // ignore and continue with next endpoint
+        }
+    }
+    return false;
+}
+
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
     const { activeRoomId, onMobileBack, onHideRoom, onTogglePin, isRoomPinned, chatReceiveLanguage, companyName } =
@@ -290,8 +378,8 @@ export const ChatRoom: React.FC = () => {
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
-    const [uploadingFileName, setUploadingFileName] = useState<string | null>(null);
-    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+    const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+    const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
@@ -304,6 +392,7 @@ export const ChatRoom: React.FC = () => {
     const translateAccessToken = hubAccessToken ?? matrixAccessToken;
     const translateHsUrl = hubAccessToken ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
+    const hasPendingUpload = pendingAttachments.some((item) => item.status === "uploading");
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -372,6 +461,7 @@ export const ChatRoom: React.FC = () => {
         const filtered = combined.filter((event) => {
             const type = event.getType();
             if (type !== EventType.RoomMessage && type !== EventType.RoomMember) return false;
+            if (type === EventType.RoomMessage && event.isRedacted()) return false;
             if (type === EventType.RoomMember) {
                 const content = (event.getContent() ?? {}) as { membership?: string };
                 const prevContent = (event.getPrevContent() ?? {}) as { membership?: string };
@@ -722,6 +812,20 @@ export const ChatRoom: React.FC = () => {
         setTranslationBlocked(false);
     }, [targetLanguage, activeRoomId]);
 
+    useEffect(() => {
+        setPendingAttachments((prev) => {
+            if (!prev.length) return prev;
+            if (matrixCredentials?.hs_url && matrixCredentials.access_token) {
+                prev.forEach((item) => {
+                    if (item.mxcUrl) {
+                        void cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
+                    }
+                });
+            }
+            return [];
+        });
+    }, [activeRoomId, matrixCredentials?.access_token, matrixCredentials?.hs_url]);
+
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
         if (!room || !matrixClient) return;
@@ -793,14 +897,22 @@ export const ChatRoom: React.FC = () => {
     const onSend = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
         const trimmed = composerText.trim();
-        if (!trimmed) return;
+        if (hasPendingUpload) {
+            setUploadError(t("chat.uploadStillInProgress"));
+            return;
+        }
+        const readyAttachments = pendingAttachments.filter((item) => item.status === "ready" && item.mxcUrl);
+        if (!trimmed && readyAttachments.length === 0) return;
         setComposerText("");
-        const sendResult = (await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, {
-            msgtype: MsgType.Text,
-            body: trimmed,
-        })) as { event_id?: string } | undefined;
-
-        const sentEventId = sendResult?.event_id;
+        setUploadError(null);
+        let sentEventId: string | undefined;
+        if (trimmed) {
+            const sendResult = (await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, {
+                msgtype: MsgType.Text,
+                body: trimmed,
+            })) as { event_id?: string } | undefined;
+            sentEventId = sendResult?.event_id;
+        }
         const peerLang = (directPeerContact?.translation_locale || directPeerContact?.locale || "").trim();
         const shouldPretranslateForClient =
             userType === "staff" &&
@@ -857,11 +969,73 @@ export const ChatRoom: React.FC = () => {
                 }).catch(() => undefined);
             });
         }
+        for (const attachment of readyAttachments) {
+            const info: { mimetype?: string; size: number } = {
+                size: attachment.fileSize,
+            };
+            if (attachment.mimeType) info.mimetype = attachment.mimeType;
+            if (attachment.isPdf && !info.mimetype) info.mimetype = "application/pdf";
+            const content: Record<string, unknown> = {
+                body: attachment.fileName,
+                msgtype: attachment.msgtype,
+                url: attachment.mxcUrl,
+                info,
+            };
+            await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, content as never);
+        }
+        if (readyAttachments.length > 0) {
+            setPendingAttachments((prev) => prev.filter((item) => item.status !== "ready"));
+        }
     };
 
     const onResend = async (event: MatrixEvent): Promise<void> => {
         if (!matrixClient || !room) return;
         await matrixClient.resendEvent(event, room);
+    };
+
+    const isFileEvent = (event: MatrixEvent): boolean => {
+        const content = event.getContent() as { msgtype?: string } | undefined;
+        const msgtype = content?.msgtype;
+        return (
+            msgtype === MsgType.File ||
+            msgtype === MsgType.Image ||
+            msgtype === MsgType.Video ||
+            msgtype === MsgType.Audio
+        );
+    };
+
+    const canDeleteFileEvent = (event: MatrixEvent): boolean => {
+        if (!userId || !isFileEvent(event)) return false;
+        if (event.getSender() !== userId) return false;
+        if (!event.getId()) return false;
+        return Date.now() - event.getTs() <= FILE_REVOKE_WINDOW_MS;
+    };
+
+    const onDeleteFileEvent = async (event: MatrixEvent): Promise<void> => {
+        const eventId = event.getId();
+        if (!matrixClient || !activeRoomId || !eventId || !userId) return;
+        if (!canDeleteFileEvent(event)) {
+            setUploadError(t("chat.deleteFileExpired"));
+            return;
+        }
+        setDeletingEventId(eventId);
+        try {
+            await matrixClient.redactEvent(activeRoomId, eventId);
+            const content = event.getContent() as { url?: string } | undefined;
+            if (content?.url && matrixCredentials?.hs_url && matrixCredentials?.access_token) {
+                await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, content.url);
+            }
+            const selfLabel = getLocalPart(userId) || userId;
+            await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, {
+                msgtype: MsgType.Notice,
+                body: t("chat.fileRevokedNotice", { name: selfLabel }),
+            } as never);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : t("chat.deleteFileFailed");
+            setUploadError(message || t("chat.deleteFileFailed"));
+        } finally {
+            setDeletingEventId(null);
+        }
     };
 
     const otherMember = room
@@ -907,9 +1081,9 @@ export const ChatRoom: React.FC = () => {
         fileInputRef.current?.click();
     };
 
-    const onUploadFile = async (file: File): Promise<void> => {
+    const uploadDraftAttachment = async (file: File): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
-
+        const attachmentId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const normalizeMime = (value: string | undefined): string => (value ?? "").toLowerCase();
         const mimeType = normalizeMime(file.type);
         const isImageFile = mimeType.startsWith("image/");
@@ -923,9 +1097,20 @@ export const ChatRoom: React.FC = () => {
                 : isAudioFile
                     ? MsgType.Audio
                     : MsgType.File;
-
-        setUploadingFileName(file.name);
-        setUploadProgress(0);
+        setPendingAttachments((prev) => [
+            ...prev,
+            {
+                id: attachmentId,
+                fileName: file.name,
+                fileSize: file.size,
+                mimeType,
+                msgtype,
+                isPdf: isPdfFile,
+                mxcUrl: null,
+                progress: 0,
+                status: "uploading",
+            },
+        ]);
         setUploadError(null);
 
         try {
@@ -936,7 +1121,11 @@ export const ChatRoom: React.FC = () => {
                     const total = progress.total ?? 0;
                     if (!total) return;
                     const percent = Math.min(100, Math.max(0, Math.round((uploaded / total) * 100)));
-                    setUploadProgress(percent);
+                    setPendingAttachments((prev) =>
+                        prev.map((item) =>
+                            item.id === attachmentId ? { ...item, progress: percent, status: "uploading" } : item,
+                        ),
+                    );
                 },
             })) as { content_uri?: string } | string;
 
@@ -944,28 +1133,34 @@ export const ChatRoom: React.FC = () => {
             if (!mxcUrl) {
                 throw new Error("upload content_uri missing");
             }
-
-            const info: { mimetype?: string; size: number } = {
-                size: file.size,
-            };
-            if (mimeType) info.mimetype = mimeType;
-            if (isPdfFile && !info.mimetype) info.mimetype = "application/pdf";
-
-            const content: Record<string, unknown> = {
-                body: file.name,
-                msgtype,
-                url: mxcUrl,
-                info,
-            };
-            await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, content as never);
+            setPendingAttachments((prev) =>
+                prev.map((item) =>
+                    item.id === attachmentId
+                        ? { ...item, mxcUrl, progress: 100, status: "ready" }
+                        : item,
+                ),
+            );
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : typeof error === "string" ? error : t("chat.uploadFailed");
-            setUploadError(message || t("chat.uploadFailed"));
-        } finally {
-            setUploadingFileName(null);
-            setUploadProgress(null);
+            setPendingAttachments((prev) =>
+                prev.map((item) =>
+                    item.id === attachmentId ? { ...item, status: "failed", error: message || t("chat.uploadFailed") } : item,
+                ),
+            );
         }
+    };
+
+    const onRemovePendingAttachment = async (attachmentId: string): Promise<void> => {
+        const target = pendingAttachments.find((item) => item.id === attachmentId);
+        if (!target || target.status === "uploading") return;
+        setPendingAttachments((prev) =>
+            prev.map((item) => (item.id === attachmentId ? { ...item, status: "removing" } : item)),
+        );
+        if (target.mxcUrl && matrixCredentials?.hs_url && matrixCredentials?.access_token) {
+            await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, target.mxcUrl);
+        }
+        setPendingAttachments((prev) => prev.filter((item) => item.id !== attachmentId));
     };
 
     const addRecentEmoji = (emoji: string): void => {
@@ -1245,6 +1440,19 @@ export const ChatRoom: React.FC = () => {
                             </div>
                         );
                     }
+                    const eventContent = event.getContent() as { body?: string; msgtype?: string } | undefined;
+                    if (eventContent?.msgtype === MsgType.Notice && eventContent.body) {
+                        return (
+                            <div
+                                key={event.getId() ?? event.getTxnId() ?? `${event.getTs()}-notice`}
+                                className="mb-3 flex justify-center"
+                            >
+                                <div className="rounded-full bg-slate-200 px-3 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    {formatNoticeTimestamp(event.getTs())} {eventContent.body}
+                                </div>
+                            </div>
+                        );
+                    }
                     const status = event.getAssociatedStatus?.() ?? event.status ?? null;
                     const isMe = event.getSender() === userId;
                     const content = event.getContent() as { url?: string; msgtype?: string } | undefined;
@@ -1274,6 +1482,11 @@ export const ChatRoom: React.FC = () => {
                                 translationView[getEventKey(event)] ??
                                 (translationMap[getEventKey(event)]?.text ? !isMe : false)
                             }
+                            canDeleteFile={canDeleteFileEvent(event)}
+                            deleteBusy={deletingEventId === event.getId()}
+                            onDeleteFile={(targetEvent) => {
+                                void onDeleteFileEvent(targetEvent);
+                            }}
                             onToggleTranslation={() => {
                                 const key = getEventKey(event);
                                 const nextValue = !(translationView[key] ?? false);
@@ -1319,7 +1532,7 @@ export const ChatRoom: React.FC = () => {
                         type="button"
                         onClick={onPickAttachment}
                         className="hover:text-[#2F5C56] dark:hover:text-emerald-400"
-                        disabled={isDeprecatedRoom || Boolean(uploadingFileName)}
+                        disabled={isDeprecatedRoom}
                     >
                         <PaperClipIcon className="w-6 h-6" />
                     </button>
@@ -1334,11 +1547,14 @@ export const ChatRoom: React.FC = () => {
                         ref={fileInputRef}
                         type="file"
                         className="hidden"
+                        multiple
                         onChange={(event) => {
-                            const file = event.target.files?.[0];
+                            const files = Array.from(event.target.files ?? []);
                             event.target.value = "";
-                            if (!file) return;
-                            void onUploadFile(file);
+                            if (!files.length) return;
+                            files.forEach((file) => {
+                                void uploadDraftAttachment(file);
+                            });
                         }}
                     />
                     <textarea
@@ -1360,18 +1576,41 @@ export const ChatRoom: React.FC = () => {
                         type="button"
                         onClick={() => void onSend()}
                         className="bg-[#2F5C56] hover:bg-[#244a45] text-white p-3 rounded-xl shadow-md transition-colors flex items-center justify-center dark:bg-emerald-500 dark:hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={isDeprecatedRoom}
+                        disabled={isDeprecatedRoom || (composerText.trim().length === 0 && pendingAttachments.filter((item) => item.status === "ready").length === 0)}
                     >
                         <PaperAirplaneIcon className="w-5 h-5" />
                     </button>
                 </div>
-                {(uploadingFileName || uploadError) && (
+                {(pendingAttachments.length > 0 || uploadError) && (
                     <div className="mt-2 text-xs">
-                        {uploadingFileName && (
-                            <div className="text-slate-500 dark:text-slate-400">
-                                {t("chat.uploadingFile", { name: uploadingFileName, percent: uploadProgress ?? 0 })}
+                        {pendingAttachments.map((item) => (
+                            <div
+                                key={item.id}
+                                className="mb-1 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 dark:border-slate-700 dark:bg-slate-800"
+                            >
+                                <div className="min-w-0 text-slate-600 dark:text-slate-300">
+                                    <div className="truncate">{item.fileName}</div>
+                                    <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                        {item.status === "uploading" &&
+                                            t("chat.uploadingFile", {
+                                                name: item.fileName,
+                                                percent: item.progress,
+                                            })}
+                                        {item.status === "ready" && t("chat.fileReadyToSend")}
+                                        {item.status === "failed" && (item.error || t("chat.uploadFailed"))}
+                                        {item.status === "removing" && t("chat.removingFile")}
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => void onRemovePendingAttachment(item.id)}
+                                    className="ml-2 rounded-full px-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                    disabled={item.status === "uploading" || item.status === "removing"}
+                                >
+                                    ✕
+                                </button>
                             </div>
-                        )}
+                        ))}
                         {uploadError && <div className="text-rose-500">{uploadError}</div>}
                     </div>
                 )}
