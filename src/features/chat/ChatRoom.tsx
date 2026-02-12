@@ -35,7 +35,7 @@ type MessageBubbleProps = {
     onResend: (event: MatrixEvent) => void;
     mediaUrl: string | null;
     senderLabel: string;
-    onOpenMedia: (payload: { url: string; type: "image" | "video" }) => void;
+    onOpenMedia: (payload: { url: string; type: "image" | "video" | "pdf" }) => void;
     translatedText?: string | null;
     showTranslation?: boolean;
     translationLoading?: boolean;
@@ -58,7 +58,7 @@ const MessageBubble = ({
     onToggleTranslation,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
-    const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
+    const content = event.getContent() as { body?: string; msgtype?: string; info?: { mimetype?: string } } | undefined;
     const messageText = content?.body ?? "";
     const isSending =
         status === EventStatus.SENDING || status === EventStatus.ENCRYPTING || status === EventStatus.QUEUED;
@@ -67,7 +67,12 @@ const MessageBubble = ({
     const isImage = content?.msgtype === MsgType.Image && mediaUrl;
     const isVideo = content?.msgtype === MsgType.Video && mediaUrl;
     const isAudio = content?.msgtype === MsgType.Audio && mediaUrl;
-    const isText = !isImage && !isVideo && !isAudio;
+    const isFile = content?.msgtype === MsgType.File;
+    const isPdf =
+        Boolean(isFile) &&
+        ((content?.info?.mimetype ?? "").toLowerCase().includes("application/pdf") ||
+            messageText.toLowerCase().endsWith(".pdf"));
+    const isText = !isImage && !isVideo && !isAudio && !isFile;
     const showTranslated = Boolean(isText && showTranslation);
     const displayText = showTranslated
         ? translationLoading
@@ -139,6 +144,29 @@ const MessageBubble = ({
                             </button>
                         ) : isAudio ? (
                             <audio src={mediaUrl} controls className="w-64" />
+                        ) : isFile && mediaUrl ? (
+                            isPdf ? (
+                                <button
+                                    type="button"
+                                    onClick={() => onOpenMedia({ url: mediaUrl, type: "pdf" })}
+                                    className={`rounded-lg px-3 py-2 text-left underline ${
+                                        isMe ? "bg-white/10 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                                    }`}
+                                >
+                                    {t("chat.previewPdf")} {messageText}
+                                </button>
+                            ) : (
+                                <a
+                                    href={mediaUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`rounded-lg px-3 py-2 underline ${
+                                        isMe ? "bg-white/10 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                                    }`}
+                                >
+                                    {t("chat.downloadFile")} {messageText}
+                                </a>
+                            )
                         ) : (
                             <span className="whitespace-pre-wrap break-words">{displayText}</span>
                         )}
@@ -234,7 +262,7 @@ export const ChatRoom: React.FC = () => {
     const [removeMemberBusy, setRemoveMemberBusy] = useState(false);
     const [removeMemberError, setRemoveMemberError] = useState<string | null>(null);
     const [showRoomInfoModal, setShowRoomInfoModal] = useState(false);
-    const [mediaPreview, setMediaPreview] = useState<{ url: string; type: "image" | "video" } | null>(null);
+    const [mediaPreview, setMediaPreview] = useState<{ url: string; type: "image" | "video" | "pdf" } | null>(null);
     const [mediaZoom, setMediaZoom] = useState(1);
     const [mediaOffset, setMediaOffset] = useState({ x: 0, y: 0 });
     const draggingRef = useRef(false);
@@ -261,6 +289,10 @@ export const ChatRoom: React.FC = () => {
     const emojiBoardRef = useRef<HTMLDivElement | null>(null);
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const [uploadingFileName, setUploadingFileName] = useState<string | null>(null);
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -863,10 +895,77 @@ export const ChatRoom: React.FC = () => {
                 return a.name.localeCompare(b.name);
             });
     }, [invitedMembers, powerLevels]);
-    const openMediaPreview = (payload: { url: string; type: "image" | "video" }): void => {
+    const openMediaPreview = (payload: { url: string; type: "image" | "video" | "pdf" }): void => {
         setMediaPreview(payload);
         setMediaZoom(1);
         setMediaOffset({ x: 0, y: 0 });
+    };
+
+    const onPickAttachment = (): void => {
+        if (isDeprecatedRoom) return;
+        setUploadError(null);
+        fileInputRef.current?.click();
+    };
+
+    const onUploadFile = async (file: File): Promise<void> => {
+        if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
+
+        const normalizeMime = (value: string | undefined): string => (value ?? "").toLowerCase();
+        const mimeType = normalizeMime(file.type);
+        const isImageFile = mimeType.startsWith("image/");
+        const isVideoFile = mimeType.startsWith("video/");
+        const isAudioFile = mimeType.startsWith("audio/");
+        const isPdfFile = mimeType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+        const msgtype = isImageFile
+            ? MsgType.Image
+            : isVideoFile
+                ? MsgType.Video
+                : isAudioFile
+                    ? MsgType.Audio
+                    : MsgType.File;
+
+        setUploadingFileName(file.name);
+        setUploadProgress(0);
+        setUploadError(null);
+
+        try {
+            const uploadResult = (await matrixClient.uploadContent(file, {
+                includeFilename: false,
+                progressHandler: (progress) => {
+                    const uploaded = progress.loaded ?? 0;
+                    const total = progress.total ?? 0;
+                    if (!total) return;
+                    const percent = Math.min(100, Math.max(0, Math.round((uploaded / total) * 100)));
+                    setUploadProgress(percent);
+                },
+            })) as { content_uri?: string } | string;
+
+            const mxcUrl = typeof uploadResult === "string" ? uploadResult : uploadResult.content_uri;
+            if (!mxcUrl) {
+                throw new Error("upload content_uri missing");
+            }
+
+            const info: { mimetype?: string; size: number } = {
+                size: file.size,
+            };
+            if (mimeType) info.mimetype = mimeType;
+            if (isPdfFile && !info.mimetype) info.mimetype = "application/pdf";
+
+            const content: Record<string, unknown> = {
+                body: file.name,
+                msgtype,
+                url: mxcUrl,
+                info,
+            };
+            await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, content as never);
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : typeof error === "string" ? error : t("chat.uploadFailed");
+            setUploadError(message || t("chat.uploadFailed"));
+        } finally {
+            setUploadingFileName(null);
+            setUploadProgress(null);
+        }
     };
 
     const addRecentEmoji = (emoji: string): void => {
@@ -1216,7 +1315,12 @@ export const ChatRoom: React.FC = () => {
                     >
                         <FaceSmileIcon className="w-6 h-6" />
                     </button>
-                    <button type="button" className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
+                    <button
+                        type="button"
+                        onClick={onPickAttachment}
+                        className="hover:text-[#2F5C56] dark:hover:text-emerald-400"
+                        disabled={isDeprecatedRoom || Boolean(uploadingFileName)}
+                    >
                         <PaperClipIcon className="w-6 h-6" />
                     </button>
                     <button type="button" className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
@@ -1226,6 +1330,17 @@ export const ChatRoom: React.FC = () => {
 
                 {/* Input Area */}
                 <div className="flex gap-3 items-end">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (!file) return;
+                            void onUploadFile(file);
+                        }}
+                    />
                     <textarea
                         ref={composerRef}
                         value={composerText}
@@ -1250,6 +1365,16 @@ export const ChatRoom: React.FC = () => {
                         <PaperAirplaneIcon className="w-5 h-5" />
                     </button>
                 </div>
+                {(uploadingFileName || uploadError) && (
+                    <div className="mt-2 text-xs">
+                        {uploadingFileName && (
+                            <div className="text-slate-500 dark:text-slate-400">
+                                {t("chat.uploadingFile", { name: uploadingFileName, percent: uploadProgress ?? 0 })}
+                            </div>
+                        )}
+                        {uploadError && <div className="text-rose-500">{uploadError}</div>}
+                    </div>
+                )}
                 {showEmojiBoard && (
                     <div
                         ref={emojiBoardRef}
@@ -1767,6 +1892,12 @@ export const ChatRoom: React.FC = () => {
                                 draggable={false}
                             />
                         </div>
+                    ) : mediaPreview.type === "pdf" ? (
+                        <iframe
+                            src={mediaPreview.url}
+                            title={t("chat.previewPdf")}
+                            className="h-[90vh] w-[90vw] rounded-lg bg-white"
+                        />
                     ) : (
                         <video src={mediaPreview.url} controls className="max-h-[90vh] max-w-[90vw] rounded-lg" />
                     )}
