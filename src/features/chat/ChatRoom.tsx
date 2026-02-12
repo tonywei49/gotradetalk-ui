@@ -59,7 +59,7 @@ type PendingAttachment = {
     error?: string;
 };
 
-const FILE_REVOKE_WINDOW_MS = 5 * 1000;
+const FILE_REVOKE_WINDOW_MS = 5 * 60 * 1000;
 
 const MessageBubble = ({
     event,
@@ -294,6 +294,22 @@ function parseMxcUri(mxcUrl: string): { serverName: string; mediaId: string } | 
     return { serverName: match[1], mediaId: match[2] };
 }
 
+function withUpdatedRoomAttachments(
+    prev: Record<string, PendingAttachment[]>,
+    roomId: string,
+    updater: (items: PendingAttachment[]) => PendingAttachment[],
+): Record<string, PendingAttachment[]> {
+    const current = prev[roomId] ?? [];
+    const nextItems = updater(current);
+    const next: Record<string, PendingAttachment[]> = { ...prev };
+    if (nextItems.length === 0) {
+        delete next[roomId];
+    } else {
+        next[roomId] = nextItems;
+    }
+    return next;
+}
+
 async function cleanupUploadedMedia(
     hsUrl: string,
     accessToken: string,
@@ -378,7 +394,9 @@ export const ChatRoom: React.FC = () => {
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
-    const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+    const pendingAttachmentsByRoomRef = useRef<Record<string, PendingAttachment[]>>({});
+    const matrixCredentialsRef = useRef(matrixCredentials);
+    const [pendingAttachmentsByRoom, setPendingAttachmentsByRoom] = useState<Record<string, PendingAttachment[]>>({});
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const hubAccessToken = hubSession?.access_token ?? null;
@@ -392,7 +410,19 @@ export const ChatRoom: React.FC = () => {
     const translateAccessToken = hubAccessToken ?? matrixAccessToken;
     const translateHsUrl = hubAccessToken ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
+    const pendingAttachments = useMemo(
+        () => (activeRoomId ? pendingAttachmentsByRoom[activeRoomId] ?? [] : []),
+        [activeRoomId, pendingAttachmentsByRoom],
+    );
     const hasPendingUpload = pendingAttachments.some((item) => item.status === "uploading");
+
+    useEffect(() => {
+        pendingAttachmentsByRoomRef.current = pendingAttachmentsByRoom;
+    }, [pendingAttachmentsByRoom]);
+
+    useEffect(() => {
+        matrixCredentialsRef.current = matrixCredentials;
+    }, [matrixCredentials]);
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -813,18 +843,18 @@ export const ChatRoom: React.FC = () => {
     }, [targetLanguage, activeRoomId]);
 
     useEffect(() => {
-        setPendingAttachments((prev) => {
-            if (!prev.length) return prev;
-            if (matrixCredentials?.hs_url && matrixCredentials.access_token) {
-                prev.forEach((item) => {
+        return () => {
+            const creds = matrixCredentialsRef.current;
+            if (!creds?.hs_url || !creds.access_token) return;
+            Object.values(pendingAttachmentsByRoomRef.current).forEach((items) => {
+                items.forEach((item) => {
                     if (item.mxcUrl) {
-                        void cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
+                        void cleanupUploadedMedia(creds.hs_url, creds.access_token, item.mxcUrl);
                     }
                 });
-            }
-            return [];
-        });
-    }, [activeRoomId, matrixCredentials?.access_token, matrixCredentials?.hs_url]);
+            });
+        };
+    }, []);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
@@ -983,8 +1013,11 @@ export const ChatRoom: React.FC = () => {
             };
             await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, content as never);
         }
-        if (readyAttachments.length > 0) {
-            setPendingAttachments((prev) => prev.filter((item) => item.status !== "ready"));
+        if (readyAttachments.length > 0 && activeRoomId) {
+            const roomId = activeRoomId;
+            setPendingAttachmentsByRoom((prev) =>
+                withUpdatedRoomAttachments(prev, roomId, (items) => items.filter((item) => item.status !== "ready")),
+            );
         }
     };
 
@@ -1004,9 +1037,13 @@ export const ChatRoom: React.FC = () => {
         );
     };
 
-    const canDeleteFileEvent = (event: MatrixEvent): boolean => {
+    const isOwnFileEvent = (event: MatrixEvent): boolean => {
         if (!userId || !isFileEvent(event)) return false;
-        if (event.getSender() !== userId) return false;
+        return event.getSender() === userId;
+    };
+
+    const canDeleteFileEvent = (event: MatrixEvent): boolean => {
+        if (!isOwnFileEvent(event)) return false;
         if (!event.getId()) return false;
         return Date.now() - event.getTs() <= FILE_REVOKE_WINDOW_MS;
     };
@@ -1083,6 +1120,7 @@ export const ChatRoom: React.FC = () => {
 
     const uploadDraftAttachment = async (file: File): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
+        const roomId = activeRoomId;
         const attachmentId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const normalizeMime = (value: string | undefined): string => (value ?? "").toLowerCase();
         const mimeType = normalizeMime(file.type);
@@ -1097,20 +1135,22 @@ export const ChatRoom: React.FC = () => {
                 : isAudioFile
                     ? MsgType.Audio
                     : MsgType.File;
-        setPendingAttachments((prev) => [
-            ...prev,
-            {
-                id: attachmentId,
-                fileName: file.name,
-                fileSize: file.size,
-                mimeType,
-                msgtype,
-                isPdf: isPdfFile,
-                mxcUrl: null,
-                progress: 0,
-                status: "uploading",
-            },
-        ]);
+        setPendingAttachmentsByRoom((prev) =>
+            withUpdatedRoomAttachments(prev, roomId, (items) => [
+                ...items,
+                {
+                    id: attachmentId,
+                    fileName: file.name,
+                    fileSize: file.size,
+                    mimeType,
+                    msgtype,
+                    isPdf: isPdfFile,
+                    mxcUrl: null,
+                    progress: 0,
+                    status: "uploading",
+                },
+            ]),
+        );
         setUploadError(null);
 
         try {
@@ -1121,9 +1161,11 @@ export const ChatRoom: React.FC = () => {
                     const total = progress.total ?? 0;
                     if (!total) return;
                     const percent = Math.min(100, Math.max(0, Math.round((uploaded / total) * 100)));
-                    setPendingAttachments((prev) =>
-                        prev.map((item) =>
-                            item.id === attachmentId ? { ...item, progress: percent, status: "uploading" } : item,
+                    setPendingAttachmentsByRoom((prev) =>
+                        withUpdatedRoomAttachments(prev, roomId, (items) =>
+                            items.map((item) =>
+                                item.id === attachmentId ? { ...item, progress: percent, status: "uploading" } : item,
+                            ),
                         ),
                     );
                 },
@@ -1133,34 +1175,44 @@ export const ChatRoom: React.FC = () => {
             if (!mxcUrl) {
                 throw new Error("upload content_uri missing");
             }
-            setPendingAttachments((prev) =>
-                prev.map((item) =>
-                    item.id === attachmentId
-                        ? { ...item, mxcUrl, progress: 100, status: "ready" }
-                        : item,
+            setPendingAttachmentsByRoom((prev) =>
+                withUpdatedRoomAttachments(prev, roomId, (items) =>
+                    items.map((item) =>
+                        item.id === attachmentId
+                            ? { ...item, mxcUrl, progress: 100, status: "ready" }
+                            : item,
+                    ),
                 ),
             );
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : typeof error === "string" ? error : t("chat.uploadFailed");
-            setPendingAttachments((prev) =>
-                prev.map((item) =>
-                    item.id === attachmentId ? { ...item, status: "failed", error: message || t("chat.uploadFailed") } : item,
+            setPendingAttachmentsByRoom((prev) =>
+                withUpdatedRoomAttachments(prev, roomId, (items) =>
+                    items.map((item) =>
+                        item.id === attachmentId ? { ...item, status: "failed", error: message || t("chat.uploadFailed") } : item,
+                    ),
                 ),
             );
         }
     };
 
     const onRemovePendingAttachment = async (attachmentId: string): Promise<void> => {
+        if (!activeRoomId) return;
+        const roomId = activeRoomId;
         const target = pendingAttachments.find((item) => item.id === attachmentId);
         if (!target || target.status === "uploading") return;
-        setPendingAttachments((prev) =>
-            prev.map((item) => (item.id === attachmentId ? { ...item, status: "removing" } : item)),
+        setPendingAttachmentsByRoom((prev) =>
+            withUpdatedRoomAttachments(prev, roomId, (items) =>
+                items.map((item) => (item.id === attachmentId ? { ...item, status: "removing" } : item)),
+            ),
         );
         if (target.mxcUrl && matrixCredentials?.hs_url && matrixCredentials?.access_token) {
             await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, target.mxcUrl);
         }
-        setPendingAttachments((prev) => prev.filter((item) => item.id !== attachmentId));
+        setPendingAttachmentsByRoom((prev) =>
+            withUpdatedRoomAttachments(prev, roomId, (items) => items.filter((item) => item.id !== attachmentId)),
+        );
     };
 
     const addRecentEmoji = (emoji: string): void => {
@@ -1482,7 +1534,7 @@ export const ChatRoom: React.FC = () => {
                                 translationView[getEventKey(event)] ??
                                 (translationMap[getEventKey(event)]?.text ? !isMe : false)
                             }
-                            canDeleteFile={canDeleteFileEvent(event)}
+                            canDeleteFile={isOwnFileEvent(event)}
                             deleteBusy={deletingEventId === event.getId()}
                             onDeleteFile={(targetEvent) => {
                                 void onDeleteFileEvent(targetEvent);

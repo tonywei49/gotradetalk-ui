@@ -290,7 +290,7 @@
         "uploadStillInProgress": "Some files are still uploading. Please wait.",
         "fileActions": "File actions",
         "deleteFileAction": "Delete",
-        "deleteFileExpired": "Only the uploader can delete this file within 5 seconds.",
+        "deleteFileExpired": "Only the uploader can delete this file within 5 minutes.",
         "deleteFileFailed": "Failed to delete file.",
         "fileRevokedNotice": "{{name}} revoked a file",
         "removeMember": "Remove",

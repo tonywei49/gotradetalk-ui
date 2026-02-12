@@ -290,7 +290,7 @@
         "uploadStillInProgress": "仍有檔案上傳中，請稍候。",
         "fileActions": "檔案操作",
         "deleteFileAction": "刪除",
-        "deleteFileExpired": "僅上傳者可在 5 秒內撤回檔案。",
+        "deleteFileExpired": "僅上傳者可在 5 分鐘內撤回檔案。",
         "deleteFileFailed": "刪除檔案失敗。",
         "fileRevokedNotice": "{{name}}撤回一個文件",
         "removeMember": "移除",
