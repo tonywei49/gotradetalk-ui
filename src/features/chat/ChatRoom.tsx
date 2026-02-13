@@ -66,11 +66,24 @@ type PendingAttachment = {
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
+const PENDING_ATTACHMENT_DRAFTS_KEY_PREFIX = "gtt_pending_attachment_drafts_v1";
 
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
     createdAt: number;
     ownerUserId: string;
+};
+
+type PersistedPendingAttachment = {
+    id: string;
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    msgtype: MsgType;
+    isPdf: boolean;
+    mxcUrl: string;
+    status: "ready";
+    progress: number;
 };
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
@@ -478,6 +491,46 @@ function removeDraftMediaEntries(mxcUrls: string[]): void {
     writeDraftMediaRegistry(next);
 }
 
+function getPendingAttachmentDraftsKey(userId: string): string {
+    return `${PENDING_ATTACHMENT_DRAFTS_KEY_PREFIX}:${userId}`;
+}
+
+function readPersistedPendingAttachments(userId: string): Record<string, PersistedPendingAttachment[]> {
+    try {
+        const raw = localStorage.getItem(getPendingAttachmentDraftsKey(userId));
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as Record<string, PersistedPendingAttachment[]>;
+        if (!parsed || typeof parsed !== "object") return {};
+        const out: Record<string, PersistedPendingAttachment[]> = {};
+        Object.entries(parsed).forEach(([roomId, items]) => {
+            if (!Array.isArray(items)) return;
+            const filtered = items.filter(
+                (item) =>
+                    item &&
+                    typeof item.id === "string" &&
+                    typeof item.fileName === "string" &&
+                    typeof item.fileSize === "number" &&
+                    typeof item.mimeType === "string" &&
+                    typeof item.msgtype === "string" &&
+                    typeof item.isPdf === "boolean" &&
+                    typeof item.mxcUrl === "string" &&
+                    item.status === "ready",
+            );
+            if (filtered.length > 0) out[roomId] = filtered;
+        });
+        return out;
+    } catch {
+        return {};
+    }
+}
+
+function writePersistedPendingAttachments(
+    userId: string,
+    value: Record<string, PersistedPendingAttachment[]>,
+): void {
+    localStorage.setItem(getPendingAttachmentDraftsKey(userId), JSON.stringify(value));
+}
+
 function mapMediaActionError(error: unknown): "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" {
     const maybeObj = error as { errcode?: string; statusCode?: number; message?: string } | null;
     const message = typeof maybeObj?.message === "string" ? maybeObj.message : String(error ?? "");
@@ -562,8 +615,6 @@ export const ChatRoom: React.FC = () => {
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
-    const pendingAttachmentsByRoomRef = useRef<Record<string, PendingAttachment[]>>({});
-    const matrixCredentialsRef = useRef(matrixCredentials);
     const [pendingAttachmentsByRoom, setPendingAttachmentsByRoom] = useState<Record<string, PendingAttachment[]>>({});
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
@@ -586,12 +637,47 @@ export const ChatRoom: React.FC = () => {
     const hasPendingUpload = pendingAttachments.some((item) => item.status === "uploading");
 
     useEffect(() => {
-        pendingAttachmentsByRoomRef.current = pendingAttachmentsByRoom;
-    }, [pendingAttachmentsByRoom]);
+        if (!userId) return;
+        const persisted = readPersistedPendingAttachments(userId);
+        const restored: Record<string, PendingAttachment[]> = {};
+        Object.entries(persisted).forEach(([roomId, items]) => {
+            restored[roomId] = items.map((item) => ({
+                id: item.id,
+                fileName: item.fileName,
+                fileSize: item.fileSize,
+                mimeType: item.mimeType,
+                sourceFile: undefined,
+                msgtype: item.msgtype,
+                isPdf: item.isPdf,
+                mxcUrl: item.mxcUrl,
+                progress: item.progress,
+                status: "ready",
+            }));
+        });
+        setPendingAttachmentsByRoom(restored);
+    }, [userId]);
 
     useEffect(() => {
-        matrixCredentialsRef.current = matrixCredentials;
-    }, [matrixCredentials]);
+        if (!userId) return;
+        const persisted: Record<string, PersistedPendingAttachment[]> = {};
+        Object.entries(pendingAttachmentsByRoom).forEach(([roomId, items]) => {
+            const readyItems = items
+                .filter((item) => item.status === "ready" && Boolean(item.mxcUrl))
+                .map((item) => ({
+                    id: item.id,
+                    fileName: item.fileName,
+                    fileSize: item.fileSize,
+                    mimeType: item.mimeType,
+                    msgtype: item.msgtype,
+                    isPdf: item.isPdf,
+                    mxcUrl: item.mxcUrl as string,
+                    status: "ready" as const,
+                    progress: item.progress,
+                }));
+            if (readyItems.length > 0) persisted[roomId] = readyItems;
+        });
+        writePersistedPendingAttachments(userId, persisted);
+    }, [pendingAttachmentsByRoom, userId]);
 
     useEffect(() => {
         if (!matrixCredentials?.hs_url || !matrixCredentials.access_token || !userId) return;
@@ -1045,23 +1131,6 @@ export const ChatRoom: React.FC = () => {
         }, 1800);
         return () => window.clearTimeout(timer);
     }, [jumpToEventId, mergedEvents.length, onJumpHandled]);
-
-    useEffect(() => {
-        return () => {
-            const creds = matrixCredentialsRef.current;
-            if (!creds?.hs_url || !creds.access_token) return;
-            const pendingMxcUrls: string[] = [];
-            Object.values(pendingAttachmentsByRoomRef.current).forEach((items) => {
-                items.forEach((item) => {
-                    if (item.mxcUrl) {
-                        pendingMxcUrls.push(item.mxcUrl);
-                        void cleanupUploadedMedia(creds.hs_url, creds.access_token, item.mxcUrl);
-                    }
-                });
-            });
-            removeDraftMediaEntries(pendingMxcUrls);
-        };
-    }, []);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
