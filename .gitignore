@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 .env
+regression-reports
 
 # Editor directories and files
 .vscode/*
