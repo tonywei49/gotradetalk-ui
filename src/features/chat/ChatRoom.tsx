@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import {
     MagnifyingGlassIcon,
     EllipsisVerticalIcon,
@@ -68,6 +71,56 @@ type DraftMediaRegistryEntry = {
     mxcUrl: string;
     createdAt: number;
     ownerUserId: string;
+};
+
+const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
+    const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
+    const mutedTextClass = isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-400";
+    const borderClass = isMe ? "border-white/20" : "border-slate-300/60 dark:border-slate-600";
+    const tableHeaderClass = isMe ? "bg-white/10" : "bg-slate-100 dark:bg-slate-700";
+    const codeClass = isMe
+        ? "rounded bg-white/15 px-1 py-0.5 text-[12px] text-white"
+        : "rounded bg-slate-100 px-1 py-0.5 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+    const preClass = isMe
+        ? "my-2 overflow-x-auto rounded-lg bg-black/20 p-2 text-[12px] text-white"
+        : "my-2 overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+
+    return (
+        <div className="max-w-full break-words">
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkBreaks]}
+                components={{
+                    p: ({ children }) => <p className="my-1 last:mb-0">{children}</p>,
+                    br: () => <br />,
+                    ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
+                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
+                    li: ({ children }) => <li className="my-0.5">{children}</li>,
+                    blockquote: ({ children }) => (
+                        <blockquote className={`my-2 border-l-2 pl-2 italic ${borderClass} ${mutedTextClass}`}>{children}</blockquote>
+                    ),
+                    code: ({ children }) => <code className={codeClass}>{children}</code>,
+                    pre: ({ children }) => <pre className={preClass}>{children}</pre>,
+                    table: ({ children }) => (
+                        <div className="my-2 overflow-x-auto">
+                            <table className={`min-w-full border-collapse text-left text-[12px] ${textClass}`}>{children}</table>
+                        </div>
+                    ),
+                    thead: ({ children }) => <thead className={tableHeaderClass}>{children}</thead>,
+                    tbody: ({ children }) => <tbody>{children}</tbody>,
+                    tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{children}</tr>,
+                    th: ({ children }) => <th className={`border px-2 py-1 font-semibold ${borderClass}`}>{children}</th>,
+                    td: ({ children }) => <td className={`border px-2 py-1 align-top ${borderClass}`}>{children}</td>,
+                    a: ({ href, children }) => (
+                        <a href={href} target="_blank" rel="noreferrer" className="underline">
+                            {children}
+                        </a>
+                    )
+                }}
+            >
+                {text}
+            </ReactMarkdown>
+        </div>
+    );
 };
 
 const MessageBubble = ({
@@ -231,7 +284,7 @@ const MessageBubble = ({
                                 </a>
                             )
                         ) : (
-                            <span className="whitespace-pre-wrap break-words">{displayText}</span>
+                            <MessageMarkdown text={displayText} isMe={isMe} />
                         )}
                     </div>
 
