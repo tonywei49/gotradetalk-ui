@@ -6,7 +6,7 @@ import {
     Cog6ToothIcon,
     FolderIcon,
 } from "@heroicons/react/24/outline";
-import { ClientEvent, EventType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { ClientEvent, EventTimeline, EventType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -150,9 +150,30 @@ function getFileExtension(fileName: string, mimeType?: string): string {
     return simplified.toUpperCase();
 }
 
+function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
+    const out: MatrixEvent[] = [];
+    const seen = new Set<string>();
+    let timeline: EventTimeline | null = room.getLiveTimeline();
+    while (timeline && out.length < maxEvents) {
+        const events = timeline.getEvents();
+        for (const event of events) {
+            const key = event.getId() || `${event.getTs()}:${event.getSender()}:${event.getType()}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(event);
+            if (out.length >= maxEvents) break;
+        }
+        timeline = timeline.getNeighbouringTimeline(EventTimeline.BACKWARDS) ?? null;
+    }
+    return out;
+}
+
 const FILE_ROOM_SEARCH_DEBOUNCE_MS = 250;
 const FILE_LIST_SEARCH_DEBOUNCE_MS = 250;
 const FILE_LIST_PAGE_SIZE = 80;
+const FILE_HISTORY_TARGET_EVENTS = 260;
+const FILE_HISTORY_SCROLLBACK_LIMIT = 50;
+const FILE_HISTORY_MAX_ROUNDS = 6;
 
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
@@ -181,6 +202,7 @@ export const MainLayout: React.FC = () => {
     const [fileDeletingEventId, setFileDeletingEventId] = useState<string | null>(null);
     const [fileBatchDeleting, setFileBatchDeleting] = useState(false);
     const [fileBatchDeleteProgress, setFileBatchDeleteProgress] = useState({ done: 0, total: 0 });
+    const [fileHistoryLoadingRoomId, setFileHistoryLoadingRoomId] = useState<string | null>(null);
     const [filePreview, setFilePreview] = useState<{ url: string; type: "image" | "video" | "audio" | "pdf"; name: string } | null>(null);
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
@@ -663,7 +685,7 @@ export const MainLayout: React.FC = () => {
         const rows: FileLibraryItem[] = [];
         matrixClient.getRooms().forEach((room) => {
             if (room.getMyMembership() !== "join" || room.isSpaceRoom()) return;
-            const events = room.getLiveTimeline().getEvents();
+            const events = getLoadedRoomEvents(room);
             events.forEach((event) => {
                 if (event.getType() !== EventType.RoomMessage) return;
                 if (event.isRedacted()) return;
@@ -786,6 +808,32 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         setFileListPage(1);
     }, [selectedFileRoomId, debouncedFileListSearch, fileListTypeFilter]);
+
+    useEffect(() => {
+        if (!matrixClient || activeTab !== "files" || !selectedFileRoomId) return;
+        const room = matrixClient.getRoom(selectedFileRoomId);
+        if (!room) return;
+        let cancelled = false;
+        void (async () => {
+            setFileHistoryLoadingRoomId(selectedFileRoomId);
+            let lastCount = room.getLiveTimeline().getEvents().length;
+            for (let round = 0; round < FILE_HISTORY_MAX_ROUNDS; round += 1) {
+                if (cancelled) return;
+                if (lastCount >= FILE_HISTORY_TARGET_EVENTS) break;
+                await matrixClient.scrollback(room, FILE_HISTORY_SCROLLBACK_LIMIT);
+                const currentCount = room.getLiveTimeline().getEvents().length;
+                if (currentCount <= lastCount) break;
+                lastCount = currentCount;
+            }
+            if (!cancelled) {
+                setFileLibraryTick((prev) => prev + 1);
+                setFileHistoryLoadingRoomId((prev) => (prev === selectedFileRoomId ? null : prev));
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, matrixClient, selectedFileRoomId]);
 
     useEffect(() => {
         setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
@@ -1526,6 +1574,11 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 )}
                                 <div className="px-6 pt-4">
+                                    {fileHistoryLoadingRoomId === selectedFileRoomId && (
+                                        <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                                            {t("common.loading")}
+                                        </div>
+                                    )}
                                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px]">
                                         <input
                                             type="text"
