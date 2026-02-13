@@ -1,0 +1,2 @@
+Playwright attachment smoke file.
+Generated for upload/send/delete regression.

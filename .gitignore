@@ -24,3 +24,6 @@ regression-reports
 *.njsproj
 *.sln
 *.sw?
+
+playwright-report/
+test-results/

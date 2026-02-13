@@ -1080,6 +1080,7 @@ export function RoomList({
             >
                 <button
                     type="button"
+                    data-testid={`room-list-item-${entry.roomId}`}
                     onClick={() => onSelectRoom(entry.roomId)}
                     className="flex-1 min-w-0 flex items-center gap-3 text-left"
                 >

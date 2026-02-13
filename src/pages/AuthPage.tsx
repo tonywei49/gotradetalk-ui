@@ -391,6 +391,7 @@ export function AuthPage() {
                             <span>{t("auth.fields.usernameLabel")}</span>
                             <input
                                 type="text"
+                                data-testid="auth-client-username"
                                 placeholder={t("auth.fields.usernamePlaceholder")}
                                 value={clientUsername}
                                 onChange={(event) => setClientUsername(event.target.value)}
@@ -401,6 +402,7 @@ export function AuthPage() {
                             <span>{t("auth.fields.passwordLabel")}</span>
                             <input
                                 type="password"
+                                data-testid="auth-client-password"
                                 placeholder={t("auth.fields.passwordPlaceholder")}
                                 value={clientPassword}
                                 onChange={(event) => setClientPassword(event.target.value)}
@@ -408,7 +410,7 @@ export function AuthPage() {
                             />
                         </label>
                         <div className="gt_actions">
-                            <button type="submit" className="gt_primary" disabled={clientBusy}>
+                            <button type="submit" data-testid="auth-client-submit" className="gt_primary" disabled={clientBusy}>
                                 {clientBusy ? t("auth.client.loginBusy") : t("auth.client.loginAction")}
                             </button>
                             <button

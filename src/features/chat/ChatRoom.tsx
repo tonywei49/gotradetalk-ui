@@ -161,6 +161,7 @@ const MessageBubble = ({
             messageText.toLowerCase().endsWith(".pdf"));
     const isText = !isImage && !isVideo && !isAudio && !isFile;
     const isFileLike = Boolean(isImageMsg || isVideoMsg || isAudioMsg || isFile);
+    const eventId = event.getId() ?? event.getTxnId() ?? "unknown";
     const showTranslated = Boolean(isText && showTranslation);
     const displayText = showTranslated
         ? translationLoading
@@ -193,6 +194,7 @@ const MessageBubble = ({
                         <div className="relative self-end mb-1">
                             <button
                                 type="button"
+                                data-testid={`chat-file-action-trigger-${eventId}`}
                                 onClick={() => setShowFileMenu((prev) => !prev)}
                                 className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
                                 aria-label={t("chat.fileActions")}
@@ -204,6 +206,7 @@ const MessageBubble = ({
                                 <div className="absolute right-0 z-20 mt-1 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                     <button
                                         type="button"
+                                        data-testid={`chat-file-delete-${eventId}`}
                                         className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-slate-800"
                                         onClick={() => {
                                             setShowFileMenu(false);
@@ -296,6 +299,7 @@ const MessageBubble = ({
                         <div className="relative self-end mb-1">
                             <button
                                 type="button"
+                                data-testid={`chat-file-action-trigger-${eventId}`}
                                 onClick={() => setShowFileMenu((prev) => !prev)}
                                 className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
                                 aria-label={t("chat.fileActions")}
@@ -307,6 +311,7 @@ const MessageBubble = ({
                                 <div className="absolute right-0 z-20 mt-1 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                     <button
                                         type="button"
+                                        data-testid={`chat-file-delete-${eventId}`}
                                         className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-slate-800"
                                         onClick={() => {
                                             setShowFileMenu(false);
@@ -1707,6 +1712,7 @@ export const ChatRoom: React.FC = () => {
             {/* Chat History (Timeline) */}
             <div
                 ref={timelineRef}
+                data-testid="chat-timeline"
                 onScroll={() => void onScroll()}
                 className="flex-1 min-h-0 overflow-y-auto p-6 bg-[#F2F4F7] dark:bg-slate-950"
             >
@@ -1792,6 +1798,7 @@ export const ChatRoom: React.FC = () => {
                         <div
                             key={event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`}
                             data-event-id={eventId || undefined}
+                            data-testid={eventId ? `chat-event-${eventId}` : undefined}
                             className={highlightedEventId === eventId ? "rounded-xl ring-2 ring-emerald-400/70" : ""}
                         >
                             <MessageBubble
@@ -1845,7 +1852,7 @@ export const ChatRoom: React.FC = () => {
             )}
 
             {/* Composer */}
-            <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800 relative">
+            <div data-testid="chat-composer" className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800 relative">
                 {/* Toolbar */}
                 <div className="flex gap-4 mb-2 px-1 text-gray-400 dark:text-slate-500">
                     <button
@@ -1857,6 +1864,7 @@ export const ChatRoom: React.FC = () => {
                         <FaceSmileIcon className="w-6 h-6" />
                     </button>
                     <button
+                        data-testid="chat-attach-button"
                         type="button"
                         onClick={onPickAttachment}
                         className="hover:text-[#2F5C56] dark:hover:text-emerald-400"
@@ -1873,6 +1881,7 @@ export const ChatRoom: React.FC = () => {
                 <div className="flex gap-3 items-end">
                     <input
                         ref={fileInputRef}
+                        data-testid="chat-file-input"
                         type="file"
                         className="hidden"
                         multiple
@@ -1887,6 +1896,7 @@ export const ChatRoom: React.FC = () => {
                     />
                     <textarea
                         ref={composerRef}
+                        data-testid="chat-composer-input"
                         value={composerText}
                         onChange={(event) => setComposerText(event.target.value)}
                         onKeyDown={(event) => {
@@ -1901,6 +1911,7 @@ export const ChatRoom: React.FC = () => {
                         disabled={isDeprecatedRoom}
                     />
                     <button
+                        data-testid="chat-send-button"
                         type="button"
                         onClick={() => void onSend()}
                         className="bg-[#2F5C56] hover:bg-[#244a45] text-white p-3 rounded-xl shadow-md transition-colors flex items-center justify-center dark:bg-emerald-500 dark:hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1914,6 +1925,7 @@ export const ChatRoom: React.FC = () => {
                         {pendingAttachments.map((item) => (
                             <div
                                 key={item.id}
+                                data-testid={`chat-pending-attachment-${item.id}`}
                                 className="mb-1 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 dark:border-slate-700 dark:bg-slate-800"
                             >
                                 <div className="min-w-0 text-slate-600 dark:text-slate-300">
@@ -1941,6 +1953,7 @@ export const ChatRoom: React.FC = () => {
                                     )}
                                     <button
                                         type="button"
+                                        data-testid={`chat-remove-pending-${item.id}`}
                                         onClick={() => void onRemovePendingAttachment(item.id)}
                                         className="rounded-full px-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
                                         disabled={item.status === "uploading" || item.status === "removing"}
