@@ -153,7 +153,13 @@
         "confirm": "Confirm",
         "cancel": "Cancel",
         "search": "Search",
-        "close": "Close"
+        "close": "Close",
+        "errors": {
+            "network": "Network error. Please try again.",
+            "timeout": "Request timed out. Please try again.",
+            "noPermission": "You don't have permission to perform this action.",
+            "quotaExceeded": "Storage limit reached. Please clear old files and retry."
+        }
     },
     "layout": {
         "accountMenu": "Account menu",
@@ -380,6 +386,8 @@
         "inviteTitle": "Group Invitation",
         "inviteFrom": "Invited by",
         "accept": "Accept",
-        "decline": "Decline"
+        "decline": "Decline",
+        "acceptFailed": "Failed to accept invite.",
+        "createFailed": "Failed to create group."
     }
 }

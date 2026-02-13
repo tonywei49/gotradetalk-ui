@@ -5,6 +5,7 @@ import { ChatRoom } from "./features/chat";
 import { AuthPage } from "./pages/AuthPage";
 import { useAuthStore } from "./stores/AuthStore";
 import { useThemeStore } from "./stores/ThemeStore";
+import { ToastViewport } from "./components/ToastViewport";
 
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
@@ -24,6 +25,7 @@ export function App() {
                     {/* Add more routes here later */}
                 </Route>
             </Routes>
+            <ToastViewport />
         </BrowserRouter>
     );
 }

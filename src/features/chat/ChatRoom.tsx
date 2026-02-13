@@ -23,6 +23,8 @@ import { hubTranslate } from "../../api/hub";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 import { traceEvent } from "../../utils/debugTrace";
+import { mapActionErrorToMessage } from "../../utils/errorMessages";
+import { useToastStore } from "../../stores/ToastStore";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -554,6 +556,7 @@ function mapMediaActionError(error: unknown): "STORAGE_QUOTA_EXCEEDED" | "NO_PER
 
 export const ChatRoom: React.FC = () => {
     const { t } = useTranslation();
+    const pushToast = useToastStore((state) => state.pushToast);
     const {
         activeRoomId,
         onMobileBack,
@@ -1055,10 +1058,12 @@ export const ChatRoom: React.FC = () => {
                 setContacts(items);
             })
             .catch((err) => {
-                setContactsError(err instanceof Error ? err.message : t("chat.inviteContactsFailed"));
+                const message = mapActionErrorToMessage(t, err, "chat.inviteContactsFailed");
+                setContactsError(message);
+                pushToast("error", message);
             })
             .finally(() => setContactsLoading(false));
-    }, [showInviteMembersModal, isGroupChat, inviteAccessToken, inviteHsUrl, t]);
+    }, [showInviteMembersModal, isGroupChat, inviteAccessToken, inviteHsUrl, pushToast, t]);
 
     useEffect(() => {
         if (!canTranslate || translationContactsLoaded) return;
@@ -1211,7 +1216,9 @@ export const ChatRoom: React.FC = () => {
             userId,
         });
         if (hasPendingUpload) {
-            setUploadError(t("chat.uploadStillInProgress"));
+            const message = t("chat.uploadStillInProgress");
+            setUploadError(message);
+            pushToast("warn", message);
             return;
         }
         if (!trimmed && readyAttachments.length === 0) return;
@@ -1360,15 +1367,9 @@ export const ChatRoom: React.FC = () => {
             traceEvent("chat.file_delete_success", { roomId: activeRoomId, eventId, userId });
         } catch (error) {
             const mapped = mapMediaActionError(error);
-            const message =
-                mapped === "STORAGE_QUOTA_EXCEEDED"
-                    ? t("chat.storageQuotaExceeded")
-                    : mapped === "NO_PERMISSION"
-                        ? t("chat.noPermission")
-                        : error instanceof Error
-                            ? error.message
-                            : t("chat.deleteFileFailed");
+            const message = mapActionErrorToMessage(t, error, "chat.deleteFileFailed");
             setUploadError(message || t("chat.deleteFileFailed"));
+            pushToast("error", message || t("chat.deleteFileFailed"));
             traceEvent("chat.file_delete_failed", { roomId: activeRoomId, eventId, userId, reason: mapped });
         } finally {
             setDeletingEventId(null);
@@ -1463,16 +1464,7 @@ export const ChatRoom: React.FC = () => {
             traceEvent("chat.upload_success", { roomId, fileName: file.name, mxcUrl, userId, attachmentId });
         } catch (error) {
             const mapped = mapMediaActionError(error);
-            const message =
-                mapped === "STORAGE_QUOTA_EXCEEDED"
-                    ? t("chat.storageQuotaExceeded")
-                    : mapped === "NO_PERMISSION"
-                        ? t("chat.noPermission")
-                        : error instanceof Error
-                            ? error.message
-                            : typeof error === "string"
-                                ? error
-                                : t("chat.uploadFailed");
+            const message = mapActionErrorToMessage(t, error, "chat.uploadFailed");
             setPendingAttachmentsByRoom((prev) =>
                 withUpdatedRoomAttachments(prev, roomId, (items) =>
                     items.map((item) =>
@@ -1480,6 +1472,7 @@ export const ChatRoom: React.FC = () => {
                     ),
                 ),
             );
+            pushToast("error", message || t("chat.uploadFailed"));
             traceEvent("chat.upload_failed", { roomId, fileName: file.name, userId, reason: mapped, attachmentId });
         }
     };
@@ -2202,9 +2195,9 @@ export const ChatRoom: React.FC = () => {
                                     void updateRoomInvitePermission(room.roomId, next)
                                         .then(() => setInviteAllowed(next))
                                         .catch((err) => {
-                                            setInviteError(
-                                                err instanceof Error ? err.message : t("chat.inviteSettingsFailed"),
-                                            );
+                                            const message = mapActionErrorToMessage(t, err, "chat.inviteSettingsFailed");
+                                            setInviteError(message);
+                                            pushToast("error", message);
                                         })
                                         .finally(() => setInviteBusy(false));
                                 }}
@@ -2308,9 +2301,9 @@ export const ChatRoom: React.FC = () => {
                                             setShowInviteMembersModal(false);
                                         })
                                         .catch((err) => {
-                                            setInviteMemberError(
-                                                err instanceof Error ? err.message : t("chat.inviteMemberFailed"),
-                                            );
+                                            const message = mapActionErrorToMessage(t, err, "chat.inviteMemberFailed");
+                                            setInviteMemberError(message);
+                                            pushToast("error", message);
                                         })
                                         .finally(() => setInviteMemberBusy(false));
                                 }}
@@ -2373,9 +2366,9 @@ export const ChatRoom: React.FC = () => {
                                             setShowRenameModal(false);
                                         })
                                         .catch((err) => {
-                                            setRenameError(
-                                                err instanceof Error ? err.message : t("chat.renameGroupFailed"),
-                                            );
+                                            const message = mapActionErrorToMessage(t, err, "chat.renameGroupFailed");
+                                            setRenameError(message);
+                                            pushToast("error", message);
                                         })
                                         .finally(() => setRenameBusy(false));
                                 }}
@@ -2490,9 +2483,9 @@ export const ChatRoom: React.FC = () => {
                                             setMemberToRemove(null);
                                         })
                                         .catch((err) => {
-                                            setRemoveMemberError(
-                                                err instanceof Error ? err.message : t("chat.removeMemberFailed"),
-                                            );
+                                            const message = mapActionErrorToMessage(t, err, "chat.removeMemberFailed");
+                                            setRemoveMemberError(message);
+                                            pushToast("error", message);
                                         })
                                         .finally(() => setRemoveMemberBusy(false));
                                 }}

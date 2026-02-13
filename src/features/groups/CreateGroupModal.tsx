@@ -5,6 +5,7 @@ import { listContacts, type ContactEntry } from "../../api/contacts";
 import { createGroupChat, type HistoryVisibility } from "../../matrix/group";
 import { useTranslation } from "react-i18next";
 import { devLog } from "../../utils/devLog";
+import { mapActionErrorToMessage } from "../../utils/errorMessages";
 
 export type CreateGroupModalProps = {
     isOpen: boolean;
@@ -56,7 +57,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                 setContacts(items.filter((c) => c.matrix_user_id));
             })
             .catch((err) => {
-                setError(err instanceof Error ? err.message : "Failed to load contacts");
+                setError(mapActionErrorToMessage(t, err, "chat.inviteContactsFailed"));
             })
             .finally(() => {
                 setLoading(false);
@@ -118,7 +119,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             onClose();
             onSuccess(roomId);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to create group");
+            setError(mapActionErrorToMessage(t, err, "group.createFailed"));
         } finally {
             setCreating(false);
         }

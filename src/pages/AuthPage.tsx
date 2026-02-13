@@ -21,6 +21,8 @@ import { LanguageModal } from "../components/LanguageModal";
 import { setLanguage } from "../i18n";
 import { loginWithPassword } from "../matrix/login";
 import { useAuthStore } from "../stores/AuthStore";
+import { useToastStore } from "../stores/ToastStore";
+import { mapAuthErrorToMessage } from "../utils/errorMessages";
 import "./AuthPage.css";
 
 type EntryMode = "client" | "company";
@@ -29,6 +31,7 @@ export function AuthPage() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const setAuthSession = useAuthStore((state) => state.setSession);
+    const pushToast = useToastStore((state) => state.pushToast);
     const [activeEntry, setActiveEntry] = useState<EntryMode>("client");
     const [clientUsername, setClientUsername] = useState("");
     const [clientPassword, setClientPassword] = useState("");
@@ -176,7 +179,9 @@ export function AuthPage() {
                 });
                 navigate("/app");
             } catch (error) {
-                setClientError(error instanceof Error ? error.message : t("auth.errors.generic"));
+                const message = mapAuthErrorToMessage(t, error);
+                setClientError(message);
+                pushToast("error", message);
             } finally {
                 setClientBusy(false);
             }
@@ -243,7 +248,9 @@ export function AuthPage() {
                 });
                 navigate("/app");
             } catch (error) {
-                setCompanyError(error instanceof Error ? error.message : t("auth.errors.generic"));
+                const message = mapAuthErrorToMessage(t, error);
+                setCompanyError(message);
+                pushToast("error", message);
             } finally {
                 setCompanyBusy(false);
             }
@@ -308,7 +315,9 @@ export function AuthPage() {
                 setRegisterTranslationLocale("");
                 setRegisterLanguage("en");
             } catch (error) {
-                setRegisterError(error instanceof Error ? error.message : t("auth.errors.generic"));
+                const message = mapAuthErrorToMessage(t, error);
+                setRegisterError(message);
+                pushToast("error", message);
             } finally {
                 setRegisterBusy(false);
             }
@@ -333,7 +342,9 @@ export function AuthPage() {
                 }
                 setResetSuccess(t("auth.client.resetSuccess"));
             } catch (error) {
-                setResetError(error instanceof Error ? error.message : t("auth.errors.generic"));
+                const message = mapAuthErrorToMessage(t, error);
+                setResetError(message);
+                pushToast("error", message);
             } finally {
                 setResetBusy(false);
             }
@@ -727,9 +738,7 @@ export function AuthPage() {
                                     });
                                     setShowLanguageModal(true);
                                 } catch (error) {
-                                    setCompanyError(
-                                        error instanceof Error ? error.message : t("auth.errors.generic"),
-                                    );
+                                    setCompanyError(mapAuthErrorToMessage(t, error));
                                 }
                             }}
                             onCancel={() => setShowForceReset(false)}
@@ -794,6 +803,7 @@ function ForcePasswordResetForm({
     onCancel,
 }: ForcePasswordResetProps) {
     const { t } = useTranslation();
+    const pushToast = useToastStore((state) => state.pushToast);
     const [currentPassword, setCurrentPassword] = useState(initialPassword);
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -826,7 +836,9 @@ function ForcePasswordResetForm({
                 await changeMatrixPassword(hsUrl, accessToken, userId, currentPassword, newPassword);
                 await onComplete();
             } catch (error) {
-                setError(error instanceof Error ? error.message : t("auth.errors.generic"));
+                const message = mapAuthErrorToMessage(t, error);
+                setError(message);
+                pushToast("error", message);
             } finally {
                 setBusy(false);
             }

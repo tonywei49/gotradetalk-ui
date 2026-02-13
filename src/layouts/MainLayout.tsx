@@ -27,6 +27,7 @@ import { setLanguage } from "../i18n";
 import { markRoomDeprecated } from "../services/matrix";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
 import { traceEvent } from "../utils/debugTrace";
+import { mapActionErrorToMessage } from "../utils/errorMessages";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -837,13 +838,7 @@ export const MainLayout: React.FC = () => {
             });
         } catch (error) {
             const mapped = mapMediaActionError(error);
-            if (mapped === "STORAGE_QUOTA_EXCEEDED") {
-                setFileActionError(t("chat.storageQuotaExceeded"));
-            } else if (mapped === "NO_PERMISSION") {
-                setFileActionError(t("chat.noPermission"));
-            } else {
-                setFileActionError(t("layout.fileDeleteFailed"));
-            }
+            setFileActionError(mapActionErrorToMessage(t, error, "layout.fileDeleteFailed"));
             traceEvent("files.delete_failed", {
                 roomId: item.roomId,
                 eventId: item.eventId,
@@ -886,13 +881,9 @@ export const MainLayout: React.FC = () => {
         setShowFileToolbarMenu(false);
         setFileLibraryTick((prev) => prev + 1);
         if (failed > 0) {
-            if (mappedError === "STORAGE_QUOTA_EXCEEDED") {
-                setFileActionError(t("chat.storageQuotaExceeded"));
-            } else if (mappedError === "NO_PERMISSION") {
-                setFileActionError(t("chat.noPermission"));
-            } else {
-                setFileActionError(t("layout.fileDeleteFailed"));
-            }
+            setFileActionError(
+                mapActionErrorToMessage(t, { errcode: mappedError ?? "GENERIC" }, "layout.fileDeleteFailed"),
+            );
             traceEvent("files.batch_delete_partial_failed", {
                 roomId: selectedFileRoomId,
                 failed,

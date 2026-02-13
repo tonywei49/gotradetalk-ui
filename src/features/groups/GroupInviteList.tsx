@@ -4,6 +4,7 @@ import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { useTranslation } from "react-i18next";
 import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
+import { mapActionErrorToMessage } from "../../utils/errorMessages";
 
 export type GroupInvite = {
     roomId: string;
@@ -170,12 +171,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                 return next;
             });
             console.error("Failed to accept group invite:", err);
-            const message =
-                err instanceof Error
-                    ? err.message
-                    : typeof err === "string"
-                        ? err
-                        : t("group.acceptFailed", "Failed to accept invite");
+            const message = mapActionErrorToMessage(t, err, "group.acceptFailed");
             setJoinError(message);
         } finally {
             setProcessingIds((prev) => {
