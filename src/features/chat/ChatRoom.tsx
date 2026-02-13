@@ -69,6 +69,8 @@ type PendingAttachment = {
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
 const PENDING_ATTACHMENT_DRAFTS_KEY_PREFIX = "gtt_pending_attachment_drafts_v1";
+const UPLOAD_RETRY_INTERVAL_MS = 3000;
+const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
 
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
@@ -83,9 +85,10 @@ type PersistedPendingAttachment = {
     mimeType: string;
     msgtype: MsgType;
     isPdf: boolean;
-    mxcUrl: string;
-    status: "ready";
+    mxcUrl: string | null;
+    status: "ready" | "failed";
     progress: number;
+    error?: string;
 };
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
@@ -497,6 +500,35 @@ function getPendingAttachmentDraftsKey(userId: string): string {
     return `${PENDING_ATTACHMENT_DRAFTS_KEY_PREFIX}:${userId}`;
 }
 
+function buildUploadRetryKey(roomId: string, attachmentId: string): string {
+    return `${roomId}::${attachmentId}`;
+}
+
+function parseUploadRetryKey(key: string): { roomId: string; attachmentId: string } | null {
+    const split = key.split("::");
+    if (split.length !== 2) return null;
+    const roomId = split[0];
+    const attachmentId = split[1];
+    if (!roomId || !attachmentId) return null;
+    return { roomId, attachmentId };
+}
+
+function isTransientUploadError(error: unknown): boolean {
+    const maybeObj = error as { errcode?: string; message?: string } | null;
+    const errcode = typeof maybeObj?.errcode === "string" ? maybeObj.errcode : "";
+    const message =
+        typeof maybeObj?.message === "string" ? maybeObj.message : error instanceof Error ? error.message : String(error ?? "");
+    const normalized = `${errcode} ${message}`.toUpperCase();
+    return (
+        normalized.includes("NETWORK") ||
+        normalized.includes("FAILED TO FETCH") ||
+        normalized.includes("ECONN") ||
+        normalized.includes("TIMEOUT") ||
+        normalized.includes("ETIMEDOUT") ||
+        normalized.includes("CONNECTION")
+    );
+}
+
 function readPersistedPendingAttachments(userId: string): Record<string, PersistedPendingAttachment[]> {
     try {
         const raw = localStorage.getItem(getPendingAttachmentDraftsKey(userId));
@@ -515,8 +547,8 @@ function readPersistedPendingAttachments(userId: string): Record<string, Persist
                     typeof item.mimeType === "string" &&
                     typeof item.msgtype === "string" &&
                     typeof item.isPdf === "boolean" &&
-                    typeof item.mxcUrl === "string" &&
-                    item.status === "ready",
+                    (typeof item.mxcUrl === "string" || item.mxcUrl === null) &&
+                    (item.status === "ready" || item.status === "failed"),
             );
             if (filtered.length > 0) out[roomId] = filtered;
         });
@@ -618,7 +650,15 @@ export const ChatRoom: React.FC = () => {
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const retryFileInputRef = useRef<HTMLInputElement | null>(null);
     const [pendingAttachmentsByRoom, setPendingAttachmentsByRoom] = useState<Record<string, PendingAttachment[]>>({});
+    const [retryUploadQueue, setRetryUploadQueue] = useState<string[]>([]);
+    const retryAttemptsRef = useRef<Record<string, number>>({});
+    const [retryPickTarget, setRetryPickTarget] = useState<{ roomId: string; attachmentId: string } | null>(null);
+    const [networkOnline, setNetworkOnline] = useState<boolean>(() => {
+        if (typeof navigator === "undefined") return true;
+        return navigator.onLine;
+    });
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
@@ -654,33 +694,103 @@ export const ChatRoom: React.FC = () => {
                 isPdf: item.isPdf,
                 mxcUrl: item.mxcUrl,
                 progress: item.progress,
-                status: "ready",
+                status: item.status,
+                error: item.status === "failed" ? item.error || t("chat.uploadInterruptedNeedsReselect") : undefined,
             }));
         });
         setPendingAttachmentsByRoom(restored);
-    }, [userId]);
+    }, [t, userId]);
 
     useEffect(() => {
         if (!userId) return;
         const persisted: Record<string, PersistedPendingAttachment[]> = {};
         Object.entries(pendingAttachmentsByRoom).forEach(([roomId, items]) => {
-            const readyItems = items
-                .filter((item) => item.status === "ready" && Boolean(item.mxcUrl))
-                .map((item) => ({
+            const persistedItems: PersistedPendingAttachment[] = [];
+            items
+                .filter((item) => item.status === "ready" || item.status === "failed")
+                .forEach((item) => {
+                    const isReady = item.status === "ready" && Boolean(item.mxcUrl);
+                    const nextItem: PersistedPendingAttachment = {
                     id: item.id,
                     fileName: item.fileName,
                     fileSize: item.fileSize,
                     mimeType: item.mimeType,
                     msgtype: item.msgtype,
                     isPdf: item.isPdf,
-                    mxcUrl: item.mxcUrl as string,
-                    status: "ready" as const,
+                    mxcUrl: isReady ? (item.mxcUrl as string) : null,
+                    status: (isReady ? "ready" : "failed") as "ready" | "failed",
                     progress: item.progress,
-                }));
-            if (readyItems.length > 0) persisted[roomId] = readyItems;
+                    error: isReady ? undefined : item.error || t("chat.uploadInterruptedNeedsReselect"),
+                    };
+                    persistedItems.push(nextItem);
+                });
+            if (persistedItems.length > 0) persisted[roomId] = persistedItems;
         });
         writePersistedPendingAttachments(userId, persisted);
-    }, [pendingAttachmentsByRoom, userId]);
+    }, [pendingAttachmentsByRoom, t, userId]);
+
+    useEffect(() => {
+        const onOnline = (): void => setNetworkOnline(true);
+        const onOffline = (): void => setNetworkOnline(false);
+        window.addEventListener("online", onOnline);
+        window.addEventListener("offline", onOffline);
+        return () => {
+            window.removeEventListener("online", onOnline);
+            window.removeEventListener("offline", onOffline);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!networkOnline) return;
+        if (retryUploadQueue.length === 0) return;
+        const timer = window.setTimeout(() => {
+            const key = retryUploadQueue[0];
+            const parsed = parseUploadRetryKey(key);
+            if (!parsed) {
+                setRetryUploadQueue((prev) => prev.slice(1));
+                return;
+            }
+            const target = pendingAttachmentsByRoom[parsed.roomId]?.find((item) => item.id === parsed.attachmentId);
+            if (!target || target.status !== "failed" || !target.sourceFile) {
+                setRetryUploadQueue((prev) => prev.filter((item) => item !== key));
+                return;
+            }
+            setPendingAttachmentsByRoom((prev) =>
+                withUpdatedRoomAttachments(prev, parsed.roomId, (items) =>
+                    items.map((item) =>
+                        item.id === parsed.attachmentId ? { ...item, status: "uploading", progress: 0, error: undefined } : item,
+                    ),
+                ),
+            );
+            void uploadDraftAttachmentById(parsed.roomId, parsed.attachmentId, target.sourceFile, true).then((ok) => {
+                if (ok) {
+                    delete retryAttemptsRef.current[key];
+                    setRetryUploadQueue((prev) => prev.filter((item) => item !== key));
+                    return;
+                }
+                const attempts = (retryAttemptsRef.current[key] ?? 0) + 1;
+                retryAttemptsRef.current[key] = attempts;
+                if (attempts >= UPLOAD_RETRY_MAX_ATTEMPTS) {
+                    setRetryUploadQueue((prev) => prev.filter((item) => item !== key));
+                    return;
+                }
+                setPendingAttachmentsByRoom((prev) =>
+                    withUpdatedRoomAttachments(prev, parsed.roomId, (items) =>
+                        items.map((item) =>
+                            item.id === parsed.attachmentId
+                                ? { ...item, status: "failed", error: t("chat.uploadRetryQueued") }
+                                : item,
+                        ),
+                    ),
+                );
+                setRetryUploadQueue((prev) => {
+                    const rest = prev.filter((item) => item !== key);
+                    return [...rest, key];
+                });
+            });
+        }, UPLOAD_RETRY_INTERVAL_MS);
+        return () => window.clearTimeout(timer);
+    }, [networkOnline, pendingAttachmentsByRoom, retryUploadQueue, t]);
 
     useEffect(() => {
         if (!matrixCredentials?.hs_url || !matrixCredentials.access_token || !userId) return;
@@ -1419,8 +1529,13 @@ export const ChatRoom: React.FC = () => {
         fileInputRef.current?.click();
     };
 
-    const uploadDraftAttachmentById = async (roomId: string, attachmentId: string, file: File): Promise<void> => {
-        if (!matrixClient) return;
+    const uploadDraftAttachmentById = async (
+        roomId: string,
+        attachmentId: string,
+        file: File,
+        silentAutoRetry = false,
+    ): Promise<boolean> => {
+        if (!matrixClient) return false;
         const normalizeMime = (value: string | undefined): string => (value ?? "").toLowerCase();
         const mimeType = normalizeMime(file.type);
         traceEvent("chat.upload_start", {
@@ -1462,18 +1577,30 @@ export const ChatRoom: React.FC = () => {
                 ),
             );
             traceEvent("chat.upload_success", { roomId, fileName: file.name, mxcUrl, userId, attachmentId });
+            return true;
         } catch (error) {
             const mapped = mapMediaActionError(error);
             const message = mapActionErrorToMessage(t, error, "chat.uploadFailed");
+            const shouldQueueRetry = isTransientUploadError(error) && file.size > 0;
+            const finalError = shouldQueueRetry ? t("chat.uploadRetryQueued") : message || t("chat.uploadFailed");
             setPendingAttachmentsByRoom((prev) =>
                 withUpdatedRoomAttachments(prev, roomId, (items) =>
                     items.map((item) =>
-                        item.id === attachmentId ? { ...item, status: "failed", error: message || t("chat.uploadFailed") } : item,
+                        item.id === attachmentId ? { ...item, status: "failed", error: finalError } : item,
                     ),
                 ),
             );
-            pushToast("error", message || t("chat.uploadFailed"));
+            if (shouldQueueRetry) {
+                const key = buildUploadRetryKey(roomId, attachmentId);
+                if (!silentAutoRetry) {
+                    pushToast("warn", finalError);
+                }
+                setRetryUploadQueue((prev) => (prev.includes(key) ? prev : [...prev, key]));
+            } else if (!silentAutoRetry) {
+                pushToast("error", message || t("chat.uploadFailed"));
+            }
             traceEvent("chat.upload_failed", { roomId, fileName: file.name, userId, reason: mapped, attachmentId });
+            return false;
         }
     };
 
@@ -1529,7 +1656,16 @@ export const ChatRoom: React.FC = () => {
         );
         setUploadError(null);
         traceEvent("chat.upload_retry", { roomId, attachmentId, fileName: target.fileName, userId });
+        const key = buildUploadRetryKey(roomId, attachmentId);
+        delete retryAttemptsRef.current[key];
+        setRetryUploadQueue((prev) => prev.filter((item) => item !== key));
         await uploadDraftAttachmentById(roomId, attachmentId, target.sourceFile);
+    };
+
+    const onReattachPendingAttachment = (attachmentId: string): void => {
+        if (!activeRoomId) return;
+        setRetryPickTarget({ roomId: activeRoomId, attachmentId });
+        retryFileInputRef.current?.click();
     };
 
     const onRemovePendingAttachment = async (attachmentId: string): Promise<void> => {
@@ -1538,6 +1674,9 @@ export const ChatRoom: React.FC = () => {
         const target = pendingAttachments.find((item) => item.id === attachmentId);
         if (!target || target.status === "uploading") return;
         traceEvent("chat.upload_cancel", { roomId, attachmentId, fileName: target.fileName, userId });
+        const key = buildUploadRetryKey(roomId, attachmentId);
+        delete retryAttemptsRef.current[key];
+        setRetryUploadQueue((prev) => prev.filter((item) => item !== key));
         setPendingAttachmentsByRoom((prev) =>
             withUpdatedRoomAttachments(prev, roomId, (items) =>
                 items.map((item) => (item.id === attachmentId ? { ...item, status: "removing" } : item)),
@@ -1956,6 +2095,55 @@ export const ChatRoom: React.FC = () => {
                             });
                         }}
                     />
+                    <input
+                        ref={retryFileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (!file || !retryPickTarget) return;
+                            const { roomId, attachmentId } = retryPickTarget;
+                            setRetryPickTarget(null);
+                            const normalizeMime = (value: string | undefined): string => (value ?? "").toLowerCase();
+                            const mimeType = normalizeMime(file.type);
+                            const isImageFile = mimeType.startsWith("image/");
+                            const isVideoFile = mimeType.startsWith("video/");
+                            const isAudioFile = mimeType.startsWith("audio/");
+                            const isPdfFile = mimeType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+                            const msgtype = isImageFile
+                                ? MsgType.Image
+                                : isVideoFile
+                                    ? MsgType.Video
+                                    : isAudioFile
+                                        ? MsgType.Audio
+                                        : MsgType.File;
+                            setPendingAttachmentsByRoom((prev) =>
+                                withUpdatedRoomAttachments(prev, roomId, (items) =>
+                                    items.map((item) =>
+                                        item.id === attachmentId
+                                            ? {
+                                                ...item,
+                                                fileName: file.name,
+                                                fileSize: file.size,
+                                                mimeType,
+                                                sourceFile: file,
+                                                msgtype,
+                                                isPdf: isPdfFile,
+                                                status: "uploading",
+                                                progress: 0,
+                                                error: undefined,
+                                            }
+                                            : item,
+                                    ),
+                                ),
+                            );
+                            const key = buildUploadRetryKey(roomId, attachmentId);
+                            delete retryAttemptsRef.current[key];
+                            setRetryUploadQueue((prev) => prev.filter((item) => item !== key));
+                            void uploadDraftAttachmentById(roomId, attachmentId, file);
+                        }}
+                    />
                     <textarea
                         ref={composerRef}
                         data-testid="chat-composer-input"
@@ -2011,6 +2199,15 @@ export const ChatRoom: React.FC = () => {
                                             className="rounded-md border border-emerald-300 px-2 py-0.5 text-[11px] text-emerald-600 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
                                         >
                                             {t("chat.retryUpload")}
+                                        </button>
+                                    )}
+                                    {item.status === "failed" && !item.sourceFile && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onReattachPendingAttachment(item.id)}
+                                            className="rounded-md border border-sky-300 px-2 py-0.5 text-[11px] text-sky-600 hover:bg-sky-50 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-sky-900/20"
+                                        >
+                                            {t("chat.reselectFile")}
                                         </button>
                                     )}
                                     <button
