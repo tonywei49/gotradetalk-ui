@@ -99,6 +99,27 @@ async function cleanupUploadedMedia(
     return false;
 }
 
+function mapMediaActionError(error: unknown): "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" {
+    const maybeObj = error as { errcode?: string; statusCode?: number; message?: string } | null;
+    const message = typeof maybeObj?.message === "string" ? maybeObj.message : String(error ?? "");
+    const errcode = typeof maybeObj?.errcode === "string" ? maybeObj.errcode : "";
+    const statusCode = typeof maybeObj?.statusCode === "number" ? maybeObj.statusCode : null;
+    const normalized = `${errcode} ${message}`.toUpperCase();
+
+    if (
+        normalized.includes("M_LIMIT_EXCEEDED") ||
+        normalized.includes("QUOTA") ||
+        normalized.includes("STORAGE") ||
+        statusCode === 413
+    ) {
+        return "STORAGE_QUOTA_EXCEEDED";
+    }
+    if (normalized.includes("M_FORBIDDEN") || statusCode === 401 || statusCode === 403) {
+        return "NO_PERMISSION";
+    }
+    return "GENERIC";
+}
+
 function getFileTypeGroup(item: { msgtype: string; mimeType?: string }): "image" | "video" | "audio" | "pdf" | "other" {
     if (item.msgtype === "m.image") return "image";
     if (item.msgtype === "m.video") return "video";
@@ -814,11 +835,19 @@ export const MainLayout: React.FC = () => {
                 roomId: item.roomId,
                 eventId: item.eventId,
             });
-        } catch {
-            setFileActionError(t("layout.fileDeleteFailed"));
+        } catch (error) {
+            const mapped = mapMediaActionError(error);
+            if (mapped === "STORAGE_QUOTA_EXCEEDED") {
+                setFileActionError(t("chat.storageQuotaExceeded"));
+            } else if (mapped === "NO_PERMISSION") {
+                setFileActionError(t("chat.noPermission"));
+            } else {
+                setFileActionError(t("layout.fileDeleteFailed"));
+            }
             traceEvent("files.delete_failed", {
                 roomId: item.roomId,
                 eventId: item.eventId,
+                reason: mapped,
             });
         }
     };
@@ -833,6 +862,7 @@ export const MainLayout: React.FC = () => {
             targetCount: targets.length,
         });
         let failed = 0;
+        let mappedError: "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" | null = null;
         for (const item of targets) {
             try {
                 await matrixClient?.redactEvent(item.roomId, item.eventId);
@@ -844,8 +874,11 @@ export const MainLayout: React.FC = () => {
                     msgtype: "m.notice",
                     body: t("chat.fileRevokedNotice", { name: selfLabel }),
                 } as never);
-            } catch {
+            } catch (error) {
                 failed += 1;
+                if (!mappedError) {
+                    mappedError = mapMediaActionError(error);
+                }
             }
         }
         setSelectedFileIds([]);
@@ -853,11 +886,18 @@ export const MainLayout: React.FC = () => {
         setShowFileToolbarMenu(false);
         setFileLibraryTick((prev) => prev + 1);
         if (failed > 0) {
-            setFileActionError(t("layout.fileDeleteFailed"));
+            if (mappedError === "STORAGE_QUOTA_EXCEEDED") {
+                setFileActionError(t("chat.storageQuotaExceeded"));
+            } else if (mappedError === "NO_PERMISSION") {
+                setFileActionError(t("chat.noPermission"));
+            } else {
+                setFileActionError(t("layout.fileDeleteFailed"));
+            }
             traceEvent("files.batch_delete_partial_failed", {
                 roomId: selectedFileRoomId,
                 failed,
                 success: targets.length - failed,
+                reason: mappedError ?? "GENERIC",
             });
         } else {
             setFileActionError(null);
