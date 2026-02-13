@@ -150,6 +150,10 @@ function getFileExtension(fileName: string, mimeType?: string): string {
     return simplified.toUpperCase();
 }
 
+const FILE_ROOM_SEARCH_DEBOUNCE_MS = 250;
+const FILE_LIST_SEARCH_DEBOUNCE_MS = 250;
+const FILE_LIST_PAGE_SIZE = 80;
+
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "files" | "orders" | "settings" | "account">("chat");
@@ -163,14 +167,20 @@ export const MainLayout: React.FC = () => {
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
     const [fileLibraryTick, setFileLibraryTick] = useState(0);
     const [fileRoomSearch, setFileRoomSearch] = useState("");
+    const [debouncedFileRoomSearch, setDebouncedFileRoomSearch] = useState("");
     const [selectedFileRoomId, setSelectedFileRoomId] = useState<string | null>(null);
     const [fileListSearch, setFileListSearch] = useState("");
+    const [debouncedFileListSearch, setDebouncedFileListSearch] = useState("");
     const [fileListTypeFilter, setFileListTypeFilter] = useState<"all" | "image" | "video" | "audio" | "pdf" | "other">("all");
+    const [fileListPage, setFileListPage] = useState(1);
     const [fileBatchMode, setFileBatchMode] = useState(false);
     const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
     const [activeFileMenuEventId, setActiveFileMenuEventId] = useState<string | null>(null);
     const [showFileToolbarMenu, setShowFileToolbarMenu] = useState(false);
     const [fileActionError, setFileActionError] = useState<string | null>(null);
+    const [fileDeletingEventId, setFileDeletingEventId] = useState<string | null>(null);
+    const [fileBatchDeleting, setFileBatchDeleting] = useState(false);
+    const [fileBatchDeleteProgress, setFileBatchDeleteProgress] = useState({ done: 0, total: 0 });
     const [filePreview, setFilePreview] = useState<{ url: string; type: "image" | "video" | "audio" | "pdf"; name: string } | null>(null);
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
@@ -417,6 +427,20 @@ export const MainLayout: React.FC = () => {
             document.removeEventListener("click", onClickOutside);
         };
     }, [showAccountMenu]);
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedFileRoomSearch(fileRoomSearch);
+        }, FILE_ROOM_SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [fileRoomSearch]);
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedFileListSearch(fileListSearch);
+        }, FILE_LIST_SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [fileListSearch]);
 
     useEffect(() => {
         if (activeTab !== "contacts") {
@@ -703,10 +727,10 @@ export const MainLayout: React.FC = () => {
     }, [myFileLibrary]);
 
     const filteredRoomSummaryList = useMemo(() => {
-        const keyword = fileRoomSearch.trim().toLowerCase();
+        const keyword = debouncedFileRoomSearch.trim().toLowerCase();
         if (!keyword) return roomSummaryList;
         return roomSummaryList.filter((item) => item.roomName.toLowerCase().includes(keyword));
-    }, [roomSummaryList, fileRoomSearch]);
+    }, [roomSummaryList, debouncedFileRoomSearch]);
 
     const selectedRoomFiles = useMemo(() => {
         if (!selectedFileRoomId) return [];
@@ -719,13 +743,20 @@ export const MainLayout: React.FC = () => {
     );
 
     const visibleSelectedRoomFiles = useMemo(() => {
-        const keyword = fileListSearch.trim().toLowerCase();
+        const keyword = debouncedFileListSearch.trim().toLowerCase();
         return selectedRoomFiles.filter((item) => {
             if (fileListTypeFilter !== "all" && getFileTypeGroup(item) !== fileListTypeFilter) return false;
             if (!keyword) return true;
             return item.body.toLowerCase().includes(keyword);
         });
-    }, [selectedRoomFiles, fileListSearch, fileListTypeFilter]);
+    }, [selectedRoomFiles, debouncedFileListSearch, fileListTypeFilter]);
+
+    const pagedVisibleSelectedRoomFiles = useMemo(
+        () => visibleSelectedRoomFiles.slice(0, fileListPage * FILE_LIST_PAGE_SIZE),
+        [visibleSelectedRoomFiles, fileListPage],
+    );
+
+    const canLoadMoreFiles = pagedVisibleSelectedRoomFiles.length < visibleSelectedRoomFiles.length;
 
     useEffect(() => {
         if (activeTab !== "files") return;
@@ -736,21 +767,25 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (activeTab !== "files") return;
         traceEvent("files.room_filter_changed", {
-            roomSearch: fileRoomSearch,
+            roomSearch: debouncedFileRoomSearch,
             selectedRoomId: selectedFileRoomId,
             roomCount: filteredRoomSummaryList.length,
         });
-    }, [activeTab, fileRoomSearch, selectedFileRoomId, filteredRoomSummaryList.length]);
+    }, [activeTab, debouncedFileRoomSearch, selectedFileRoomId, filteredRoomSummaryList.length]);
 
     useEffect(() => {
         if (activeTab !== "files" || !selectedFileRoomId) return;
         traceEvent("files.list_filter_changed", {
             roomId: selectedFileRoomId,
-            keyword: fileListSearch,
+            keyword: debouncedFileListSearch,
             typeFilter: fileListTypeFilter,
             visibleCount: visibleSelectedRoomFiles.length,
         });
-    }, [activeTab, selectedFileRoomId, fileListSearch, fileListTypeFilter, visibleSelectedRoomFiles.length]);
+    }, [activeTab, selectedFileRoomId, debouncedFileListSearch, fileListTypeFilter, visibleSelectedRoomFiles.length]);
+
+    useEffect(() => {
+        setFileListPage(1);
+    }, [selectedFileRoomId, debouncedFileListSearch, fileListTypeFilter]);
 
     useEffect(() => {
         setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
@@ -814,6 +849,7 @@ export const MainLayout: React.FC = () => {
     const onDeleteFileItem = async (item: FileLibraryItem): Promise<void> => {
         if (!matrixClient || !matrixCredentials?.user_id) return;
         setFileActionError(null);
+        setFileDeletingEventId(item.eventId);
         traceEvent("files.delete_start", {
             roomId: item.roomId,
             eventId: item.eventId,
@@ -844,13 +880,18 @@ export const MainLayout: React.FC = () => {
                 eventId: item.eventId,
                 reason: mapped,
             });
+        } finally {
+            setFileDeletingEventId(null);
         }
     };
 
     const onDeleteBatchFiles = async (): Promise<void> => {
+        if (fileBatchDeleting) return;
         if (selectedFileIds.length === 0) return;
         const targets = selectedRoomFiles.filter((item) => selectedFileIds.includes(item.eventId));
         if (targets.length === 0) return;
+        setFileBatchDeleting(true);
+        setFileBatchDeleteProgress({ done: 0, total: targets.length });
         traceEvent("files.batch_delete_start", {
             roomId: selectedFileRoomId,
             selectedCount: selectedFileIds.length,
@@ -858,7 +899,8 @@ export const MainLayout: React.FC = () => {
         });
         let failed = 0;
         let mappedError: "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" | null = null;
-        for (const item of targets) {
+        for (let i = 0; i < targets.length; i += 1) {
+            const item = targets[i];
             try {
                 await matrixClient?.redactEvent(item.roomId, item.eventId);
                 if (matrixCredentials?.hs_url && matrixCredentials.access_token) {
@@ -874,6 +916,8 @@ export const MainLayout: React.FC = () => {
                 if (!mappedError) {
                     mappedError = mapMediaActionError(error);
                 }
+            } finally {
+                setFileBatchDeleteProgress({ done: i + 1, total: targets.length });
             }
         }
         setSelectedFileIds([]);
@@ -897,6 +941,8 @@ export const MainLayout: React.FC = () => {
                 success: targets.length,
             });
         }
+        setFileBatchDeleting(false);
+        setFileBatchDeleteProgress({ done: 0, total: 0 });
     };
 
     return (
@@ -1446,8 +1492,10 @@ export const MainLayout: React.FC = () => {
                                     <div className="mx-6 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                         <button
                                             type="button"
+                                            disabled={fileBatchDeleting}
                                             className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                             onClick={() => {
+                                                if (fileBatchDeleting) return;
                                                 setFileBatchMode((prev) => !prev);
                                                 setSelectedFileIds([]);
                                                 setShowFileToolbarMenu(false);
@@ -1459,13 +1507,21 @@ export const MainLayout: React.FC = () => {
                                 )}
                                 {fileBatchMode && (
                                     <div className="mx-6 mt-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
-                                        <span>{t("layout.fileBatchSelectedCount", { count: selectedFileIds.length })}</span>
+                                        <span>
+                                            {fileBatchDeleting
+                                                ? t("layout.fileBatchDeletingProgress", {
+                                                    done: fileBatchDeleteProgress.done,
+                                                    total: fileBatchDeleteProgress.total,
+                                                })
+                                                : t("layout.fileBatchSelectedCount", { count: selectedFileIds.length })}
+                                        </span>
                                         <button
                                             type="button"
                                             onClick={() => void onDeleteBatchFiles()}
-                                            className="rounded-md bg-rose-500 px-2 py-1 text-white hover:bg-rose-600"
+                                            disabled={fileBatchDeleting || selectedFileIds.length === 0}
+                                            className="rounded-md bg-rose-500 px-2 py-1 text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
                                         >
-                                            {t("layout.fileBatchDelete")}
+                                            {fileBatchDeleting ? t("layout.fileDeletingBusy") : t("layout.fileBatchDelete")}
                                         </button>
                                     </div>
                                 )}
@@ -1511,7 +1567,7 @@ export const MainLayout: React.FC = () => {
                                             {t("layout.fileListEmptyInRoom")}
                                         </div>
                                     ) : (
-                                        visibleSelectedRoomFiles.map((item) => {
+                                        pagedVisibleSelectedRoomFiles.map((item) => {
                                             const fileType = getFileTypeGroup(item);
                                             const ext = getFileExtension(item.body, item.mimeType);
                                             const httpUrl = getHttpFileUrl(item);
@@ -1558,8 +1614,9 @@ export const MainLayout: React.FC = () => {
                                                         {!fileBatchMode && (
                                                             <button
                                                                 type="button"
+                                                                disabled={fileDeletingEventId === item.eventId || fileBatchDeleting}
                                                                 onClick={() => setActiveFileMenuEventId((prev) => (prev === item.eventId ? null : item.eventId))}
-                                                                className="rounded-full px-2 text-slate-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                                                className="rounded-full px-2 text-slate-400 hover:bg-gray-200 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-slate-700 dark:hover:text-slate-200"
                                                             >
                                                                 ...
                                                             </button>
@@ -1600,10 +1657,13 @@ export const MainLayout: React.FC = () => {
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
+                                                                    disabled={fileDeletingEventId === item.eventId || fileBatchDeleting}
+                                                                    className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-slate-800"
                                                                     onClick={() => void onDeleteFileItem(item)}
                                                                 >
-                                                                    {t("layout.fileActionDelete")}
+                                                                    {fileDeletingEventId === item.eventId
+                                                                        ? t("layout.fileDeletingBusy")
+                                                                        : t("layout.fileActionDelete")}
                                                                 </button>
                                                             </div>
                                                         )}
@@ -1611,6 +1671,18 @@ export const MainLayout: React.FC = () => {
                                                 </div>
                                             );
                                         })
+                                    )}
+                                    {canLoadMoreFiles && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setFileListPage((prev) => prev + 1)}
+                                            className="mx-auto block rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                        >
+                                            {t("layout.fileLoadMore", {
+                                                shown: pagedVisibleSelectedRoomFiles.length,
+                                                total: visibleSelectedRoomFiles.length,
+                                            })}
+                                        </button>
                                     )}
                                 </div>
                                 {fileActionError && (
