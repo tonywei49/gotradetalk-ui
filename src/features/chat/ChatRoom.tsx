@@ -1581,7 +1581,8 @@ export const ChatRoom: React.FC = () => {
         } catch (error) {
             const mapped = mapMediaActionError(error);
             const message = mapActionErrorToMessage(t, error, "chat.uploadFailed");
-            const shouldQueueRetry = isTransientUploadError(error) && file.size > 0;
+            const offlineNow = typeof navigator !== "undefined" ? navigator.onLine === false : false;
+            const shouldQueueRetry = (offlineNow || isTransientUploadError(error)) && file.size > 0;
             const finalError = shouldQueueRetry ? t("chat.uploadRetryQueued") : message || t("chat.uploadFailed");
             setPendingAttachmentsByRoom((prev) =>
                 withUpdatedRoomAttachments(prev, roomId, (items) =>
