@@ -222,9 +222,6 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
     const groupRooms: ChatRoomEntry[] = [];
     for (const room of allRooms) {
         const membership = room.getMyMembership();
-        const kindEvt = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-        const roomKind = (kindEvt?.getContent() as { kind?: string } | undefined)?.kind;
-        console.log("[buildGroupRooms] Checking:", room.roomId, { name: room.name, membership, kind: roomKind });
         if (membership !== "join") continue;
         if (room.isSpaceRoom()) continue;
         const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");

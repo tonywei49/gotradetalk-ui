@@ -4,6 +4,7 @@ import type { MatrixClient } from "matrix-js-sdk";
 import { listContacts, type ContactEntry } from "../../api/contacts";
 import { createGroupChat, type HistoryVisibility } from "../../matrix/group";
 import { useTranslation } from "react-i18next";
+import { devLog } from "../../utils/devLog";
 
 export type CreateGroupModalProps = {
     isOpen: boolean;
@@ -103,7 +104,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         setError(null);
         try {
             const inviteesList = Array.from(selectedMembers);
-            console.log("[CreateGroupModal] Creating group with invitees:", inviteesList);
+            devLog("[CreateGroupModal] Creating group with invitees", inviteesList);
             const roomId = await createGroupChat(matrixClient, {
                 name: groupName.trim(),
                 invitees: inviteesList,

@@ -2,6 +2,7 @@
 import { EventType, MatrixError } from "matrix-js-sdk";
 import { useAuthStore } from "../stores/AuthStore";
 import { DEPRECATED_DM_PREFIX, DEPRECATED_DM_SEPARATOR } from "../constants/rooms";
+import { devLog } from "../utils/devLog";
 
 type PowerLevelContent = {
     invite?: number;
@@ -141,7 +142,7 @@ export async function inviteUsersToRoom(roomId: string, userIds: string[]): Prom
             userId,
             membership: room?.getMember(userId)?.membership ?? null,
         }));
-        console.log("[InviteTrace]", {
+        devLog("[InviteTrace]", {
             roomId,
             roomVersion,
             federate,
