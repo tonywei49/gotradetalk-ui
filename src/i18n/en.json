@@ -319,6 +319,7 @@
         "downloadFile": "Download file:",
         "uploadingFile": "Uploading {{name}} ({{percent}}%)",
         "uploadFailed": "Upload failed.",
+        "retryUpload": "Retry",
         "fileReadyToSend": "Uploaded. Click send to post it.",
         "removingFile": "Removing file...",
         "uploadStillInProgress": "Some files are still uploading. Please wait.",

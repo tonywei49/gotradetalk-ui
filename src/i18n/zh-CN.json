@@ -319,6 +319,7 @@
         "downloadFile": "下載檔案：",
         "uploadingFile": "上傳中 {{name}}（{{percent}}%）",
         "uploadFailed": "上傳失敗。",
+        "retryUpload": "重試",
         "fileReadyToSend": "上傳完成，點擊發送後才會送出。",
         "removingFile": "刪除檔案中...",
         "uploadStillInProgress": "仍有檔案上傳中，請稍候。",

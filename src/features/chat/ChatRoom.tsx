@@ -52,6 +52,7 @@ type PendingAttachment = {
     fileName: string;
     fileSize: number;
     mimeType: string;
+    sourceFile?: File;
     msgtype: MsgType;
     isPdf: boolean;
     mxcUrl: string | null;
@@ -1290,6 +1291,72 @@ export const ChatRoom: React.FC = () => {
         fileInputRef.current?.click();
     };
 
+    const uploadDraftAttachmentById = async (roomId: string, attachmentId: string, file: File): Promise<void> => {
+        if (!matrixClient) return;
+        const normalizeMime = (value: string | undefined): string => (value ?? "").toLowerCase();
+        const mimeType = normalizeMime(file.type);
+        traceEvent("chat.upload_start", {
+            roomId,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType,
+            userId,
+            attachmentId,
+        });
+        try {
+            const uploadResult = (await matrixClient.uploadContent(file, {
+                includeFilename: false,
+                progressHandler: (progress) => {
+                    const uploaded = progress.loaded ?? 0;
+                    const total = progress.total ?? 0;
+                    if (!total) return;
+                    const percent = Math.min(100, Math.max(0, Math.round((uploaded / total) * 100)));
+                    setPendingAttachmentsByRoom((prev) =>
+                        withUpdatedRoomAttachments(prev, roomId, (items) =>
+                            items.map((item) =>
+                                item.id === attachmentId ? { ...item, progress: percent, status: "uploading" } : item,
+                            ),
+                        ),
+                    );
+                },
+            })) as { content_uri?: string } | string;
+
+            const mxcUrl = typeof uploadResult === "string" ? uploadResult : uploadResult.content_uri;
+            if (!mxcUrl) throw new Error("upload content_uri missing");
+            if (userId) {
+                upsertDraftMediaEntry({ mxcUrl, createdAt: Date.now(), ownerUserId: userId });
+            }
+            setPendingAttachmentsByRoom((prev) =>
+                withUpdatedRoomAttachments(prev, roomId, (items) =>
+                    items.map((item) =>
+                        item.id === attachmentId ? { ...item, mxcUrl, progress: 100, status: "ready", error: undefined } : item,
+                    ),
+                ),
+            );
+            traceEvent("chat.upload_success", { roomId, fileName: file.name, mxcUrl, userId, attachmentId });
+        } catch (error) {
+            const mapped = mapMediaActionError(error);
+            const message =
+                mapped === "STORAGE_QUOTA_EXCEEDED"
+                    ? t("chat.storageQuotaExceeded")
+                    : mapped === "NO_PERMISSION"
+                        ? t("chat.noPermission")
+                        : error instanceof Error
+                            ? error.message
+                            : typeof error === "string"
+                                ? error
+                                : t("chat.uploadFailed");
+            setPendingAttachmentsByRoom((prev) =>
+                withUpdatedRoomAttachments(prev, roomId, (items) =>
+                    items.map((item) =>
+                        item.id === attachmentId ? { ...item, status: "failed", error: message || t("chat.uploadFailed") } : item,
+                    ),
+                ),
+            );
+            traceEvent("chat.upload_failed", { roomId, fileName: file.name, userId, reason: mapped, attachmentId });
+        }
+    };
+
     const uploadDraftAttachment = async (file: File): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
         const roomId = activeRoomId;
@@ -1315,6 +1382,7 @@ export const ChatRoom: React.FC = () => {
                     fileName: file.name,
                     fileSize: file.size,
                     mimeType,
+                    sourceFile: file,
                     msgtype,
                     isPdf: isPdfFile,
                     mxcUrl: null,
@@ -1324,74 +1392,24 @@ export const ChatRoom: React.FC = () => {
             ]),
         );
         setUploadError(null);
-        traceEvent("chat.upload_start", {
-            roomId,
-            fileName: file.name,
-            fileSize: file.size,
-            mimeType,
-            userId,
-        });
+        await uploadDraftAttachmentById(roomId, attachmentId, file);
+    };
 
-        try {
-            const uploadResult = (await matrixClient.uploadContent(file, {
-                includeFilename: false,
-                progressHandler: (progress) => {
-                    const uploaded = progress.loaded ?? 0;
-                    const total = progress.total ?? 0;
-                    if (!total) return;
-                    const percent = Math.min(100, Math.max(0, Math.round((uploaded / total) * 100)));
-                    setPendingAttachmentsByRoom((prev) =>
-                        withUpdatedRoomAttachments(prev, roomId, (items) =>
-                            items.map((item) =>
-                                item.id === attachmentId ? { ...item, progress: percent, status: "uploading" } : item,
-                            ),
-                        ),
-                    );
-                },
-            })) as { content_uri?: string } | string;
-
-            const mxcUrl = typeof uploadResult === "string" ? uploadResult : uploadResult.content_uri;
-            if (!mxcUrl) {
-                throw new Error("upload content_uri missing");
-            }
-            if (userId) {
-                upsertDraftMediaEntry({
-                    mxcUrl,
-                    createdAt: Date.now(),
-                    ownerUserId: userId,
-                });
-            }
-            setPendingAttachmentsByRoom((prev) =>
-                withUpdatedRoomAttachments(prev, roomId, (items) =>
-                    items.map((item) =>
-                        item.id === attachmentId
-                            ? { ...item, mxcUrl, progress: 100, status: "ready" }
-                            : item,
-                    ),
+    const onRetryPendingAttachment = async (attachmentId: string): Promise<void> => {
+        if (!activeRoomId) return;
+        const roomId = activeRoomId;
+        const target = pendingAttachments.find((item) => item.id === attachmentId);
+        if (!target || target.status !== "failed" || !target.sourceFile) return;
+        setPendingAttachmentsByRoom((prev) =>
+            withUpdatedRoomAttachments(prev, roomId, (items) =>
+                items.map((item) =>
+                    item.id === attachmentId ? { ...item, status: "uploading", progress: 0, error: undefined } : item,
                 ),
-            );
-            traceEvent("chat.upload_success", { roomId, fileName: file.name, mxcUrl, userId });
-        } catch (error) {
-            const mapped = mapMediaActionError(error);
-            const message =
-                mapped === "STORAGE_QUOTA_EXCEEDED"
-                    ? t("chat.storageQuotaExceeded")
-                    : mapped === "NO_PERMISSION"
-                        ? t("chat.noPermission")
-                        : error instanceof Error
-                            ? error.message
-                            : typeof error === "string"
-                                ? error
-                                : t("chat.uploadFailed");
-            setPendingAttachmentsByRoom((prev) =>
-                withUpdatedRoomAttachments(prev, roomId, (items) =>
-                    items.map((item) =>
-                        item.id === attachmentId ? { ...item, status: "failed", error: message || t("chat.uploadFailed") } : item,
-                    ),
-                ),
-            );
-            traceEvent("chat.upload_failed", { roomId, fileName: file.name, userId, reason: mapped });
-        }
+            ),
+        );
+        setUploadError(null);
+        traceEvent("chat.upload_retry", { roomId, attachmentId, fileName: target.fileName, userId });
+        await uploadDraftAttachmentById(roomId, attachmentId, target.sourceFile);
     };
 
     const onRemovePendingAttachment = async (attachmentId: string): Promise<void> => {
@@ -1858,14 +1876,25 @@ export const ChatRoom: React.FC = () => {
                                         {item.status === "removing" && t("chat.removingFile")}
                                     </div>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => void onRemovePendingAttachment(item.id)}
-                                    className="ml-2 rounded-full px-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-                                    disabled={item.status === "uploading" || item.status === "removing"}
-                                >
-                                    ✕
-                                </button>
+                                <div className="ml-2 flex items-center gap-1">
+                                    {item.status === "failed" && item.sourceFile && (
+                                        <button
+                                            type="button"
+                                            onClick={() => void onRetryPendingAttachment(item.id)}
+                                            className="rounded-md border border-emerald-300 px-2 py-0.5 text-[11px] text-emerald-600 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                                        >
+                                            {t("chat.retryUpload")}
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => void onRemovePendingAttachment(item.id)}
+                                        className="rounded-full px-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                        disabled={item.status === "uploading" || item.status === "removing"}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
                             </div>
                         ))}
                         {uploadError && <div className="text-rose-500">{uploadError}</div>}
