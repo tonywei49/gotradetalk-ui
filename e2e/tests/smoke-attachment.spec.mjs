@@ -87,9 +87,17 @@ test("upload -> send -> delete file message smoke", async ({ page }) => {
 
   await closeCreateGroupModalIfPresent(page);
 
-  const firstRoom = firstLocator(page, ['[data-testid^="room-list-item-"]', "aside button"]);
-  if ((await firstRoom.count()) > 0) {
-    await firstRoom.first().click();
+  const roomHint = (process.env.E2E_ROOM_HINT || "").trim();
+  if (roomHint) {
+    const hintedRoom = page.locator("aside button").filter({ hasText: roomHint }).first();
+    if ((await hintedRoom.count()) > 0) {
+      await hintedRoom.click();
+    }
+  } else {
+    const firstRoom = firstLocator(page, ['[data-testid^="room-list-item-"]', "aside button"]);
+    if ((await firstRoom.count()) > 0) {
+      await firstRoom.first().click();
+    }
   }
 
   const fileInput = firstLocator(page, ['[data-testid="chat-file-input"]', 'input[type="file"]']).first();
