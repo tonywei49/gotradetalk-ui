@@ -211,10 +211,11 @@ export const MainLayout: React.FC = () => {
     const previewDragOriginRef = useRef({ x: 0, y: 0 });
     const [jumpToEventId, setJumpToEventId] = useState<string | null>(null);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
-    const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language">("none");
+    const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language" | "translation-default">("none");
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
+    const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original">("translated");
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
@@ -249,6 +250,10 @@ export const MainLayout: React.FC = () => {
         { value: "zh-CN", label: t("language.chineseSimplified") },
     ];
     const localeTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
+    const translationDefaultStorageKey = useMemo(
+        () => `gtt_translation_default_view:${matrixCredentials?.user_id ?? "guest"}`,
+        [matrixCredentials?.user_id],
+    );
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : matrixAccessToken;
     const meUpdateOptions =
         hubAccessToken && !localeTokenExpired
@@ -449,6 +454,15 @@ export const MainLayout: React.FC = () => {
             document.removeEventListener("click", onClickOutside);
         };
     }, [showAccountMenu]);
+
+    useEffect(() => {
+        const raw = localStorage.getItem(translationDefaultStorageKey);
+        setTranslationDefaultView(raw === "original" ? "original" : "translated");
+    }, [translationDefaultStorageKey]);
+
+    useEffect(() => {
+        localStorage.setItem(translationDefaultStorageKey, translationDefaultView);
+    }, [translationDefaultStorageKey, translationDefaultView]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -1168,6 +1182,16 @@ export const MainLayout: React.FC = () => {
                             >
                                 {t("layout.chatReceiveLanguage")}
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSettingsDetail("translation-default");
+                                    setMobileView("detail");
+                                }}
+                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                {t("layout.translationDefaultContent")}
+                            </button>
                         </div>
                     </>
                 ) : activeTab === "account" ? (
@@ -1796,6 +1820,59 @@ export const MainLayout: React.FC = () => {
                                     </button>
                                 </div>
                             </>
+                        ) : activeTab === "settings" && settingsDetail === "translation-default" ? (
+                            <>
+                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
+                                    {t("layout.selectItem")}
+                                </div>
+                                <div className="px-6">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileView("list")}
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                            aria-label={t("layout.backToList")}
+                                        >
+                                            &lt;
+                                        </button>
+                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                            {t("layout.translationDefaultContent")}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setTranslationDefaultView("translated");
+                                                setSettingsDetail("none");
+                                                setMobileView("list");
+                                            }}
+                                            className={`rounded-lg border px-3 py-2 text-sm ${
+                                                translationDefaultView === "translated"
+                                                    ? "border-emerald-400 text-emerald-600"
+                                                    : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                                            }`}
+                                        >
+                                            {t("layout.translationDefaultTranslated")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setTranslationDefaultView("original");
+                                                setSettingsDetail("none");
+                                                setMobileView("list");
+                                            }}
+                                            className={`rounded-lg border px-3 py-2 text-sm ${
+                                                translationDefaultView === "original"
+                                                    ? "border-emerald-400 text-emerald-600"
+                                                    : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                                            }`}
+                                        >
+                                            {t("layout.translationDefaultOriginal")}
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
                                 {t("layout.selectItem")}
@@ -1811,6 +1888,7 @@ export const MainLayout: React.FC = () => {
                             onTogglePin: () => onTogglePinActiveRoom(),
                             isRoomPinned: isActiveRoomPinned,
                             chatReceiveLanguage,
+                            translationDefaultView,
                             companyName: meProfile?.company_name ?? null,
                             jumpToEventId,
                             onJumpHandled: () => setJumpToEventId(null),

@@ -181,12 +181,16 @@ const MessageBubble = ({
     const isFileLike = Boolean(isImageMsg || isVideoMsg || isAudioMsg || isFile);
     const eventId = event.getId() ?? event.getTxnId() ?? "unknown";
     const showTranslated = Boolean(isText && showTranslation);
+    const hasTranslatedText = Boolean((translatedText ?? "").trim());
+    const showUnavailableInline = Boolean(
+        isText && showTranslated && !translationLoading && !hasTranslatedText && translationError,
+    );
     const displayText = showTranslated
         ? translationLoading
             ? t("chat.translationPending")
-            : translationError
-                ? t("chat.translationUnavailable")
-                : translatedText ?? t("chat.translationUnavailable")
+            : hasTranslatedText
+                ? (translatedText as string)
+                : messageText
         : messageText;
 
     return (
@@ -345,18 +349,25 @@ const MessageBubble = ({
                     )}
                 </div>
             {isText && !isMe && onToggleTranslation && (
-                <button
-                    type="button"
-                    className={`mt-1 text-[11px] ${isMe ? "text-emerald-100/80" : "text-emerald-600 dark:text-emerald-300"}`}
-                    onClick={onToggleTranslation}
-                    disabled={translationLoading}
-                >
-                    {translationLoading
-                        ? t("chat.translationPending")
-                        : showTranslated
-                            ? t("chat.showOriginal")
-                            : t("chat.showTranslation")}
-                </button>
+                <div className="mt-1 flex items-center gap-2 text-[11px]">
+                    <button
+                        type="button"
+                        className={`${isMe ? "text-emerald-100/80" : "text-emerald-600 dark:text-emerald-300"}`}
+                        onClick={onToggleTranslation}
+                        disabled={translationLoading}
+                    >
+                        {translationLoading
+                            ? t("chat.translationPending")
+                            : showTranslated
+                                ? t("chat.showOriginal")
+                                : t("chat.showTranslation")}
+                    </button>
+                    {showUnavailableInline && (
+                        <span className={`${isMe ? "text-emerald-100/80" : "text-emerald-600 dark:text-emerald-300"}`}>
+                            {t("chat.translationUnavailable")}
+                        </span>
+                    )}
+                </div>
             )}
             {isFailed && (
                 <button
@@ -379,6 +390,7 @@ type ChatRoomContext = {
     onTogglePin?: () => void;
     isRoomPinned?: boolean;
     chatReceiveLanguage?: string;
+    translationDefaultView?: "translated" | "original";
     companyName?: string | null;
     jumpToEventId?: string | null;
     onJumpHandled?: () => void;
@@ -596,6 +608,7 @@ export const ChatRoom: React.FC = () => {
         onTogglePin,
         isRoomPinned,
         chatReceiveLanguage,
+        translationDefaultView,
         companyName,
         jumpToEventId,
         onJumpHandled,
@@ -1068,7 +1081,11 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: translateMatrixUserId,
             });
             setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false, error: false } }));
-            setTranslationView((prev) => (prev[key] === undefined ? { ...prev, [key]: true } : prev));
+            setTranslationView((prev) =>
+                prev[key] === undefined
+                    ? { ...prev, [key]: translationDefaultView !== "original" }
+                    : prev,
+            );
         } catch (error) {
             const message =
                 error instanceof Error
@@ -2046,10 +2063,7 @@ export const ChatRoom: React.FC = () => {
                                 translatedText={translationMap[getEventKey(event)]?.text ?? null}
                                 translationLoading={translationMap[getEventKey(event)]?.loading ?? false}
                                 translationError={translationMap[getEventKey(event)]?.error ?? false}
-                                showTranslation={
-                                    translationView[getEventKey(event)] ??
-                                    (translationMap[getEventKey(event)]?.text ? !isMe : false)
-                                }
+                                showTranslation={translationView[getEventKey(event)] ?? (!isMe && translationDefaultView !== "original")}
                                 canDeleteFile={isOwnFileEvent(event)}
                                 deleteBusy={deletingEventId === event.getId()}
                                 onDeleteFile={(targetEvent) => {
