@@ -71,6 +71,8 @@ const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
 const PENDING_ATTACHMENT_DRAFTS_KEY_PREFIX = "gtt_pending_attachment_drafts_v1";
 const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
+const TRANSLATION_CACHE_STORAGE_KEY = "gtt_translation_cache_v1";
+const TRANSLATION_CACHE_MAX_ITEMS = 1500;
 
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
@@ -90,6 +92,30 @@ type PersistedPendingAttachment = {
     progress: number;
     error?: string;
 };
+
+type PersistedTranslationCacheEntry = {
+    text: string;
+    updatedAt: number;
+};
+
+type PersistedTranslationCacheRecord = Record<string, PersistedTranslationCacheEntry>;
+
+function hashTextForTranslationCache(text: string): string {
+    let hash = 5381;
+    for (let i = 0; i < text.length; i += 1) {
+        hash = (hash * 33) ^ text.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(36);
+}
+
+function buildTranslationCacheStorageKey(
+    roomId: string,
+    messageId: string,
+    targetLanguage: string,
+    sourceText: string,
+): string {
+    return `${roomId}|${messageId}|${targetLanguage}|${hashTextForTranslationCache(sourceText)}`;
+}
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
     const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
@@ -921,6 +947,69 @@ export const ChatRoom: React.FC = () => {
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
     const [translationBlocked, setTranslationBlocked] = useState(false);
+    const translationCacheRef = useRef<PersistedTranslationCacheRecord | null>(null);
+
+    const ensureTranslationCacheLoaded = (): PersistedTranslationCacheRecord => {
+        if (translationCacheRef.current) return translationCacheRef.current;
+        try {
+            const raw = localStorage.getItem(TRANSLATION_CACHE_STORAGE_KEY);
+            if (!raw) {
+                translationCacheRef.current = {};
+                return translationCacheRef.current;
+            }
+            const parsed = JSON.parse(raw) as PersistedTranslationCacheRecord;
+            if (!parsed || typeof parsed !== "object") {
+                translationCacheRef.current = {};
+                return translationCacheRef.current;
+            }
+            translationCacheRef.current = parsed;
+            return parsed;
+        } catch {
+            translationCacheRef.current = {};
+            return translationCacheRef.current;
+        }
+    };
+
+    const persistTranslationCache = (record: PersistedTranslationCacheRecord): void => {
+        try {
+            localStorage.setItem(TRANSLATION_CACHE_STORAGE_KEY, JSON.stringify(record));
+        } catch {
+            // ignore persistence errors (quota/private mode)
+        }
+    };
+
+    const readCachedTranslationText = (
+        roomId: string,
+        messageId: string,
+        currentTargetLanguage: string,
+        sourceText: string,
+    ): string | null => {
+        const record = ensureTranslationCacheLoaded();
+        const key = buildTranslationCacheStorageKey(roomId, messageId, currentTargetLanguage, sourceText);
+        return record[key]?.text ?? null;
+    };
+
+    const writeCachedTranslationText = (
+        roomId: string,
+        messageId: string,
+        currentTargetLanguage: string,
+        sourceText: string,
+        translatedText: string,
+    ): void => {
+        const record = ensureTranslationCacheLoaded();
+        const key = buildTranslationCacheStorageKey(roomId, messageId, currentTargetLanguage, sourceText);
+        record[key] = { text: translatedText, updatedAt: Date.now() };
+        const keys = Object.keys(record);
+        if (keys.length > TRANSLATION_CACHE_MAX_ITEMS) {
+            keys
+                .sort((a, b) => (record[a]?.updatedAt ?? 0) - (record[b]?.updatedAt ?? 0))
+                .slice(0, keys.length - TRANSLATION_CACHE_MAX_ITEMS)
+                .forEach((expiredKey) => {
+                    delete record[expiredKey];
+                });
+        }
+        persistTranslationCache(record);
+    };
 
     const getEventKey = (event: MatrixEvent): string =>
         event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
@@ -1056,6 +1145,19 @@ export const ChatRoom: React.FC = () => {
         const messageId = event.getId();
         if (!messageId) return;
         const key = getEventKey(event);
+        const roomId = activeRoomId ?? "";
+        if (!forceRetry && roomId && targetLanguage) {
+            const cachedText = readCachedTranslationText(roomId, messageId, targetLanguage, messageText);
+            if (cachedText) {
+                setTranslationMap((prev) => ({ ...prev, [key]: { text: cachedText, loading: false, error: false } }));
+                setTranslationView((prev) =>
+                    prev[key] === undefined
+                        ? { ...prev, [key]: translationDefaultView !== "original" }
+                        : prev,
+                );
+                return;
+            }
+        }
         const senderId = event.getSender() ?? null;
         const senderContact = resolveContactByMatrixUserId(senderId);
         const senderLangHint =
@@ -1081,6 +1183,9 @@ export const ChatRoom: React.FC = () => {
                 hsUrl: translateHsUrl,
                 matrixUserId: translateMatrixUserId,
             });
+            if (roomId && targetLanguage) {
+                writeCachedTranslationText(roomId, messageId, targetLanguage, messageText, result.translation);
+            }
             setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false, error: false } }));
             setTranslationView((prev) =>
                 prev[key] === undefined
