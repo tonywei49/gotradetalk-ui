@@ -608,6 +608,8 @@ export const ChatRoom: React.FC = () => {
     const userType = useAuthStore((state) => state.userType);
     const { events, room } = useRoomTimeline(matrixClient, activeRoomId, { limit: 200 });
     const timelineRef = useRef<HTMLDivElement | null>(null);
+    const roomStickBottomRef = useRef<Record<string, boolean>>({});
+    const previousRoomIdRef = useRef<string | null>(null);
     const [composerText, setComposerText] = useState("");
     const [scrollLoading, setScrollLoading] = useState(false);
     const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -1238,6 +1240,9 @@ export const ChatRoom: React.FC = () => {
         const escapedEventId = jumpToEventId.replace(/'/g, "\\'");
         const target = container.querySelector(`[data-event-id='${escapedEventId}']`) as HTMLElement | null;
         if (!target) return;
+        if (activeRoomId) {
+            roomStickBottomRef.current[activeRoomId] = false;
+        }
         target.scrollIntoView({ behavior: "smooth", block: "center" });
         setHighlightedEventId(jumpToEventId);
         onJumpHandled?.();
@@ -1245,7 +1250,27 @@ export const ChatRoom: React.FC = () => {
             setHighlightedEventId((prev) => (prev === jumpToEventId ? null : prev));
         }, 1800);
         return () => window.clearTimeout(timer);
-    }, [jumpToEventId, mergedEvents.length, onJumpHandled]);
+    }, [activeRoomId, jumpToEventId, mergedEvents.length, onJumpHandled]);
+
+    useEffect(() => {
+        const prevRoomId = previousRoomIdRef.current;
+        const container = timelineRef.current;
+        if (prevRoomId && container) {
+            const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+            roomStickBottomRef.current[prevRoomId] = distance < 120;
+        }
+        previousRoomIdRef.current = activeRoomId;
+        if (!activeRoomId || jumpToEventId) return;
+        const shouldStickBottom = roomStickBottomRef.current[activeRoomId] ?? true;
+        if (!shouldStickBottom) return;
+        const timer = window.setTimeout(() => {
+            const current = timelineRef.current;
+            if (!current) return;
+            current.scrollTop = current.scrollHeight;
+            setShowScrollToBottom(false);
+        }, 40);
+        return () => window.clearTimeout(timer);
+    }, [activeRoomId, jumpToEventId]);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
@@ -1253,7 +1278,9 @@ export const ChatRoom: React.FC = () => {
         const container = timelineRef.current;
         if (!container) return;
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (distanceFromBottom < 120) {
+        const shouldStickBottom = activeRoomId ? (roomStickBottomRef.current[activeRoomId] ?? true) : false;
+        if (shouldStickBottom || distanceFromBottom < 120) {
+            if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
             container.scrollTop = container.scrollHeight;
             // 在底部時發送已讀回執
             const latestEvent = mergedEvents[mergedEvents.length - 1];
@@ -1261,7 +1288,7 @@ export const ChatRoom: React.FC = () => {
                 void matrixClient.sendReadReceipt(latestEvent);
             }
         }
-    }, [mergedEvents.length, room, matrixClient, mergedEvents]);
+    }, [activeRoomId, mergedEvents.length, room, matrixClient, mergedEvents]);
 
     // 進入房間時如果在底部也發送已讀回執
     useEffect(() => {
@@ -1288,6 +1315,9 @@ export const ChatRoom: React.FC = () => {
 
         // 更新滾動到底部按鈕的顯示狀態
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (activeRoomId) {
+            roomStickBottomRef.current[activeRoomId] = distanceFromBottom < 120;
+        }
         setShowScrollToBottom(distanceFromBottom > 200);
 
         // 當滾動到底部時發送已讀回執
@@ -1311,6 +1341,7 @@ export const ChatRoom: React.FC = () => {
     const scrollToBottom = (): void => {
         const container = timelineRef.current;
         if (container) {
+            if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
             container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
         }
     };
@@ -1332,6 +1363,7 @@ export const ChatRoom: React.FC = () => {
             return;
         }
         if (!trimmed && readyAttachments.length === 0) return;
+        if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
         setComposerText("");
         setUploadError(null);
         let sentEventId: string | undefined;
