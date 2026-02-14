@@ -167,6 +167,17 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
     );
 };
 
+const TranslationTypingIndicator = ({ isMe }: { isMe: boolean }) => {
+    const dotClass = isMe ? "bg-white/90" : "bg-slate-500 dark:bg-slate-300";
+    return (
+        <div className="flex items-center gap-1 px-1 py-1" aria-label="translation-loading-indicator">
+            <span className={`h-1.5 w-1.5 rounded-full animate-bounce ${dotClass}`} />
+            <span className={`h-1.5 w-1.5 rounded-full animate-bounce [animation-delay:120ms] ${dotClass}`} />
+            <span className={`h-1.5 w-1.5 rounded-full animate-bounce [animation-delay:240ms] ${dotClass}`} />
+        </div>
+    );
+};
+
 const MessageBubble = ({
     event,
     isMe,
@@ -334,6 +345,8 @@ const MessageBubble = ({
                                     {t("chat.downloadFile")} {messageText}
                                 </a>
                             )
+                        ) : isText && showTranslated && translationLoading ? (
+                            <TranslationTypingIndicator isMe={isMe} />
                         ) : (
                             <MessageMarkdown text={displayText} isMe={isMe} />
                         )}
