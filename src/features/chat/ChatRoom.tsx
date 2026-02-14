@@ -1886,6 +1886,26 @@ export const ChatRoom: React.FC = () => {
         });
     };
 
+    const adjustComposerHeight = (): void => {
+        const input = composerRef.current;
+        if (!input) return;
+        const styles = window.getComputedStyle(input);
+        const lineHeight = Number.parseFloat(styles.lineHeight || "20") || 20;
+        const paddingTop = Number.parseFloat(styles.paddingTop || "0") || 0;
+        const paddingBottom = Number.parseFloat(styles.paddingBottom || "0") || 0;
+        const borderTop = Number.parseFloat(styles.borderTopWidth || "0") || 0;
+        const borderBottom = Number.parseFloat(styles.borderBottomWidth || "0") || 0;
+        const maxHeight = (lineHeight * 5) + paddingTop + paddingBottom + borderTop + borderBottom;
+        input.style.height = "auto";
+        const nextHeight = Math.min(input.scrollHeight, maxHeight);
+        input.style.height = `${nextHeight}px`;
+        input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
+    };
+
+    useEffect(() => {
+        adjustComposerHeight();
+    }, [composerText, activeRoomId]);
+
     const visibleEmojis = useMemo(() => {
         const merged = [...recentEmojis, ...EMOJI_LIST];
         return Array.from(new Set(merged));
@@ -2320,12 +2340,12 @@ export const ChatRoom: React.FC = () => {
                         value={composerText}
                         onChange={(event) => setComposerText(event.target.value)}
                         onKeyDown={(event) => {
-                            if (event.key === "Enter" && !event.ctrlKey) {
+                            if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
                                 event.preventDefault();
                                 void onSend();
                             }
                         }}
-                        className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none h-12 max-h-32 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-slate-800"
+                        className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 leading-5 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none min-h-12 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-slate-800"
                         placeholder={isDeprecatedRoom ? t("chat.deprecatedPlaceholder") : t("chat.placeholder")}
                         rows={1}
                         disabled={isDeprecatedRoom}
