@@ -1206,10 +1206,7 @@ export const ChatRoom: React.FC = () => {
             if (
                 message.includes("NOT_SUBSCRIBED") ||
                 message.includes("QUOTA_EXCEEDED") ||
-                message.includes("CLIENT_TRANSLATION_DISABLED") ||
-                message.includes("TRANSLATION_NOT_ALLOWED") ||
-                message.includes("Missing chat_link_id") ||
-                message.includes("Chat link not active")
+                message.includes("CLIENT_TRANSLATION_DISABLED")
             ) {
                 setTranslationBlocked(true);
             }
