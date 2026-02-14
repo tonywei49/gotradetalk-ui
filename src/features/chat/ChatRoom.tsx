@@ -723,10 +723,11 @@ export const ChatRoom: React.FC = () => {
     const matrixHsUrl = matrixCredentials?.hs_url ?? null;
     const inviteTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const useHubToken = userType === "client" && hubAccessToken && !inviteTokenExpired;
+    const useHubTokenForTranslate = userType === "client" && hubAccessToken && !inviteTokenExpired;
     const inviteAccessToken = useHubToken ? hubAccessToken : matrixAccessToken;
     const inviteHsUrl = useHubToken ? null : matrixHsUrl;
-    const translateAccessToken = hubAccessToken ?? matrixAccessToken;
-    const translateHsUrl = hubAccessToken ? null : matrixHsUrl;
+    const translateAccessToken = useHubTokenForTranslate ? hubAccessToken : matrixAccessToken;
+    const translateHsUrl = useHubTokenForTranslate ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
     const pendingAttachments = useMemo(
         () => (activeRoomId ? pendingAttachmentsByRoom[activeRoomId] ?? [] : []),
