@@ -662,6 +662,7 @@ export const ChatRoom: React.FC = () => {
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const roomStickBottomRef = useRef<Record<string, boolean>>({});
     const previousRoomIdRef = useRef<string | null>(null);
+    const lastReadReceiptEventByRoomRef = useRef<Record<string, string>>({});
     const [composerText, setComposerText] = useState("");
     const [scrollLoading, setScrollLoading] = useState(false);
     const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -1165,8 +1166,8 @@ export const ChatRoom: React.FC = () => {
         }
         const senderId = event.getSender() ?? null;
         const senderContact = resolveContactByMatrixUserId(senderId);
-        const senderLangHint =
-            (senderContact?.translation_locale || senderContact?.locale || "").trim() || undefined;
+        // Source language hint should use sender locale (writing language), not translation locale (reading preference).
+        const senderLangHint = (senderContact?.locale || "").trim() || undefined;
         setTranslationMap((prev) => {
             if (prev[key]?.loading) return prev;
             if (!forceRetry && prev[key]) return prev;
@@ -1225,6 +1226,14 @@ export const ChatRoom: React.FC = () => {
     const canSendReceipt = (event: MatrixEvent | undefined): event is MatrixEvent => {
         const eventId = event?.getId();
         return Boolean(eventId && eventId.startsWith("$"));
+    };
+
+    const sendReadReceiptIfNeeded = (event: MatrixEvent | undefined): void => {
+        if (!matrixClient || !activeRoomId || !canSendReceipt(event)) return;
+        const eventId = event.getId() as string;
+        if (lastReadReceiptEventByRoomRef.current[activeRoomId] === eventId) return;
+        lastReadReceiptEventByRoomRef.current[activeRoomId] = eventId;
+        void matrixClient.sendReadReceipt(event);
     };
 
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
@@ -1415,9 +1424,7 @@ export const ChatRoom: React.FC = () => {
             container.scrollTop = container.scrollHeight;
             // 在底部時發送已讀回執
             const latestEvent = mergedEvents[mergedEvents.length - 1];
-            if (canSendReceipt(latestEvent)) {
-                void matrixClient.sendReadReceipt(latestEvent);
-            }
+            sendReadReceiptIfNeeded(latestEvent);
         }
     }, [activeRoomId, mergedEvents.length, room, matrixClient, mergedEvents]);
 
@@ -1431,9 +1438,7 @@ export const ChatRoom: React.FC = () => {
             const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
             if (distanceFromBottom < 120) {
                 const latestEvent = mergedEvents[mergedEvents.length - 1];
-                if (canSendReceipt(latestEvent)) {
-                    void matrixClient.sendReadReceipt(latestEvent);
-                }
+                sendReadReceiptIfNeeded(latestEvent);
             }
         }, 100);
         return () => clearTimeout(timer);
@@ -1454,9 +1459,7 @@ export const ChatRoom: React.FC = () => {
         // 當滾動到底部時發送已讀回執
         if (distanceFromBottom < 50) {
             const latestEvent = mergedEvents[mergedEvents.length - 1];
-            if (canSendReceipt(latestEvent)) {
-                void matrixClient.sendReadReceipt(latestEvent);
-            }
+            sendReadReceiptIfNeeded(latestEvent);
         }
 
         // 滾動加載更多消息
