@@ -1089,15 +1089,11 @@ export const ChatRoom: React.FC = () => {
     }, [directPeerUserId, resolveContactByMatrixUserId]);
     const directTranslationEnabled = useMemo(() => {
         if (!isDirectRoom || !translationContactsLoaded) return false;
-        const peerHost = directPeerUserId?.split(":")[1] || null;
-        const selfHost = userId?.split(":")[1] || null;
         if (userType === "client") {
-            if (directPeerContact?.user_type === "staff") return true;
             if (directPeerContact?.user_type === "client") return false;
-            return Boolean(peerHost && selfHost && peerHost !== selfHost);
+            return true;
         }
         if (userType === "staff") {
-            if (directPeerContact?.user_type === "client") return true;
             if (directPeerContact?.user_type === "staff") {
                 if (
                     directPeerContact.company_name &&
@@ -1108,7 +1104,7 @@ export const ChatRoom: React.FC = () => {
                 }
                 return true;
             }
-            return Boolean(peerHost && selfHost && peerHost !== selfHost);
+            return true;
         }
         return false;
     }, [companyName, directPeerContact, directPeerUserId, isDirectRoom, translationContactsLoaded, userId, userType]);
@@ -1127,15 +1123,10 @@ export const ChatRoom: React.FC = () => {
         if (isGroupChat) {
             const senderId = event.getSender() ?? null;
             const senderContact = resolveContactByMatrixUserId(senderId);
-            const senderHost = senderId?.split(":")[1] || null;
-            const selfHost = userId?.split(":")[1] || null;
             if (userType === "client") {
-                if (senderContact?.user_type === "client") return true;
-                if (senderContact?.user_type === "staff") return true;
-                return Boolean(senderHost && selfHost && senderHost !== selfHost);
+                return true;
             }
             if (userType === "staff") {
-                if (senderContact?.user_type === "client") return true;
                 if (senderContact?.user_type === "staff") {
                     if (
                         senderContact.company_name &&
@@ -1146,7 +1137,7 @@ export const ChatRoom: React.FC = () => {
                     }
                     return true;
                 }
-                return Boolean(senderHost && selfHost && senderHost !== selfHost);
+                return true;
             }
             return false;
         }
