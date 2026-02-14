@@ -186,10 +186,10 @@ const MessageBubble = ({
         isText && showTranslated && !translationLoading && !hasTranslatedText && translationError,
     );
     const displayText = showTranslated
-        ? translationLoading
-            ? t("chat.translationPending")
-            : hasTranslatedText
-                ? (translatedText as string)
+        ? hasTranslatedText
+            ? (translatedText as string)
+            : translationLoading
+                ? t("chat.translationPending")
                 : messageText
         : messageText;
 
@@ -1063,7 +1063,8 @@ export const ChatRoom: React.FC = () => {
         setTranslationMap((prev) => {
             if (prev[key]?.loading) return prev;
             if (!forceRetry && prev[key]) return prev;
-            return { ...prev, [key]: { text: null, loading: true, error: false } };
+            const previousText = prev[key]?.text ?? null;
+            return { ...prev, [key]: { text: previousText, loading: true, error: false } };
         });
         try {
             const normalizedTargetLang = targetLanguage === "zh-TW" ? "Traditional Chinese" : targetLanguage;
@@ -2076,7 +2077,11 @@ export const ChatRoom: React.FC = () => {
                                     if (nextValue) {
                                         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
                                         const messageText = content?.body ?? "";
-                                        if (messageText) {
+                                        const cache = translationMap[key];
+                                        const hasCachedTranslation = Boolean((cache?.text ?? "").trim());
+                                        const shouldRetry =
+                                            !cache || (!cache.loading && !hasCachedTranslation && Boolean(cache.error));
+                                        if (messageText && shouldRetry) {
                                             void translateEvent(event, messageText, true);
                                         }
                                     }
