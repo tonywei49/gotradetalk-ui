@@ -1088,7 +1088,7 @@ export const ChatRoom: React.FC = () => {
         return resolveContactByMatrixUserId(directPeerUserId);
     }, [directPeerUserId, resolveContactByMatrixUserId]);
     const directTranslationEnabled = useMemo(() => {
-        if (!isDirectRoom || !translationContactsLoaded) return false;
+        if (!isDirectRoom) return false;
         if (userType === "client") {
             if (directPeerContact?.user_type === "client") return false;
             return true;
@@ -1106,12 +1106,12 @@ export const ChatRoom: React.FC = () => {
             }
             return true;
         }
-        return false;
-    }, [companyName, directPeerContact, directPeerUserId, isDirectRoom, translationContactsLoaded, userId, userType]);
-    const groupTranslationEnabled = useMemo(() => {
-        if (!isGroupChat || !translationContactsLoaded) return false;
         return true;
-    }, [isGroupChat, translationContactsLoaded]);
+    }, [companyName, directPeerContact, directPeerUserId, isDirectRoom, userId, userType]);
+    const groupTranslationEnabled = useMemo(() => {
+        if (!isGroupChat) return false;
+        return true;
+    }, [isGroupChat]);
 
     const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
         if (!canTranslate || translationBlocked || isMeMessage) return false;
@@ -1139,7 +1139,7 @@ export const ChatRoom: React.FC = () => {
                 }
                 return true;
             }
-            return false;
+            return true;
         }
         return true;
     };
