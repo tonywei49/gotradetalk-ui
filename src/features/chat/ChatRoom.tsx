@@ -1092,7 +1092,6 @@ export const ChatRoom: React.FC = () => {
     const directTranslationEnabled = useMemo(() => {
         if (!isDirectRoom) return false;
         if (userType === "client") {
-            if (directPeerContact?.user_type === "client") return false;
             return true;
         }
         if (userType === "staff") {
