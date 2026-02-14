@@ -961,6 +961,7 @@ export const ChatRoom: React.FC = () => {
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
     const [translationBlocked, setTranslationBlocked] = useState(false);
     const translationCacheRef = useRef<PersistedTranslationCacheRecord | null>(null);
+    const translationErrorToastRef = useRef<{ key: string; ts: number } | null>(null);
 
     const ensureTranslationCacheLoaded = (): PersistedTranslationCacheRecord => {
         if (translationCacheRef.current) return translationCacheRef.current;
@@ -1203,6 +1204,13 @@ export const ChatRoom: React.FC = () => {
                     : typeof error === "string"
                         ? error
                         : "";
+            const toastKey = `${activeRoomId ?? "global"}:${message || "unknown"}`;
+            const now = Date.now();
+            const prevToast = translationErrorToastRef.current;
+            if (!prevToast || prevToast.key !== toastKey || now - prevToast.ts > 15000) {
+                translationErrorToastRef.current = { key: toastKey, ts: now };
+                pushToast("error", message || t("chat.translationUnavailable"));
+            }
             if (
                 message.includes("NOT_SUBSCRIBED") ||
                 message.includes("QUOTA_EXCEEDED") ||
@@ -1328,7 +1336,7 @@ export const ChatRoom: React.FC = () => {
     }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
 
     useEffect(() => {
-        if (!canTranslate || !translationContactsLoaded || (!isDirectRoom && !isGroupChat)) return;
+        if (!canTranslate || (!isDirectRoom && !isGroupChat)) return;
         mergedEvents.forEach((event) => {
             const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
             const messageText = content?.body ?? "";
@@ -1345,7 +1353,6 @@ export const ChatRoom: React.FC = () => {
         isGroupChat,
         mergedEvents,
         targetLanguage,
-        translationContactsLoaded,
         translationMap,
         groupTranslationEnabled,
         userId,
