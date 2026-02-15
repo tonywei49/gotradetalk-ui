@@ -25,6 +25,13 @@ import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../consta
 import { traceEvent } from "../../utils/debugTrace";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 import { useToastStore } from "../../stores/ToastStore";
+import { createTranslationCacheStore } from "./translationCache";
+import {
+    collectGroupClientTargetLanguages,
+    isDirectTranslationEnabled as resolveDirectTranslationEnabled,
+    normalizeHubLanguage,
+    shouldTranslateIncomingMessage,
+} from "./translationPolicy";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -92,30 +99,6 @@ type PersistedPendingAttachment = {
     progress: number;
     error?: string;
 };
-
-type PersistedTranslationCacheEntry = {
-    text: string;
-    updatedAt: number;
-};
-
-type PersistedTranslationCacheRecord = Record<string, PersistedTranslationCacheEntry>;
-
-function hashTextForTranslationCache(text: string): string {
-    let hash = 5381;
-    for (let i = 0; i < text.length; i += 1) {
-        hash = (hash * 33) ^ text.charCodeAt(i);
-    }
-    return (hash >>> 0).toString(36);
-}
-
-function buildTranslationCacheStorageKey(
-    roomId: string,
-    messageId: string,
-    targetLanguage: string,
-    sourceText: string,
-): string {
-    return `${roomId}|${messageId}|${targetLanguage}|${hashTextForTranslationCache(sourceText)}`;
-}
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
     const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
@@ -962,70 +945,11 @@ export const ChatRoom: React.FC = () => {
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
     const [translationBlocked, setTranslationBlocked] = useState(false);
-    const translationCacheRef = useRef<PersistedTranslationCacheRecord | null>(null);
     const translationErrorToastRef = useRef<{ key: string; ts: number } | null>(null);
-
-    const ensureTranslationCacheLoaded = (): PersistedTranslationCacheRecord => {
-        if (translationCacheRef.current) return translationCacheRef.current;
-        try {
-            const raw = localStorage.getItem(TRANSLATION_CACHE_STORAGE_KEY);
-            if (!raw) {
-                translationCacheRef.current = {};
-                return translationCacheRef.current;
-            }
-            const parsed = JSON.parse(raw) as PersistedTranslationCacheRecord;
-            if (!parsed || typeof parsed !== "object") {
-                translationCacheRef.current = {};
-                return translationCacheRef.current;
-            }
-            translationCacheRef.current = parsed;
-            return parsed;
-        } catch {
-            translationCacheRef.current = {};
-            return translationCacheRef.current;
-        }
-    };
-
-    const persistTranslationCache = (record: PersistedTranslationCacheRecord): void => {
-        try {
-            localStorage.setItem(TRANSLATION_CACHE_STORAGE_KEY, JSON.stringify(record));
-        } catch {
-            // ignore persistence errors (quota/private mode)
-        }
-    };
-
-    const readCachedTranslationText = (
-        roomId: string,
-        messageId: string,
-        currentTargetLanguage: string,
-        sourceText: string,
-    ): string | null => {
-        const record = ensureTranslationCacheLoaded();
-        const key = buildTranslationCacheStorageKey(roomId, messageId, currentTargetLanguage, sourceText);
-        return record[key]?.text ?? null;
-    };
-
-    const writeCachedTranslationText = (
-        roomId: string,
-        messageId: string,
-        currentTargetLanguage: string,
-        sourceText: string,
-        translatedText: string,
-    ): void => {
-        const record = ensureTranslationCacheLoaded();
-        const key = buildTranslationCacheStorageKey(roomId, messageId, currentTargetLanguage, sourceText);
-        record[key] = { text: translatedText, updatedAt: Date.now() };
-        const keys = Object.keys(record);
-        if (keys.length > TRANSLATION_CACHE_MAX_ITEMS) {
-            keys
-                .sort((a, b) => (record[a]?.updatedAt ?? 0) - (record[b]?.updatedAt ?? 0))
-                .slice(0, keys.length - TRANSLATION_CACHE_MAX_ITEMS)
-                .forEach((expiredKey) => {
-                    delete record[expiredKey];
-                });
-        }
-        persistTranslationCache(record);
-    };
+    const translationCacheStore = useMemo(
+        () => createTranslationCacheStore(TRANSLATION_CACHE_STORAGE_KEY, TRANSLATION_CACHE_MAX_ITEMS),
+        [],
+    );
 
     const getEventKey = (event: MatrixEvent): string =>
         event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
@@ -1091,59 +1015,36 @@ export const ChatRoom: React.FC = () => {
         return resolveContactByMatrixUserId(directPeerUserId);
     }, [directPeerUserId, resolveContactByMatrixUserId]);
     const directTranslationEnabled = useMemo(() => {
-        if (!isDirectRoom) return false;
-        if (userType === "client") {
-            return true;
-        }
-        if (userType === "staff") {
-            if (directPeerContact?.user_type === "staff") {
-                if (
-                    directPeerContact.company_name &&
-                    companyName &&
-                    directPeerContact.company_name === companyName
-                ) {
-                    return false;
-                }
-                return true;
-            }
-            return true;
-        }
-        return true;
-    }, [companyName, directPeerContact, directPeerUserId, isDirectRoom, userId, userType]);
+        return resolveDirectTranslationEnabled({
+            isDirectRoom,
+            userType,
+            directPeerContact,
+            companyName,
+        });
+    }, [companyName, directPeerContact, isDirectRoom, userType]);
     const groupTranslationEnabled = useMemo(() => {
         if (!isGroupChat) return false;
         return true;
     }, [isGroupChat]);
 
     const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
-        if (!canTranslate || translationBlocked || isMeMessage) return false;
-        if (isDirectRoom && !directTranslationEnabled) return false;
-        if (isGroupChat && !groupTranslationEnabled) return false;
         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
-        if (!content?.body) return false;
-        if (content.msgtype && content.msgtype !== MsgType.Text) return false;
-        if (isGroupChat) {
-            const senderId = event.getSender() ?? null;
-            const senderContact = resolveContactByMatrixUserId(senderId);
-            if (userType === "client") {
-                return true;
-            }
-            if (userType === "staff") {
-                if (senderContact?.user_type === "staff") {
-                    if (
-                        senderContact.company_name &&
-                        companyName &&
-                        senderContact.company_name === companyName
-                    ) {
-                        return false;
-                    }
-                    return true;
-                }
-                return true;
-            }
-            return true;
-        }
-        return true;
+        const senderId = event.getSender() ?? null;
+        const senderContact = resolveContactByMatrixUserId(senderId);
+        return shouldTranslateIncomingMessage({
+            canTranslate,
+            translationBlocked,
+            isMeMessage,
+            isDirectRoom,
+            isGroupChat,
+            directTranslationEnabled,
+            groupTranslationEnabled,
+            messageBody: content?.body,
+            messageType: content?.msgtype,
+            userType,
+            companyName,
+            senderContact,
+        });
     };
 
     const translateEvent = async (event: MatrixEvent, messageText: string, forceRetry = false): Promise<void> => {
@@ -1153,7 +1054,7 @@ export const ChatRoom: React.FC = () => {
         const key = getEventKey(event);
         const roomId = activeRoomId ?? "";
         if (!forceRetry && roomId && targetLanguage) {
-            const cachedText = readCachedTranslationText(roomId, messageId, targetLanguage, messageText);
+            const cachedText = translationCacheStore.read(roomId, messageId, targetLanguage, messageText);
             if (cachedText) {
                 setTranslationMap((prev) => ({ ...prev, [key]: { text: cachedText, loading: false, error: false } }));
                 setTranslationView((prev) =>
@@ -1175,9 +1076,8 @@ export const ChatRoom: React.FC = () => {
             return { ...prev, [key]: { text: previousText, loading: true, error: false } };
         });
         try {
-            const normalizedTargetLang = targetLanguage === "zh-TW" ? "Traditional Chinese" : targetLanguage;
-            const normalizedSourceLangHint =
-                senderLangHint === "zh-TW" ? "Traditional Chinese" : senderLangHint;
+            const normalizedTargetLang = normalizeHubLanguage(targetLanguage) ?? targetLanguage;
+            const normalizedSourceLangHint = normalizeHubLanguage(senderLangHint);
             const result = await hubTranslate({
                 accessToken: translateAccessToken,
                 text: messageText,
@@ -1190,7 +1090,7 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: translateMatrixUserId,
             });
             if (roomId && targetLanguage) {
-                writeCachedTranslationText(roomId, messageId, targetLanguage, messageText, result.translation);
+                translationCacheStore.write(roomId, messageId, targetLanguage, messageText, result.translation);
             }
             setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false, error: false } }));
             setTranslationView((prev) =>
@@ -1345,7 +1245,7 @@ export const ChatRoom: React.FC = () => {
     }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
 
     useEffect(() => {
-        if (!canTranslate || (!isDirectRoom && !isGroupChat)) return;
+        if (!canTranslate || !room || room.isSpaceRoom()) return;
         mergedEvents.forEach((event) => {
             const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
             const messageText = content?.body ?? "";
@@ -1360,6 +1260,7 @@ export const ChatRoom: React.FC = () => {
         directTranslationEnabled,
         isDirectRoom,
         isGroupChat,
+        room,
         mergedEvents,
         targetLanguage,
         translationMap,
@@ -1516,9 +1417,8 @@ export const ChatRoom: React.FC = () => {
             Boolean(translateAccessToken && peerLang && sentEventId);
 
         if (shouldPretranslateForClient && sentEventId) {
-            const normalizedTargetLang = peerLang === "zh-TW" ? "Traditional Chinese" : peerLang;
-            const normalizedSourceLangHint =
-                (chatReceiveLanguage || "").trim() === "zh-TW" ? "Traditional Chinese" : (chatReceiveLanguage || "").trim() || undefined;
+            const normalizedTargetLang = normalizeHubLanguage(peerLang) ?? peerLang;
+            const normalizedSourceLangHint = normalizeHubLanguage(chatReceiveLanguage);
             void hubTranslate({
                 accessToken: translateAccessToken as string,
                 text: trimmed,
@@ -1537,20 +1437,14 @@ export const ChatRoom: React.FC = () => {
             translationContactsLoaded &&
             Boolean(translateAccessToken && sentEventId);
         if (shouldPretranslateForGroupClients && sentEventId) {
-            const targetLangs = new Set<string>();
-            groupMembers
-                .map((member) => member.userId)
-                .filter((memberId) => memberId && memberId !== userId)
-                .forEach((memberId) => {
-                    const contact = resolveContactByMatrixUserId(memberId);
-                    if (!contact || contact.user_type !== "client") return;
-                    const lang = (contact.translation_locale || contact.locale || "").trim();
-                    if (lang) targetLangs.add(lang);
-                });
+            const targetLangs = collectGroupClientTargetLanguages({
+                memberIds: groupMembers.map((member) => member.userId),
+                selfUserId: userId,
+                resolveContactByMatrixUserId,
+            });
             targetLangs.forEach((lang) => {
-                const normalizedTargetLang = lang === "zh-TW" ? "Traditional Chinese" : lang;
-                const normalizedSourceLangHint =
-                    (chatReceiveLanguage || "").trim() === "zh-TW" ? "Traditional Chinese" : (chatReceiveLanguage || "").trim() || undefined;
+                const normalizedTargetLang = normalizeHubLanguage(lang) ?? lang;
+                const normalizedSourceLangHint = normalizeHubLanguage(chatReceiveLanguage);
                 void hubTranslate({
                     accessToken: translateAccessToken as string,
                     text: trimmed,
