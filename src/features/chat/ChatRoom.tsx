@@ -21,17 +21,38 @@ import { inviteUsersToRoom, updateRoomInvitePermission } from "../../services/ma
 import { listContacts, type ContactEntry } from "../../api/contacts";
 import { hubTranslate } from "../../api/hub";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
-import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
+import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 import { traceEvent } from "../../utils/debugTrace";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 import { useToastStore } from "../../stores/ToastStore";
 import { createTranslationCacheStore } from "./translationCache";
 import {
-    collectGroupClientTargetLanguages,
     isDirectTranslationEnabled as resolveDirectTranslationEnabled,
     normalizeHubLanguage,
     shouldTranslateIncomingMessage,
 } from "./translationPolicy";
+import {
+    pretranslateDirectToClient,
+    pretranslateGroupToClients,
+    sendReadyAttachments,
+    sendTextMessage,
+    type ReadyAttachment,
+} from "./chatService";
+import {
+    deriveRoomPermissions,
+    hasDirectByAccountData,
+    hasDirectByMembers,
+    isDirectRoomByPolicy,
+    resolveDirectPeerUserId,
+    type PowerLevelContent,
+} from "./roomMembershipPolicy";
+import {
+    redactMessageEvent,
+    resendMessageEvent,
+    scrollbackTimeline,
+    sendNoticeMessageEvent,
+    sendReadReceiptEvent,
+} from "../../matrix/adapters/chatAdapter";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -416,12 +437,6 @@ type ChatRoomContext = {
     companyName?: string | null;
     jumpToEventId?: string | null;
     onJumpHandled?: () => void;
-};
-
-type PowerLevelContent = {
-    invite?: number;
-    users?: Record<string, number>;
-    users_default?: number;
 };
 
 type RemoveTarget = {
@@ -982,33 +997,33 @@ export const ChatRoom: React.FC = () => {
         if (!matrixClient || !activeRoomId) return false;
         const event = matrixClient.getAccountData("m.direct" as never);
         const content = event?.getContent() as Record<string, unknown> | undefined;
-        if (!content || typeof content !== "object") return false;
-        return Object.values(content).some((value) => {
-            if (!Array.isArray(value)) return false;
-            return value.some((roomId) => roomId === activeRoomId);
-        });
+        return hasDirectByAccountData(content, activeRoomId);
     }, [activeRoomId, matrixClient]);
     const isDirectByMembers = useMemo(() => {
-        if (!room || room.isSpaceRoom()) return false;
-        const joined = room.getJoinedMembers().map((member) => member.userId);
-        const invited = room.getMembersWithMembership("invite").map((member) => member.userId);
-        const others = Array.from(new Set([...joined, ...invited])).filter((memberId) => memberId && memberId !== userId);
-        return others.length === 1;
+        if (!room) return false;
+        return hasDirectByMembers({
+            isSpaceRoom: room.isSpaceRoom(),
+            joinedMemberIds: room.getJoinedMembers().map((member) => member.userId),
+            invitedMemberIds: room.getMembersWithMembership("invite").map((member) => member.userId),
+            selfUserId: userId,
+        });
     }, [room, userId]);
     const isDirectRoom = useMemo(() => {
-        if (!room || room.isSpaceRoom()) return false;
-        if (roomKind === ROOM_KIND_DIRECT) return true;
-        if (roomKind === ROOM_KIND_GROUP) return false;
-        if (isDirectByAccountData) return true;
-        return isDirectByMembers;
+        return isDirectRoomByPolicy({
+            isSpaceRoom: Boolean(room?.isSpaceRoom()),
+            roomKind,
+            isDirectByAccountData,
+            isDirectByMembers,
+        });
     }, [isDirectByAccountData, isDirectByMembers, room, roomKind]);
     const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom && roomKind === ROOM_KIND_GROUP;
     const directPeerUserId = useMemo(() => {
         if (!room || !isDirectRoom) return null;
-        const joined = room.getJoinedMembers().map((member) => member.userId);
-        const invited = room.getMembersWithMembership("invite").map((member) => member.userId);
-        const allMembers = Array.from(new Set([...joined, ...invited]));
-        return allMembers.find((memberId) => memberId && memberId !== userId) ?? null;
+        return resolveDirectPeerUserId(
+            room.getJoinedMembers().map((member) => member.userId),
+            room.getMembersWithMembership("invite").map((member) => member.userId),
+            userId,
+        );
     }, [isDirectRoom, room, userId]);
     const directPeerContact = useMemo(() => {
         if (!directPeerUserId) return null;
@@ -1133,7 +1148,7 @@ export const ChatRoom: React.FC = () => {
         const eventId = event.getId() as string;
         if (lastReadReceiptEventByRoomRef.current[activeRoomId] === eventId) return;
         lastReadReceiptEventByRoomRef.current[activeRoomId] = eventId;
-        void matrixClient.sendReadReceipt(event);
+        void sendReadReceiptEvent(matrixClient, event);
     };
 
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
@@ -1152,16 +1167,12 @@ export const ChatRoom: React.FC = () => {
         const content = event?.getContent() as { room_version?: string } | undefined;
         return content?.room_version ?? null;
     }, [room]);
-    const userPowerLevel = useMemo(() => {
-        const defaultLevel = powerLevels?.users_default ?? 0;
-        if (!userId) return defaultLevel;
-        return powerLevels?.users?.[userId] ?? defaultLevel;
-    }, [powerLevels, userId]);
-    const inviteLevel = powerLevels?.invite ?? 0;
-    const canManageInvites = userPowerLevel >= 100;
-    const canInviteMembers = userPowerLevel >= inviteLevel;
-    const canRenameGroup = userPowerLevel >= 50;
-    const canRemoveMembers = userPowerLevel >= 50;
+    const roomPermissions = useMemo(() => deriveRoomPermissions(powerLevels, userId), [powerLevels, userId]);
+    const inviteLevel = roomPermissions.inviteLevel;
+    const canManageInvites = roomPermissions.canManageInvites;
+    const canInviteMembers = roomPermissions.canInviteMembers;
+    const canRenameGroup = roomPermissions.canRenameGroup;
+    const canRemoveMembers = roomPermissions.canRemoveMembers;
     const memberIdSet = useMemo(() => new Set(groupMembers.map((member) => member.userId)), [groupMembers]);
     const filteredContacts = useMemo(() => {
         const needle = contactFilter.trim().toLowerCase();
@@ -1367,7 +1378,7 @@ export const ChatRoom: React.FC = () => {
         if (container.scrollTop > 0) return;
         setScrollLoading(true);
         try {
-            await matrixClient.scrollback(room, 30);
+            await scrollbackTimeline(matrixClient, room, 30);
         } finally {
             setScrollLoading(false);
         }
@@ -1402,76 +1413,53 @@ export const ChatRoom: React.FC = () => {
         setComposerText("");
         setUploadError(null);
         let sentEventId: string | undefined;
-        if (trimmed) {
-            const sendResult = (await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, {
-                msgtype: MsgType.Text,
-                body: trimmed,
-            })) as { event_id?: string } | undefined;
-            sentEventId = sendResult?.event_id;
-        }
+        if (trimmed) sentEventId = await sendTextMessage(matrixClient, activeRoomId, trimmed);
         const peerLang = (directPeerContact?.translation_locale || directPeerContact?.locale || "").trim();
         const shouldPretranslateForClient =
             userType === "staff" &&
             isDirectRoom &&
             directPeerContact?.user_type === "client" &&
             Boolean(translateAccessToken && peerLang && sentEventId);
-
-        if (shouldPretranslateForClient && sentEventId) {
-            const normalizedTargetLang = normalizeHubLanguage(peerLang) ?? peerLang;
-            const normalizedSourceLangHint = normalizeHubLanguage(chatReceiveLanguage);
-            void hubTranslate({
-                accessToken: translateAccessToken as string,
-                text: trimmed,
-                targetLang: normalizedTargetLang,
-                sourceLangHint: normalizedSourceLangHint,
-                roomId: activeRoomId,
-                messageId: sentEventId,
-                sourceMatrixUserId: userId ?? undefined,
+        pretranslateDirectToClient({
+            enabled: shouldPretranslateForClient,
+            text: trimmed,
+            messageId: sentEventId,
+            roomId: activeRoomId,
+            peerLanguage: peerLang,
+            translate: {
+                accessToken: translateAccessToken,
+                sourceLang: chatReceiveLanguage,
+                sourceMatrixUserId: userId,
                 hsUrl: translateHsUrl,
                 matrixUserId: translateMatrixUserId,
-            }).catch(() => undefined);
-        }
+            },
+        });
         const shouldPretranslateForGroupClients =
             userType === "staff" &&
             isGroupChat &&
             translationContactsLoaded &&
             Boolean(translateAccessToken && sentEventId);
-        if (shouldPretranslateForGroupClients && sentEventId) {
-            const targetLangs = collectGroupClientTargetLanguages({
-                memberIds: groupMembers.map((member) => member.userId),
-                selfUserId: userId,
-                resolveContactByMatrixUserId,
-            });
-            targetLangs.forEach((lang) => {
-                const normalizedTargetLang = normalizeHubLanguage(lang) ?? lang;
-                const normalizedSourceLangHint = normalizeHubLanguage(chatReceiveLanguage);
-                void hubTranslate({
-                    accessToken: translateAccessToken as string,
-                    text: trimmed,
-                    targetLang: normalizedTargetLang,
-                    sourceLangHint: normalizedSourceLangHint,
-                    roomId: activeRoomId,
-                    messageId: sentEventId,
-                    sourceMatrixUserId: userId ?? undefined,
-                    hsUrl: translateHsUrl,
-                    matrixUserId: translateMatrixUserId,
-                }).catch(() => undefined);
-            });
-        }
-        for (const attachment of readyAttachments) {
-            const info: { mimetype?: string; size: number } = {
-                size: attachment.fileSize,
-            };
-            if (attachment.mimeType) info.mimetype = attachment.mimeType;
-            if (attachment.isPdf && !info.mimetype) info.mimetype = "application/pdf";
-            const content: Record<string, unknown> = {
-                body: attachment.fileName,
-                msgtype: attachment.msgtype,
-                url: attachment.mxcUrl,
-                info,
-            };
-            await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, content as never);
-        }
+        pretranslateGroupToClients({
+            enabled: shouldPretranslateForGroupClients,
+            text: trimmed,
+            messageId: sentEventId,
+            roomId: activeRoomId,
+            memberIds: groupMembers.map((member) => member.userId),
+            selfUserId: userId,
+            resolveContactByMatrixUserId,
+            translate: {
+                accessToken: translateAccessToken,
+                sourceLang: chatReceiveLanguage,
+                sourceMatrixUserId: userId,
+                hsUrl: translateHsUrl,
+                matrixUserId: translateMatrixUserId,
+            },
+        });
+        await sendReadyAttachments(
+            matrixClient,
+            activeRoomId,
+            readyAttachments.map((item) => ({ ...item, mxcUrl: item.mxcUrl! })) as ReadyAttachment[],
+        );
         if (readyAttachments.length > 0 && activeRoomId) {
             const roomId = activeRoomId;
             setPendingAttachmentsByRoom((prev) =>
@@ -1488,7 +1476,7 @@ export const ChatRoom: React.FC = () => {
 
     const onResend = async (event: MatrixEvent): Promise<void> => {
         if (!matrixClient || !room) return;
-        await matrixClient.resendEvent(event, room);
+        await resendMessageEvent(matrixClient, event, room);
     };
 
     const isFileEvent = (event: MatrixEvent): boolean => {
@@ -1523,17 +1511,14 @@ export const ChatRoom: React.FC = () => {
         traceEvent("chat.file_delete_start", { roomId: activeRoomId, eventId, userId });
         setDeletingEventId(eventId);
         try {
-            await matrixClient.redactEvent(activeRoomId, eventId);
+            await redactMessageEvent(matrixClient, activeRoomId, eventId);
             const content = event.getContent() as { url?: string } | undefined;
             if (content?.url && matrixCredentials?.hs_url && matrixCredentials?.access_token) {
                 await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, content.url);
                 removeDraftMediaEntries([content.url]);
             }
             const selfLabel = getLocalPart(userId) || userId;
-            await matrixClient.sendEvent(activeRoomId, EventType.RoomMessage, {
-                msgtype: MsgType.Notice,
-                body: t("chat.fileRevokedNotice", { name: selfLabel }),
-            } as never);
+            await sendNoticeMessageEvent(matrixClient, activeRoomId, t("chat.fileRevokedNotice", { name: selfLabel }));
             traceEvent("chat.file_delete_success", { roomId: activeRoomId, eventId, userId });
         } catch (error) {
             const mapped = mapMediaActionError(error);

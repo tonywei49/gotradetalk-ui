@@ -28,6 +28,15 @@ import { markRoomDeprecated } from "../services/matrix";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
 import { traceEvent } from "../utils/debugTrace";
 import { mapActionErrorToMessage } from "../utils/errorMessages";
+import {
+    filesByRoom,
+    filterRoomFiles,
+    filterRoomSummaries,
+    paginateRoomFiles,
+    summarizeFileRooms,
+    type FileLibraryItem,
+    type FileLibraryRoomSummary,
+} from "../features/files/fileCenterRepository";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -739,56 +748,39 @@ export const MainLayout: React.FC = () => {
         return rows;
     }, [matrixClient, matrixCredentials?.user_id, fileLibraryTick]);
 
-    const roomSummaryList = useMemo<FileLibraryRoomSummary[]>(() => {
-        const map = new Map<string, FileLibraryRoomSummary>();
-        myFileLibrary.forEach((item) => {
-            const existing = map.get(item.roomId);
-            if (!existing) {
-                map.set(item.roomId, {
-                    roomId: item.roomId,
-                    roomName: item.roomName,
-                    attachmentCount: 1,
-                    totalKnownBytes: item.sizeBytes ?? 0,
-                    unknownSizeCount: item.sizeBytes == null ? 1 : 0,
-                    latestTs: item.ts,
-                });
-                return;
-            }
-            existing.attachmentCount += 1;
-            if (item.sizeBytes != null) existing.totalKnownBytes += item.sizeBytes;
-            else existing.unknownSizeCount += 1;
-            if (item.ts > existing.latestTs) existing.latestTs = item.ts;
-        });
-        return Array.from(map.values()).sort((a, b) => b.latestTs - a.latestTs);
-    }, [myFileLibrary]);
+    const roomSummaryList = useMemo<FileLibraryRoomSummary[]>(
+        () => summarizeFileRooms(myFileLibrary),
+        [myFileLibrary],
+    );
 
-    const filteredRoomSummaryList = useMemo(() => {
-        const keyword = debouncedFileRoomSearch.trim().toLowerCase();
-        if (!keyword) return roomSummaryList;
-        return roomSummaryList.filter((item) => item.roomName.toLowerCase().includes(keyword));
-    }, [roomSummaryList, debouncedFileRoomSearch]);
+    const filteredRoomSummaryList = useMemo(
+        () => filterRoomSummaries(roomSummaryList, debouncedFileRoomSearch),
+        [roomSummaryList, debouncedFileRoomSearch],
+    );
 
-    const selectedRoomFiles = useMemo(() => {
-        if (!selectedFileRoomId) return [];
-        return myFileLibrary.filter((item) => item.roomId === selectedFileRoomId).sort((a, b) => b.ts - a.ts);
-    }, [myFileLibrary, selectedFileRoomId]);
+    const selectedRoomFiles = useMemo(
+        () => filesByRoom(myFileLibrary, selectedFileRoomId),
+        [myFileLibrary, selectedFileRoomId],
+    );
 
     const selectedRoomSummary = useMemo(
         () => roomSummaryList.find((item) => item.roomId === selectedFileRoomId) ?? null,
         [roomSummaryList, selectedFileRoomId],
     );
 
-    const visibleSelectedRoomFiles = useMemo(() => {
-        const keyword = debouncedFileListSearch.trim().toLowerCase();
-        return selectedRoomFiles.filter((item) => {
-            if (fileListTypeFilter !== "all" && getFileTypeGroup(item) !== fileListTypeFilter) return false;
-            if (!keyword) return true;
-            return item.body.toLowerCase().includes(keyword);
-        });
-    }, [selectedRoomFiles, debouncedFileListSearch, fileListTypeFilter]);
+    const visibleSelectedRoomFiles = useMemo(
+        () =>
+            filterRoomFiles({
+                roomFiles: selectedRoomFiles,
+                keyword: debouncedFileListSearch,
+                typeFilter: fileListTypeFilter,
+                getFileTypeGroup,
+            }),
+        [selectedRoomFiles, debouncedFileListSearch, fileListTypeFilter],
+    );
 
     const pagedVisibleSelectedRoomFiles = useMemo(
-        () => visibleSelectedRoomFiles.slice(0, fileListPage * FILE_LIST_PAGE_SIZE),
+        () => paginateRoomFiles(visibleSelectedRoomFiles, fileListPage, FILE_LIST_PAGE_SIZE),
         [visibleSelectedRoomFiles, fileListPage],
     );
 
@@ -2001,25 +1993,4 @@ export const MainLayout: React.FC = () => {
             )}
         </div>
     );
-};
-
-type FileLibraryItem = {
-    eventId: string;
-    roomId: string;
-    roomName: string;
-    body: string;
-    ts: number;
-    msgtype: string;
-    mxcUrl: string;
-    mimeType?: string;
-    sizeBytes: number | null;
-};
-
-type FileLibraryRoomSummary = {
-    roomId: string;
-    roomName: string;
-    attachmentCount: number;
-    totalKnownBytes: number;
-    unknownSizeCount: number;
-    latestTs: number;
 };
