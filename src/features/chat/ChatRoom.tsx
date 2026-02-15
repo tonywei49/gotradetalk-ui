@@ -19,17 +19,13 @@ import { useAuthStore } from "../../stores/AuthStore";
 import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
 import { inviteUsersToRoom, updateRoomInvitePermission } from "../../services/matrix";
 import { listContacts, type ContactEntry } from "../../api/contacts";
-import { hubTranslate } from "../../api/hub";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 import { traceEvent } from "../../utils/debugTrace";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 import { useToastStore } from "../../stores/ToastStore";
-import { createTranslationCacheStore } from "./translationCache";
 import {
     isDirectTranslationEnabled as resolveDirectTranslationEnabled,
-    normalizeHubLanguage,
-    shouldTranslateIncomingMessage,
 } from "./translationPolicy";
 import {
     pretranslateDirectToClient,
@@ -53,6 +49,13 @@ import {
     sendNoticeMessageEvent,
     sendReadReceiptEvent,
 } from "../../matrix/adapters/chatAdapter";
+import {
+    buildUploadRetryKey,
+    parseUploadRetryKey,
+    useAttachmentDrafts,
+    type PendingAttachment,
+} from "./hooks/useAttachmentDrafts";
+import { getMessageEventKey, useMessageTranslation } from "./hooks/useMessageTranslation";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -80,45 +83,15 @@ type MessageBubbleProps = {
     onDeleteFile?: (event: MatrixEvent) => void;
 };
 
-type PendingAttachment = {
-    id: string;
-    fileName: string;
-    fileSize: number;
-    mimeType: string;
-    sourceFile?: File;
-    msgtype: MsgType;
-    isPdf: boolean;
-    mxcUrl: string | null;
-    progress: number;
-    status: "uploading" | "ready" | "failed" | "removing";
-    error?: string;
-};
-
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
-const PENDING_ATTACHMENT_DRAFTS_KEY_PREFIX = "gtt_pending_attachment_drafts_v1";
 const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
-const TRANSLATION_CACHE_STORAGE_KEY = "gtt_translation_cache_v1";
-const TRANSLATION_CACHE_MAX_ITEMS = 1500;
 
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
     createdAt: number;
     ownerUserId: string;
-};
-
-type PersistedPendingAttachment = {
-    id: string;
-    fileName: string;
-    fileSize: number;
-    mimeType: string;
-    msgtype: MsgType;
-    isPdf: boolean;
-    mxcUrl: string | null;
-    status: "ready" | "failed";
-    progress: number;
-    error?: string;
 };
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
@@ -545,23 +518,6 @@ function removeDraftMediaEntries(mxcUrls: string[]): void {
     writeDraftMediaRegistry(next);
 }
 
-function getPendingAttachmentDraftsKey(userId: string): string {
-    return `${PENDING_ATTACHMENT_DRAFTS_KEY_PREFIX}:${userId}`;
-}
-
-function buildUploadRetryKey(roomId: string, attachmentId: string): string {
-    return `${roomId}::${attachmentId}`;
-}
-
-function parseUploadRetryKey(key: string): { roomId: string; attachmentId: string } | null {
-    const split = key.split("::");
-    if (split.length !== 2) return null;
-    const roomId = split[0];
-    const attachmentId = split[1];
-    if (!roomId || !attachmentId) return null;
-    return { roomId, attachmentId };
-}
-
 function isTransientUploadError(error: unknown): boolean {
     const maybeObj = error as { errcode?: string; message?: string } | null;
     const errcode = typeof maybeObj?.errcode === "string" ? maybeObj.errcode : "";
@@ -576,42 +532,6 @@ function isTransientUploadError(error: unknown): boolean {
         normalized.includes("ETIMEDOUT") ||
         normalized.includes("CONNECTION")
     );
-}
-
-function readPersistedPendingAttachments(userId: string): Record<string, PersistedPendingAttachment[]> {
-    try {
-        const raw = localStorage.getItem(getPendingAttachmentDraftsKey(userId));
-        if (!raw) return {};
-        const parsed = JSON.parse(raw) as Record<string, PersistedPendingAttachment[]>;
-        if (!parsed || typeof parsed !== "object") return {};
-        const out: Record<string, PersistedPendingAttachment[]> = {};
-        Object.entries(parsed).forEach(([roomId, items]) => {
-            if (!Array.isArray(items)) return;
-            const filtered = items.filter(
-                (item) =>
-                    item &&
-                    typeof item.id === "string" &&
-                    typeof item.fileName === "string" &&
-                    typeof item.fileSize === "number" &&
-                    typeof item.mimeType === "string" &&
-                    typeof item.msgtype === "string" &&
-                    typeof item.isPdf === "boolean" &&
-                    (typeof item.mxcUrl === "string" || item.mxcUrl === null) &&
-                    (item.status === "ready" || item.status === "failed"),
-            );
-            if (filtered.length > 0) out[roomId] = filtered;
-        });
-        return out;
-    } catch {
-        return {};
-    }
-}
-
-function writePersistedPendingAttachments(
-    userId: string,
-    value: Record<string, PersistedPendingAttachment[]>,
-): void {
-    localStorage.setItem(getPendingAttachmentDraftsKey(userId), JSON.stringify(value));
 }
 
 function mapMediaActionError(error: unknown): "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" {
@@ -704,14 +624,6 @@ export const ChatRoom: React.FC = () => {
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const retryFileInputRef = useRef<HTMLInputElement | null>(null);
-    const [pendingAttachmentsByRoom, setPendingAttachmentsByRoom] = useState<Record<string, PendingAttachment[]>>({});
-    const [retryUploadQueue, setRetryUploadQueue] = useState<string[]>([]);
-    const retryAttemptsRef = useRef<Record<string, number>>({});
-    const [retryPickTarget, setRetryPickTarget] = useState<{ roomId: string; attachmentId: string } | null>(null);
-    const [networkOnline, setNetworkOnline] = useState<boolean>(() => {
-        if (typeof navigator === "undefined") return true;
-        return navigator.onLine;
-    });
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
@@ -727,72 +639,22 @@ export const ChatRoom: React.FC = () => {
     const translateAccessToken = useHubTokenForTranslate ? hubAccessToken : matrixAccessToken;
     const translateHsUrl = useHubTokenForTranslate ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
-    const pendingAttachments = useMemo(
-        () => (activeRoomId ? pendingAttachmentsByRoom[activeRoomId] ?? [] : []),
-        [activeRoomId, pendingAttachmentsByRoom],
-    );
-    const hasPendingUpload = pendingAttachments.some((item) => item.status === "uploading");
-
-    useEffect(() => {
-        if (!userId) return;
-        const persisted = readPersistedPendingAttachments(userId);
-        const restored: Record<string, PendingAttachment[]> = {};
-        Object.entries(persisted).forEach(([roomId, items]) => {
-            restored[roomId] = items.map((item) => ({
-                id: item.id,
-                fileName: item.fileName,
-                fileSize: item.fileSize,
-                mimeType: item.mimeType,
-                sourceFile: undefined,
-                msgtype: item.msgtype,
-                isPdf: item.isPdf,
-                mxcUrl: item.mxcUrl,
-                progress: item.progress,
-                status: item.status,
-                error: item.status === "failed" ? item.error || t("chat.uploadInterruptedNeedsReselect") : undefined,
-            }));
-        });
-        setPendingAttachmentsByRoom(restored);
-    }, [t, userId]);
-
-    useEffect(() => {
-        if (!userId) return;
-        const persisted: Record<string, PersistedPendingAttachment[]> = {};
-        Object.entries(pendingAttachmentsByRoom).forEach(([roomId, items]) => {
-            const persistedItems: PersistedPendingAttachment[] = [];
-            items
-                .filter((item) => item.status === "ready" || item.status === "failed")
-                .forEach((item) => {
-                    const isReady = item.status === "ready" && Boolean(item.mxcUrl);
-                    const nextItem: PersistedPendingAttachment = {
-                    id: item.id,
-                    fileName: item.fileName,
-                    fileSize: item.fileSize,
-                    mimeType: item.mimeType,
-                    msgtype: item.msgtype,
-                    isPdf: item.isPdf,
-                    mxcUrl: isReady ? (item.mxcUrl as string) : null,
-                    status: (isReady ? "ready" : "failed") as "ready" | "failed",
-                    progress: item.progress,
-                    error: isReady ? undefined : item.error || t("chat.uploadInterruptedNeedsReselect"),
-                    };
-                    persistedItems.push(nextItem);
-                });
-            if (persistedItems.length > 0) persisted[roomId] = persistedItems;
-        });
-        writePersistedPendingAttachments(userId, persisted);
-    }, [pendingAttachmentsByRoom, t, userId]);
-
-    useEffect(() => {
-        const onOnline = (): void => setNetworkOnline(true);
-        const onOffline = (): void => setNetworkOnline(false);
-        window.addEventListener("online", onOnline);
-        window.addEventListener("offline", onOffline);
-        return () => {
-            window.removeEventListener("online", onOnline);
-            window.removeEventListener("offline", onOffline);
-        };
-    }, []);
+    const {
+        pendingAttachmentsByRoom,
+        setPendingAttachmentsByRoom,
+        pendingAttachments,
+        hasPendingUpload,
+        retryUploadQueue,
+        setRetryUploadQueue,
+        retryAttemptsRef,
+        retryPickTarget,
+        setRetryPickTarget,
+        networkOnline,
+    } = useAttachmentDrafts({
+        userId,
+        activeRoomId,
+        uploadInterruptedNeedsReselectText: t("chat.uploadInterruptedNeedsReselect"),
+    });
 
     useEffect(() => {
         if (!networkOnline) return;
@@ -953,21 +815,8 @@ export const ChatRoom: React.FC = () => {
         return filtered;
     }, [events, room]);
 
-    const [translationMap, setTranslationMap] = useState<
-        Record<string, { text: string | null; loading: boolean; error: boolean }>
-    >({});
-    const [translationView, setTranslationView] = useState<Record<string, boolean>>({});
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
-    const [translationBlocked, setTranslationBlocked] = useState(false);
-    const translationErrorToastRef = useRef<{ key: string; ts: number } | null>(null);
-    const translationCacheStore = useMemo(
-        () => createTranslationCacheStore(TRANSLATION_CACHE_STORAGE_KEY, TRANSLATION_CACHE_MAX_ITEMS),
-        [],
-    );
-
-    const getEventKey = (event: MatrixEvent): string =>
-        event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
 
     const matrixHost = getMatrixHost(matrixHsUrl);
     const resolveMatrixUserId = (contact: ContactEntry): string | null => {
@@ -1042,101 +891,27 @@ export const ChatRoom: React.FC = () => {
         return true;
     }, [isGroupChat]);
 
-    const shouldTranslateEvent = (event: MatrixEvent, isMeMessage: boolean): boolean => {
-        const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
-        const senderId = event.getSender() ?? null;
-        const senderContact = resolveContactByMatrixUserId(senderId);
-        return shouldTranslateIncomingMessage({
-            canTranslate,
-            translationBlocked,
-            isMeMessage,
-            isDirectRoom,
-            isGroupChat,
-            directTranslationEnabled,
-            groupTranslationEnabled,
-            messageBody: content?.body,
-            messageType: content?.msgtype,
-            userType,
-            companyName,
-            senderContact,
-        });
-    };
-
-    const translateEvent = async (event: MatrixEvent, messageText: string, forceRetry = false): Promise<void> => {
-        if (!translateAccessToken) return;
-        const messageId = event.getId();
-        if (!messageId) return;
-        const key = getEventKey(event);
-        const roomId = activeRoomId ?? "";
-        if (!forceRetry && roomId && targetLanguage) {
-            const cachedText = translationCacheStore.read(roomId, messageId, targetLanguage, messageText);
-            if (cachedText) {
-                setTranslationMap((prev) => ({ ...prev, [key]: { text: cachedText, loading: false, error: false } }));
-                setTranslationView((prev) =>
-                    prev[key] === undefined
-                        ? { ...prev, [key]: translationDefaultView !== "original" }
-                        : prev,
-                );
-                return;
-            }
-        }
-        const senderId = event.getSender() ?? null;
-        const senderContact = resolveContactByMatrixUserId(senderId);
-        // Source language hint should use sender locale (writing language), not translation locale (reading preference).
-        const senderLangHint = (senderContact?.locale || "").trim() || undefined;
-        setTranslationMap((prev) => {
-            if (prev[key]?.loading) return prev;
-            if (!forceRetry && prev[key]) return prev;
-            const previousText = prev[key]?.text ?? null;
-            return { ...prev, [key]: { text: previousText, loading: true, error: false } };
-        });
-        try {
-            const normalizedTargetLang = normalizeHubLanguage(targetLanguage) ?? targetLanguage;
-            const normalizedSourceLangHint = normalizeHubLanguage(senderLangHint);
-            const result = await hubTranslate({
-                accessToken: translateAccessToken,
-                text: messageText,
-                targetLang: normalizedTargetLang,
-                sourceLangHint: normalizedSourceLangHint,
-                roomId: activeRoomId ?? undefined,
-                messageId,
-                sourceMatrixUserId: event.getSender() ?? undefined,
-                hsUrl: translateHsUrl,
-                matrixUserId: translateMatrixUserId,
-            });
-            if (roomId && targetLanguage) {
-                translationCacheStore.write(roomId, messageId, targetLanguage, messageText, result.translation);
-            }
-            setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false, error: false } }));
-            setTranslationView((prev) =>
-                prev[key] === undefined
-                    ? { ...prev, [key]: translationDefaultView !== "original" }
-                    : prev,
-            );
-        } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : typeof error === "string"
-                        ? error
-                        : "";
-            const toastKey = `${activeRoomId ?? "global"}:${message || "unknown"}`;
-            const now = Date.now();
-            const prevToast = translationErrorToastRef.current;
-            if (!prevToast || prevToast.key !== toastKey || now - prevToast.ts > 15000) {
-                translationErrorToastRef.current = { key: toastKey, ts: now };
-                pushToast("error", message || t("chat.translationUnavailable"));
-            }
-            if (
-                message.includes("NOT_SUBSCRIBED") ||
-                message.includes("QUOTA_EXCEEDED") ||
-                message.includes("CLIENT_TRANSLATION_DISABLED")
-            ) {
-                setTranslationBlocked(true);
-            }
-            setTranslationMap((prev) => ({ ...prev, [key]: { text: null, loading: false, error: true } }));
-        }
-    };
+    const { translationMap, translationView, setTranslationView, requestTranslation } = useMessageTranslation({
+        activeRoomId,
+        room,
+        mergedEvents,
+        userId,
+        canTranslate,
+        targetLanguage,
+        translationDefaultView,
+        translateAccessToken,
+        translateHsUrl,
+        translateMatrixUserId,
+        isDirectRoom,
+        isGroupChat,
+        directTranslationEnabled,
+        groupTranslationEnabled,
+        userType,
+        companyName,
+        resolveContactByMatrixUserId,
+        pushToast,
+        translationUnavailableText: t("chat.translationUnavailable"),
+    });
 
     const canSendReceipt = (event: MatrixEvent | undefined): event is MatrixEvent => {
         const eventId = event?.getId();
@@ -1254,36 +1029,6 @@ export const ChatRoom: React.FC = () => {
             alive = false;
         };
     }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
-
-    useEffect(() => {
-        if (!canTranslate || !room || room.isSpaceRoom()) return;
-        mergedEvents.forEach((event) => {
-            const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
-            const messageText = content?.body ?? "";
-            const isMeMessage = event.getSender() === userId;
-            if (!shouldTranslateEvent(event, isMeMessage)) return;
-            const key = getEventKey(event);
-            if (translationMap[key]) return;
-            void translateEvent(event, messageText);
-        });
-    }, [
-        canTranslate,
-        directTranslationEnabled,
-        isDirectRoom,
-        isGroupChat,
-        room,
-        mergedEvents,
-        targetLanguage,
-        translationMap,
-        groupTranslationEnabled,
-        userId,
-    ]);
-
-    useEffect(() => {
-        setTranslationMap({});
-        setTranslationView({});
-        setTranslationBlocked(false);
-    }, [targetLanguage, activeRoomId]);
 
     useEffect(() => {
         if (!jumpToEventId) return;
@@ -2076,17 +1821,17 @@ export const ChatRoom: React.FC = () => {
                                 onResend={onResend}
                                 senderLabel={senderLabel}
                                 onOpenMedia={openMediaPreview}
-                                translatedText={translationMap[getEventKey(event)]?.text ?? null}
-                                translationLoading={translationMap[getEventKey(event)]?.loading ?? false}
-                                translationError={translationMap[getEventKey(event)]?.error ?? false}
-                                showTranslation={translationView[getEventKey(event)] ?? (!isMe && translationDefaultView !== "original")}
+                                translatedText={translationMap[getMessageEventKey(event)]?.text ?? null}
+                                translationLoading={translationMap[getMessageEventKey(event)]?.loading ?? false}
+                                translationError={translationMap[getMessageEventKey(event)]?.error ?? false}
+                                showTranslation={translationView[getMessageEventKey(event)] ?? (!isMe && translationDefaultView !== "original")}
                                 canDeleteFile={isOwnFileEvent(event)}
                                 deleteBusy={deletingEventId === event.getId()}
                                 onDeleteFile={(targetEvent) => {
                                     void onDeleteFileEvent(targetEvent);
                                 }}
                                 onToggleTranslation={() => {
-                                    const key = getEventKey(event);
+                                    const key = getMessageEventKey(event);
                                     const nextValue = !(translationView[key] ?? false);
                                     setTranslationView((prev) => ({ ...prev, [key]: nextValue }));
                                     if (nextValue) {
@@ -2097,7 +1842,7 @@ export const ChatRoom: React.FC = () => {
                                         const shouldRetry =
                                             !cache || (!cache.loading && !hasCachedTranslation && Boolean(cache.error));
                                         if (messageText && shouldRetry) {
-                                            void translateEvent(event, messageText, true);
+                                            void requestTranslation(event, messageText, true);
                                         }
                                     }
                                 }}
