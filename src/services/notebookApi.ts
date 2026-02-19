@@ -1,9 +1,12 @@
-import { hubApiBaseUrl } from "../config";
+import { notebookApiBaseUrl } from "../config";
 
 export type NotebookApiErrorCode =
     | "CAPABILITY_DISABLED"
     | "INVALID_CONTEXT"
     | "FORBIDDEN_ROLE"
+    | "VALIDATION_ERROR"
+    | "UNAUTHORIZED"
+    | "NOT_FOUND"
     | "UNKNOWN";
 
 export class NotebookServiceError extends Error {
@@ -27,8 +30,8 @@ export type NotebookApiAuth = {
 
 export type NotebookItemDto = {
     id: string;
-    title: string;
-    content_markdown: string;
+    title: string | null;
+    content_markdown: string | null;
     item_type: "text" | "file";
     index_status: "pending" | "running" | "success" | "failed" | "skipped";
     index_error?: string | null;
@@ -39,6 +42,7 @@ export type NotebookItemDto = {
 
 export type GetNotebookItemsResponse = {
     items: NotebookItemDto[];
+    next_cursor: string | null;
 };
 
 export type AssistFromContextRequest = {
@@ -47,37 +51,51 @@ export type AssistFromContextRequest = {
     window_size?: number;
 };
 
+export type NotebookAssistSourceDto = {
+    item_id: string;
+    title: string | null;
+    snippet: string;
+    source_locator?: string | null;
+    score?: number;
+};
+
+export type NotebookAssistCitationDto = {
+    source_id: string;
+    locator?: string | null;
+};
+
 export type NotebookAssistResponseDto = {
     answer: string;
-    sources: Array<{
-        itemId: string;
-        title: string;
-        snippet: string;
-        locator?: string | null;
-    }>;
-    citations: Array<{
-        itemId: string;
-        title: string;
-        locator?: string | null;
-    }>;
+    sources: NotebookAssistSourceDto[];
+    citations: NotebookAssistCitationDto[];
     confidence: number;
     trace_id?: string;
-    traceId?: string;
+    context_message_ids?: string[];
+    guardrail?: {
+        insufficient_evidence?: boolean;
+    };
 };
 
 export type NotebookSyncPushRequest = {
+    device_id: string;
     ops: Array<{
         client_op_id: string;
         entity_type: "item" | "item_file";
         entity_id: string;
         op_type: "create" | "update" | "delete";
         op_payload: Record<string, unknown>;
+        base_revision?: number;
     }>;
 };
 
 export type NotebookSyncPushResponse = {
-    accepted: number;
-    rejected: number;
+    results: Array<{
+        client_op_id: string;
+        status: string;
+        server_revision: number | null;
+        conflict_copy_id: string | null;
+    }>;
+    server_cursor: string;
 };
 
 type ErrorPayload = {
@@ -91,7 +109,7 @@ function normalizeBaseUrl(value: string): string {
 }
 
 function buildUrl(path: string, auth: NotebookApiAuth, query?: Record<string, string>): string {
-    const base = normalizeBaseUrl(hubApiBaseUrl);
+    const base = normalizeBaseUrl(notebookApiBaseUrl);
     const url = new URL(`${base}${path}`);
     if (auth.hsUrl) {
         url.searchParams.set("hs_url", auth.hsUrl);
@@ -112,6 +130,9 @@ function toErrorCode(input: string | undefined, status: number): NotebookApiErro
     if (code === "CAPABILITY_DISABLED") return "CAPABILITY_DISABLED";
     if (code === "INVALID_CONTEXT") return "INVALID_CONTEXT";
     if (code === "FORBIDDEN_ROLE") return "FORBIDDEN_ROLE";
+    if (code === "VALIDATION_ERROR") return "VALIDATION_ERROR";
+    if (code === "UNAUTHORIZED") return "UNAUTHORIZED";
+    if (code === "NOT_FOUND") return "NOT_FOUND";
     if (status === 403) return "FORBIDDEN_ROLE";
     return "UNKNOWN";
 }
@@ -166,7 +187,7 @@ async function patchJson<T>(auth: NotebookApiAuth, path: string, body: Record<st
     return (await response.json()) as T;
 }
 
-async function deleteRequest(auth: NotebookApiAuth, path: string): Promise<void> {
+async function deleteRequest<T>(auth: NotebookApiAuth, path: string): Promise<T> {
     const response = await fetch(buildUrl(path, auth), {
         method: "DELETE",
         headers: {
@@ -174,44 +195,63 @@ async function deleteRequest(auth: NotebookApiAuth, path: string): Promise<void>
         },
     });
     if (!response.ok) throw await readError(response);
+    return (await response.json()) as T;
 }
 
-export async function getNotebookItems(auth: NotebookApiAuth, keyword?: string): Promise<GetNotebookItemsResponse> {
-    return getJson<GetNotebookItemsResponse>(auth, "/notebook/items", { keyword: keyword ?? "" });
+export async function getNotebookItems(
+    auth: NotebookApiAuth,
+    input?: { q?: string; item_type?: "text" | "file"; status?: "active" | "deleted"; cursor?: string; limit?: number },
+): Promise<GetNotebookItemsResponse> {
+    const query: Record<string, string> = {};
+    if (input?.q) query.q = input.q;
+    if (input?.item_type) query.item_type = input.item_type;
+    if (input?.status) query.status = input.status;
+    if (input?.cursor) query.cursor = input.cursor;
+    if (input?.limit) query.limit = String(input.limit);
+    return getJson<GetNotebookItemsResponse>(auth, "/notebook/items", query);
 }
 
 export async function createNotebookItem(
     auth: NotebookApiAuth,
-    input: { title: string; content_markdown: string; item_type?: "text" | "file" },
-): Promise<NotebookItemDto> {
-    return postJson<NotebookItemDto>(auth, "/notebook/items", input);
+    input: { title: string; content_markdown: string; item_type?: "text" | "file"; is_indexable?: boolean },
+): Promise<{ item: NotebookItemDto }> {
+    return postJson<{ item: NotebookItemDto }>(auth, "/notebook/items", input);
 }
 
 export async function updateNotebookItem(
     auth: NotebookApiAuth,
     itemId: string,
-    input: { title?: string; content_markdown?: string },
-): Promise<NotebookItemDto> {
-    return patchJson<NotebookItemDto>(auth, `/notebook/items/${encodeURIComponent(itemId)}`, input);
+    input: { title?: string; content_markdown?: string; is_indexable?: boolean; status?: "active" | "deleted"; revision?: number },
+): Promise<{ item: NotebookItemDto; conflict: boolean }> {
+    return patchJson<{ item: NotebookItemDto; conflict: boolean }>(auth, `/notebook/items/${encodeURIComponent(itemId)}`, input);
 }
 
-export async function deleteNotebookItem(auth: NotebookApiAuth, itemId: string): Promise<void> {
-    await deleteRequest(auth, `/notebook/items/${encodeURIComponent(itemId)}`);
+export async function deleteNotebookItem(
+    auth: NotebookApiAuth,
+    itemId: string,
+): Promise<{ ok: boolean; revision: number }> {
+    return deleteRequest<{ ok: boolean; revision: number }>(auth, `/notebook/items/${encodeURIComponent(itemId)}`);
 }
 
 export async function attachNotebookFile(
     auth: NotebookApiAuth,
     itemId: string,
-    input: { file_name: string },
-): Promise<NotebookItemDto> {
-    return postJson<NotebookItemDto>(auth, `/notebook/items/${encodeURIComponent(itemId)}/files`, input);
+    input: {
+        matrix_media_mxc: string;
+        matrix_media_name?: string;
+        matrix_media_mime?: string;
+        matrix_media_size?: number;
+        is_indexable?: boolean;
+    },
+): Promise<{ item: NotebookItemDto; index_job: { id: string } | null }> {
+    return postJson<{ item: NotebookItemDto; index_job: { id: string } | null }>(auth, `/notebook/items/${encodeURIComponent(itemId)}/files`, input);
 }
 
 export async function getNotebookItemIndexStatus(
     auth: NotebookApiAuth,
     itemId: string,
-): Promise<{ index_status: NotebookItemDto["index_status"]; index_error?: string | null }> {
-    return getJson<{ index_status: NotebookItemDto["index_status"]; index_error?: string | null }>(
+): Promise<{ item_id: string; index_status: NotebookItemDto["index_status"]; index_error?: string | null }> {
+    return getJson<{ item_id: string; index_status: NotebookItemDto["index_status"]; index_error?: string | null }>(
         auth,
         `/notebook/items/${encodeURIComponent(itemId)}/index-status`,
     );
@@ -226,7 +266,7 @@ export async function assistFromContext(
 
 export async function assistQuery(
     auth: NotebookApiAuth,
-    input: { room_id: string; query: string },
+    input: { room_id: string; query: string; top_k?: number },
 ): Promise<NotebookAssistResponseDto> {
     return postJson<NotebookAssistResponseDto>(auth, "/chat/assist/query", input);
 }

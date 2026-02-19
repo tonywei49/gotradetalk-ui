@@ -21,7 +21,11 @@ export type UpdateNotebookItemInput = {
 };
 
 export type AttachNotebookFileInput = {
-    fileName: string;
+    matrixMediaMxc: string;
+    matrixMediaName?: string;
+    matrixMediaMime?: string;
+    matrixMediaSize?: number;
+    isIndexable?: boolean;
 };
 
 export type NotebookAssistQueryInput = {

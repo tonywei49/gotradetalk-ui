@@ -1869,9 +1869,16 @@ export const MainLayout: React.FC = () => {
                             void notebookModule.deleteItem();
                         }}
                         onAttachFile={() => {
-                            const fileName = window.prompt("Input file name for relation");
-                            if (!fileName) return;
-                            void notebookModule.attachFile(fileName);
+                            const mxc = window.prompt("Input matrix_media_mxc (mxc://server/mediaId)");
+                            if (!mxc) return;
+                            const fileName = window.prompt("Input matrix_media_name (optional)") || "linked-file";
+                            const mime = window.prompt("Input matrix_media_mime (optional)") || undefined;
+                            void notebookModule.attachFile({
+                                matrixMediaMxc: mxc,
+                                matrixMediaName: fileName,
+                                matrixMediaMime: mime,
+                                isIndexable: true,
+                            });
                         }}
                         busy={notebookModule.actionBusy}
                         actionError={notebookModule.actionError}

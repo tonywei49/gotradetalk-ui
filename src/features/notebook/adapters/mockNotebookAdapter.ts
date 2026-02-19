@@ -101,7 +101,7 @@ function buildAssistResponse(query: string): NotebookAssistResponse {
         ],
         citations: [
             {
-                itemId: "nb-1",
+                sourceId: "nb-1:1",
                 title: "產品 FAQ",
                 locator: "section:2",
             },
@@ -164,7 +164,7 @@ export const mockNotebookAdapter: NotebookAdapter = {
         const next: NotebookItem = {
             ...target,
             itemType: "file",
-            matrixMediaName: input.fileName,
+            matrixMediaName: input.matrixMediaName || "file",
             indexStatus: "pending",
             updatedAt: new Date().toISOString(),
         };

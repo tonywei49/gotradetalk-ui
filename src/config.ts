@@ -10,6 +10,8 @@ const defaultHubBaseUrl =
     import.meta.env.MODE === "development" ? "/api" : "https://api.gotradetalk.com";
 
 export const hubApiBaseUrl = ensureEnv(configuredHubBaseUrl ?? defaultHubBaseUrl, "VITE_HUB_API_BASE_URL");
+export const notebookApiBaseUrl =
+    (import.meta.env.VITE_NOTEBOOK_API_BASE_URL as string | undefined) ?? hubApiBaseUrl;
 
 export const defaultPublicHs =
     (import.meta.env.VITE_DEFAULT_PUBLIC_HS as string | undefined) ?? "https://matrix.gotradetalk.com";

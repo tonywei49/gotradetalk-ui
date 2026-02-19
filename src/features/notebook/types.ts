@@ -24,11 +24,12 @@ export type NotebookSource = {
     title: string;
     snippet: string;
     locator?: string | null;
+    score?: number;
 };
 
 export type NotebookCitation = {
-    itemId: string;
-    title: string;
+    sourceId: string;
+    title?: string;
     locator?: string | null;
 };
 

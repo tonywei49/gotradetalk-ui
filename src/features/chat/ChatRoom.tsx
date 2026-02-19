@@ -2109,8 +2109,8 @@ export const ChatRoom: React.FC = () => {
                                             {assistOutput.citations.length === 0 ? (
                                                 <div>No citations returned.</div>
                                             ) : assistOutput.citations.map((citation, idx) => (
-                                                <div key={`${citation.itemId}-${idx}`} className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
-                                                    {citation.title}{citation.locator ? ` · ${citation.locator}` : ""}
+                                                <div key={`${citation.sourceId}-${idx}`} className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                                    {(citation.title || citation.sourceId)}{citation.locator ? ` · ${citation.locator}` : ""}
                                                 </div>
                                             ))}
                                         </div>

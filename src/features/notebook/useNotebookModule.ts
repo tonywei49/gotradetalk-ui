@@ -154,12 +154,18 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         }
     }, [adapter, applySelection, auth, items, selectedItemId]);
 
-    const attachFile = useCallback(async (fileName: string) => {
+    const attachFile = useCallback(async (input: {
+        matrixMediaMxc: string;
+        matrixMediaName?: string;
+        matrixMediaMime?: string;
+        matrixMediaSize?: number;
+        isIndexable?: boolean;
+    }) => {
         if (!auth || !selectedItemId) return;
         setActionBusy(true);
         setActionError(null);
         try {
-            const updated = await adapter.attachFile(auth, selectedItemId, { fileName });
+            const updated = await adapter.attachFile(auth, selectedItemId, input);
             setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to attach file");
