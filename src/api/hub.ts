@@ -1,5 +1,11 @@
 import { hubApiBaseUrl } from "../config";
-import type { HubClientLoginResponse, HubClientSignupPayload, HubMatrixCredentials, HubMeResponse } from "./types";
+import type {
+    HubCapabilitiesResponse,
+    HubClientLoginResponse,
+    HubClientSignupPayload,
+    HubMatrixCredentials,
+    HubMeResponse,
+} from "./types";
 
 function normalizeBaseUrl(value: string): string {
     return value.replace(/\/+$/, "");
@@ -179,6 +185,25 @@ export async function hubGetMe(params: {
     }
     const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/me"), query) : joinUrl(hubBaseUrl, "/me");
     return getJson<HubMeResponse>(url, params.accessToken);
+}
+
+export async function hubGetCapabilities(params: {
+    accessToken: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+}): Promise<HubCapabilitiesResponse> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query: Record<string, string> = {};
+    if (params.hsUrl) {
+        query.hs_url = params.hsUrl;
+    }
+    if (params.matrixUserId) {
+        query.matrix_user_id = params.matrixUserId;
+    }
+    const url = Object.keys(query).length
+        ? withQuery(joinUrl(hubBaseUrl, "/me/capabilities"), query)
+        : joinUrl(hubBaseUrl, "/me/capabilities");
+    return getJson<HubCapabilitiesResponse>(url, params.accessToken);
 }
 
 export async function hubMeUpdateLocale(

@@ -10,6 +10,7 @@ import {
     PaperClipIcon,
     MicrophoneIcon,
     ChevronLeftIcon,
+    SparklesIcon,
 } from "@heroicons/react/24/outline";
 import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
@@ -56,6 +57,8 @@ import {
     type PendingAttachment,
 } from "./hooks/useAttachmentDrafts";
 import { getMessageEventKey, useMessageTranslation } from "./hooks/useMessageTranslation";
+import { getNotebookAdapter, NotebookApiError } from "../notebook";
+import type { NotebookAssistResponse, NotebookAuthContext } from "../notebook";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -410,6 +413,8 @@ type ChatRoomContext = {
     companyName?: string | null;
     jumpToEventId?: string | null;
     onJumpHandled?: () => void;
+    notebookAssistEnabled?: boolean;
+    notebookCapabilities?: string[];
 };
 
 type RemoveTarget = {
@@ -569,6 +574,8 @@ export const ChatRoom: React.FC = () => {
         companyName,
         jumpToEventId,
         onJumpHandled,
+        notebookAssistEnabled,
+        notebookCapabilities,
     } =
         useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
@@ -627,6 +634,17 @@ export const ChatRoom: React.FC = () => {
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
+    const [assistState, setAssistState] = useState<"idle" | "loading" | "success" | "error">("idle");
+    const [assistError, setAssistError] = useState<string | null>(null);
+    const [assistOutput, setAssistOutput] = useState<NotebookAssistResponse | null>(null);
+    const [assistDraft, setAssistDraft] = useState("");
+    const [assistCitationsExpanded, setAssistCitationsExpanded] = useState(false);
+    const [assistSending, setAssistSending] = useState(false);
+    const [lastAssistTrigger, setLastAssistTrigger] = useState<
+        | { type: "query"; query: string }
+        | { type: "context"; anchorEventId: string; windowSize: number }
+        | null
+    >(null);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -639,6 +657,20 @@ export const ChatRoom: React.FC = () => {
     const translateAccessToken = useHubTokenForTranslate ? hubAccessToken : matrixAccessToken;
     const translateHsUrl = useHubTokenForTranslate ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
+    const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
+    const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client");
+    const notebookAuth = useMemo<NotebookAuthContext | null>(() => {
+        const accessToken = hubAccessToken || matrixAccessToken;
+        if (!accessToken) return null;
+        return {
+            accessToken,
+            hsUrl: matrixHsUrl,
+            matrixUserId: matrixCredentials?.user_id ?? null,
+            userType,
+            capabilities: notebookCapabilities,
+        };
+    }, [hubAccessToken, matrixAccessToken, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
+    const assistLowConfidence = (assistOutput?.confidence ?? 1) < 0.6;
     const {
         pendingAttachmentsByRoom,
         setPendingAttachmentsByRoom,
@@ -761,6 +793,15 @@ export const ChatRoom: React.FC = () => {
             document.removeEventListener("click", handleClick);
         };
     }, [showActionsMenu]);
+
+    useEffect(() => {
+        setAssistState("idle");
+        setAssistError(null);
+        setAssistOutput(null);
+        setAssistDraft("");
+        setAssistCitationsExpanded(false);
+        setLastAssistTrigger(null);
+    }, [activeRoomId]);
 
     useEffect(() => {
         try {
@@ -1217,6 +1258,94 @@ export const ChatRoom: React.FC = () => {
             sentAttachments: readyAttachments.length,
             userId,
         });
+    };
+
+    const mapAssistError = (error: unknown): string => {
+        if (error instanceof NotebookApiError && (error.status === 403 || error.status === 422)) {
+            if (error.code === "FORBIDDEN_ROLE") {
+                return "403 FORBIDDEN_ROLE: client role cannot use Notebook AI.";
+            }
+            if (error.code === "CAPABILITY_DISABLED") {
+                return "403 CAPABILITY_DISABLED: Notebook AI is disabled by company setting.";
+            }
+            if (error.code === "INVALID_CONTEXT") {
+                return "422 INVALID_CONTEXT: invalid anchor event or context window.";
+            }
+        }
+        return error instanceof Error ? error.message : "Notebook assist request failed.";
+    };
+
+    const applyAssistOutput = (result: NotebookAssistResponse): void => {
+        setAssistOutput(result);
+        setAssistDraft(result.answer);
+        setAssistState("success");
+        setAssistError(null);
+    };
+
+    const runAssistQuery = async (query: string): Promise<void> => {
+        if (!canUseNotebookAssist || !notebookAuth || !activeRoomId) return;
+        const trimmed = query.trim();
+        if (!trimmed) {
+            setAssistState("error");
+            setAssistError("請先輸入問題再調用知識庫。");
+            return;
+        }
+        setAssistState("loading");
+        setAssistError(null);
+        try {
+            const result = await notebookAdapter.assistQuery(notebookAuth, {
+                roomId: activeRoomId,
+                query: trimmed,
+            });
+            applyAssistOutput(result);
+            setLastAssistTrigger({ type: "query", query: trimmed });
+        } catch (error) {
+            setAssistState("error");
+            setAssistError(mapAssistError(error));
+        }
+    };
+
+    const runAssistFromContext = async (anchorEventId: string): Promise<void> => {
+        if (!canUseNotebookAssist || !notebookAuth || !activeRoomId) return;
+        setAssistState("loading");
+        setAssistError(null);
+        try {
+            const result = await notebookAdapter.assistFromContext(notebookAuth, {
+                roomId: activeRoomId,
+                anchorEventId,
+                windowSize: 5,
+            });
+            applyAssistOutput(result);
+            setLastAssistTrigger({ type: "context", anchorEventId, windowSize: 5 });
+        } catch (error) {
+            setAssistState("error");
+            setAssistError(mapAssistError(error));
+        }
+    };
+
+    const onRegenerateAssist = async (): Promise<void> => {
+        if (!lastAssistTrigger) return;
+        if (lastAssistTrigger.type === "query") {
+            await runAssistQuery(lastAssistTrigger.query);
+            return;
+        }
+        await runAssistFromContext(lastAssistTrigger.anchorEventId);
+    };
+
+    const onDirectSendAssist = async (): Promise<void> => {
+        if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
+        const finalText = assistDraft.trim();
+        if (!finalText || assistLowConfidence) return;
+        setAssistSending(true);
+        try {
+            await sendTextMessage(matrixClient, activeRoomId, finalText);
+            setAssistState("idle");
+            setAssistOutput(null);
+            setAssistDraft("");
+            setAssistError(null);
+        } finally {
+            setAssistSending(false);
+        }
     };
 
     const onResend = async (event: MatrixEvent): Promise<void> => {
@@ -1847,6 +1976,26 @@ export const ChatRoom: React.FC = () => {
                                     }
                                 }}
                             />
+                            {canUseNotebookAssist && event.getType() === EventType.RoomMessage && (() => {
+                                const bodyContent = event.getContent() as { msgtype?: string; body?: string } | undefined;
+                                const isNotice = bodyContent?.msgtype === MsgType.Notice;
+                                if (isNotice) return null;
+                                const anchorEventId = event.getId();
+                                if (!anchorEventId) return null;
+                                return (
+                                    <div className={`mt-1 mb-2 flex ${isMe ? "justify-end" : "justify-start"}`}>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                void runAssistFromContext(anchorEventId);
+                                            }}
+                                            className="rounded-md border border-emerald-300 bg-white px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                                        >
+                                            調用知識庫
+                                        </button>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     );
                 })}
@@ -1888,7 +2037,118 @@ export const ChatRoom: React.FC = () => {
                     <button type="button" className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
                         <MicrophoneIcon className="w-6 h-6" />
                     </button>
+                    {canUseNotebookAssist && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void runAssistQuery(composerText);
+                            }}
+                            className="hover:text-[#2F5C56] dark:hover:text-emerald-400"
+                            title="Notebook AI"
+                        >
+                            <SparklesIcon className="w-6 h-6" />
+                        </button>
+                    )}
                 </div>
+
+                {(assistState !== "idle" || assistOutput || assistError) && (
+                    <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-900/20">
+                        <div className="flex items-center justify-between">
+                            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
+                                Notebook AI
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAssistState("idle");
+                                    setAssistError(null);
+                                    setAssistOutput(null);
+                                    setAssistDraft("");
+                                }}
+                                className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        {assistState === "loading" && (
+                            <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">Generating answer from notebook...</div>
+                        )}
+                        {assistError && (
+                            <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                                {assistError}
+                            </div>
+                        )}
+                        {assistOutput && (
+                            <div className="mt-2 space-y-2">
+                                <textarea
+                                    value={assistDraft}
+                                    onChange={(event) => setAssistDraft(event.target.value)}
+                                    rows={5}
+                                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                />
+                                {assistLowConfidence && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/30 dark:text-amber-200">
+                                        建議僅供參考（低信心），已禁用直接發送。
+                                    </div>
+                                )}
+                                {!assistOutput.citations.length && (
+                                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                        知識庫未找到明確依據，請人工確認後再回覆。
+                                    </div>
+                                )}
+                                <div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAssistCitationsExpanded((prev) => !prev)}
+                                        className="text-xs font-medium text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
+                                    >
+                                        {assistCitationsExpanded ? "Hide citations" : "Show citations"}
+                                    </button>
+                                    {assistCitationsExpanded && (
+                                        <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                            {assistOutput.citations.length === 0 ? (
+                                                <div>No citations returned.</div>
+                                            ) : assistOutput.citations.map((citation, idx) => (
+                                                <div key={`${citation.itemId}-${idx}`} className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                                    {citation.title}{citation.locator ? ` · ${citation.locator}` : ""}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setComposerText(assistDraft)}
+                                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                                    >
+                                        套用到輸入框
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void onDirectSendAssist();
+                                        }}
+                                        disabled={assistLowConfidence || assistSending || assistDraft.trim().length === 0}
+                                        className="rounded-lg bg-[#2F5C56] px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {assistSending ? "Sending..." : "直接發送"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void onRegenerateAssist();
+                                        }}
+                                        disabled={assistState === "loading" || !lastAssistTrigger}
+                                        className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
+                                    >
+                                        重新生成
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Input Area */}
                 <div className="flex gap-3 items-end">

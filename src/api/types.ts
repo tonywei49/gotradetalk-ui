@@ -47,3 +47,7 @@ export type HubMeResponse = {
     employee_persons: Array<{ company_id: string; person_id: string }>;
     profile: HubProfileSummary | null;
 };
+
+export type HubCapabilitiesResponse = {
+    capabilities?: string[];
+};

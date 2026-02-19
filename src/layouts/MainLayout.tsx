@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import {
     ChatBubbleLeftRightIcon,
+    BookOpenIcon,
     UserGroupIcon,
     Cog6ToothIcon,
     FolderIcon,
@@ -12,7 +13,7 @@ import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
 import type { ContactSummary } from "../features/rooms/RoomList";
-import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
+import { hubGetCapabilities, hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
@@ -37,6 +38,14 @@ import {
     type FileLibraryItem,
     type FileLibraryRoomSummary,
 } from "../features/files/fileCenterRepository";
+import {
+    getNotebookAdapter,
+    NotebookPanel,
+    NotebookSidebar,
+    resolveNotebookCapabilities,
+    useNotebookModule,
+} from "../features/notebook";
+import type { NotebookAuthContext } from "../features/notebook";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -186,7 +195,7 @@ const FILE_HISTORY_MAX_ROUNDS = 6;
 
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
-    const [activeTab, setActiveTab] = useState<"chat" | "contacts" | "files" | "orders" | "settings" | "account">("chat");
+    const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "orders" | "settings" | "account">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
@@ -271,6 +280,34 @@ export const MainLayout: React.FC = () => {
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
             };
+    const [capabilityValues, setCapabilityValues] = useState<string[]>([]);
+    const [capabilityLoaded, setCapabilityLoaded] = useState(false);
+    const capabilityToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : matrixAccessToken;
+    const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
+    const notebookCapabilityState = useMemo(
+        () =>
+            resolveNotebookCapabilities({
+                userType,
+                capabilities: capabilityValues,
+                loaded: capabilityLoaded,
+            }),
+        [capabilityLoaded, capabilityValues, userType],
+    );
+    const notebookAuth = useMemo<NotebookAuthContext | null>(() => {
+        if (!capabilityToken) return null;
+        return {
+            accessToken: capabilityToken,
+            hsUrl: matrixHsUrl,
+            matrixUserId: matrixCredentials?.user_id ?? null,
+            userType,
+            capabilities: capabilityValues,
+        };
+    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl, userType, capabilityValues]);
+    const notebookModule = useNotebookModule({
+        adapter: notebookAdapter,
+        auth: notebookAuth,
+        enabled: notebookCapabilityState.canUseNotebookBasic && activeTab === "notebook",
+    });
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
@@ -451,6 +488,36 @@ export const MainLayout: React.FC = () => {
     }, [hubAccessToken, matrixAccessToken, matrixHsUrl, matrixCredentials?.user_id]);
 
     useEffect(() => {
+        if (!capabilityToken) {
+            setCapabilityLoaded(false);
+            setCapabilityValues([]);
+            return;
+        }
+        let alive = true;
+        setCapabilityLoaded(false);
+        void hubGetCapabilities({
+            accessToken: capabilityToken,
+            hsUrl: matrixHsUrl,
+            matrixUserId: matrixCredentials?.user_id,
+        }).then((result) => {
+            if (!alive) return;
+            const values = Array.isArray(result.capabilities)
+                ? result.capabilities.filter((value): value is string => typeof value === "string")
+                : [];
+            setCapabilityValues(values);
+            setCapabilityLoaded(true);
+        }).catch(() => {
+            if (!alive) return;
+            // Fallback: Notebook basic is V1 baseline capability.
+            setCapabilityValues(["NOTEBOOK_BASIC"]);
+            setCapabilityLoaded(true);
+        });
+        return () => {
+            alive = false;
+        };
+    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl]);
+
+    useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
             const target = event.target as Node;
             if (accountMenuRef.current?.contains(target) || accountButtonRef.current?.contains(target)) return;
@@ -508,6 +575,12 @@ export const MainLayout: React.FC = () => {
             setContactsRefreshToken((prev) => prev + 1);
         }
     }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === "notebook" && !notebookCapabilityState.canUseNotebookBasic) {
+            setActiveTab("chat");
+        }
+    }, [activeTab, notebookCapabilityState.canUseNotebookBasic]);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -1048,6 +1121,13 @@ export const MainLayout: React.FC = () => {
                         badgeCount={unreadBadgeCount}
                         onClick={() => setActiveTab("chat")}
                     />
+                    {notebookCapabilityState.canUseNotebookBasic && (
+                        <NavBarItem
+                            icon={BookOpenIcon}
+                            active={activeTab === "notebook"}
+                            onClick={() => setActiveTab("notebook")}
+                        />
+                    )}
                     <NavBarItem
                         icon={UserGroupIcon}
                         active={activeTab === "contacts"}
@@ -1212,6 +1292,20 @@ export const MainLayout: React.FC = () => {
                             </button>
                         </div>
                     </>
+                ) : activeTab === "notebook" ? (
+                    <NotebookSidebar
+                        listState={notebookModule.listState}
+                        listError={notebookModule.listError}
+                        search={notebookModule.search}
+                        onSearchChange={notebookModule.setSearch}
+                        items={notebookModule.items}
+                        selectedItemId={notebookModule.selectedItemId}
+                        onSelect={notebookModule.setSelectedItemId}
+                        onCreate={() => {
+                            void notebookModule.createItem();
+                        }}
+                        busy={notebookModule.actionBusy}
+                    />
                 ) : activeTab === "files" ? (
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
@@ -1760,6 +1854,28 @@ export const MainLayout: React.FC = () => {
                             </div>
                         )}
                     </div>
+                ) : activeTab === "notebook" ? (
+                    <NotebookPanel
+                        enabled={notebookCapabilityState.canUseNotebookBasic}
+                        selectedItem={notebookModule.selectedItem}
+                        editorTitle={notebookModule.editorTitle}
+                        editorContent={notebookModule.editorContent}
+                        setEditorTitle={notebookModule.setEditorTitle}
+                        setEditorContent={notebookModule.setEditorContent}
+                        onSave={() => {
+                            void notebookModule.saveItem();
+                        }}
+                        onDelete={() => {
+                            void notebookModule.deleteItem();
+                        }}
+                        onAttachFile={() => {
+                            const fileName = window.prompt("Input file name for relation");
+                            if (!fileName) return;
+                            void notebookModule.attachFile(fileName);
+                        }}
+                        busy={notebookModule.actionBusy}
+                        actionError={notebookModule.actionError}
+                    />
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (
@@ -1884,6 +2000,8 @@ export const MainLayout: React.FC = () => {
                             companyName: meProfile?.company_name ?? null,
                             jumpToEventId,
                             onJumpHandled: () => setJumpToEventId(null),
+                            notebookAssistEnabled: notebookCapabilityState.canUseNotebookAssist,
+                            notebookCapabilities: capabilityValues,
                         }}
                     />
                 )}
