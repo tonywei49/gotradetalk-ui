@@ -135,6 +135,7 @@ function normalizeHubSession(input: HubSupabaseSession | null | undefined): HubS
 export async function hubStaffExchangeSession(params: {
     matrixAccessToken: string;
     hsUrl: string;
+    password: string;
     matrixUserId?: string | null;
 }): Promise<HubSupabaseSession> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
@@ -150,6 +151,7 @@ export async function hubStaffExchangeSession(params: {
                 },
                 body: JSON.stringify({
                     hs_url: params.hsUrl,
+                    password: params.password,
                     matrix_user_id: params.matrixUserId ?? undefined,
                 }),
             });

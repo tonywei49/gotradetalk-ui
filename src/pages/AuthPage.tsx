@@ -81,7 +81,7 @@ export function AuthPage() {
               accessToken: string;
               hsUrl: string;
               matrixUserId: string;
-              hubSession: HubSupabaseSession | null;
+              hubSession: HubSupabaseSession;
               matrixCredentials: HubClientLoginResponse["matrix"];
           }
         | null
@@ -93,7 +93,7 @@ export function AuthPage() {
         matrixAccessToken: string;
         hsUrl: string;
         matrixUserId: string;
-    }): Promise<HubSupabaseSession | null> => {
+    }): Promise<HubSupabaseSession> => {
         if (params.username.includes("@")) {
             try {
                 const login = await hubClientLogin(params.username, params.password);
@@ -109,23 +109,20 @@ export function AuthPage() {
             }
         }
 
-        try {
-            const exchanged = await hubStaffExchangeSession({
-                matrixAccessToken: params.matrixAccessToken,
-                hsUrl: params.hsUrl,
-                matrixUserId: params.matrixUserId,
-            });
-            if (!exchanged.access_token || !exchanged.access_token.startsWith("eyJ")) {
-                return null;
-            }
-            return {
-                access_token: exchanged.access_token,
-                refresh_token: exchanged.refresh_token || "",
-                expires_at: exchanged.expires_at,
-            };
-        } catch {
-            return null;
+        const exchanged = await hubStaffExchangeSession({
+            matrixAccessToken: params.matrixAccessToken,
+            hsUrl: params.hsUrl,
+            password: params.password,
+            matrixUserId: params.matrixUserId,
+        });
+        if (!exchanged.access_token || !exchanged.access_token.startsWith("eyJ")) {
+            throw new Error("NO_VALID_HUB_TOKEN");
         }
+        return {
+            access_token: exchanged.access_token,
+            refresh_token: exchanged.refresh_token || "",
+            expires_at: exchanged.expires_at,
+        };
     };
 
     useEffect(() => {
@@ -297,9 +294,6 @@ export function AuthPage() {
                     },
                     hubSession,
                 });
-                if (!hubSession) {
-                    pushToast("warn", "已登入聊天，但 Notebook 驗證未完成，請稍後重新登入或聯絡管理員。");
-                }
                 navigate("/app");
             } catch (error) {
                 const message = mapAuthErrorToMessage(t, error);
@@ -800,9 +794,6 @@ export function AuthPage() {
                                             hs_url: forceResetHsUrl,
                                         },
                                     });
-                                    if (!hubSession) {
-                                        pushToast("warn", "已更新密碼，但 Notebook 驗證未完成，請稍後重新登入。");
-                                    }
                                     setShowLanguageModal(true);
                                 } catch (error) {
                                     setCompanyError(mapAuthErrorToMessage(t, error));
