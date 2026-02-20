@@ -420,6 +420,7 @@ type ChatRoomContext = {
     onRetryNotebookCapability?: () => void;
     onReloginForNotebook?: () => void;
     hasNotebookAuthToken?: boolean;
+    notebookApiBaseUrl?: string | null;
 };
 
 type RemoveTarget = {
@@ -585,6 +586,7 @@ export const ChatRoom: React.FC = () => {
         onRetryNotebookCapability,
         onReloginForNotebook,
         hasNotebookAuthToken,
+        notebookApiBaseUrl,
     } =
         useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
@@ -676,12 +678,13 @@ export const ChatRoom: React.FC = () => {
         if (!accessToken) return null;
         return {
             accessToken,
+            apiBaseUrl: notebookApiBaseUrl,
             hsUrl: matrixHsUrl,
             matrixUserId: matrixCredentials?.user_id ?? null,
             userType,
             capabilities: notebookCapabilities,
         };
-    }, [notebookToken.accessToken, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
+    }, [notebookToken.accessToken, notebookApiBaseUrl, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
     const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client" && notebookAuth);
     const assistLowConfidence = (assistOutput?.confidence ?? 1) < 0.6;
     const {

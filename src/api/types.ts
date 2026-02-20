@@ -50,6 +50,8 @@ export type HubMeResponse = {
     memberships: Array<{ company_id: string; role: string }>;
     employee_persons: Array<{ company_id: string; person_id: string }>;
     profile: HubProfileSummary | null;
+    company_id?: string | null;
+    notebook_api_base_url?: string | null;
 };
 
 export type HubCapabilitiesResponse = {

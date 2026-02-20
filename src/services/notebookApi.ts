@@ -26,6 +26,7 @@ export class NotebookServiceError extends Error {
 
 export type NotebookApiAuth = {
     accessToken: string;
+    apiBaseUrl?: string | null;
     hsUrl?: string | null;
     matrixUserId?: string | null;
 };
@@ -119,7 +120,7 @@ function normalizeBaseUrl(value: string): string {
 }
 
 function buildUrl(path: string, auth: NotebookApiAuth, query?: Record<string, string>): string {
-    const base = normalizeBaseUrl(notebookApiBaseUrl);
+    const base = normalizeBaseUrl(auth.apiBaseUrl || notebookApiBaseUrl);
     const url = new URL(`${base}${path}`);
     if (auth.hsUrl) {
         url.searchParams.set("hs_url", auth.hsUrl);

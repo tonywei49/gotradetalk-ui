@@ -258,6 +258,7 @@ export const MainLayout: React.FC = () => {
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const accountButtonRef = useRef<HTMLButtonElement | null>(null);
     const [meProfile, setMeProfile] = useState<HubProfileSummary | null>(null);
+    const [notebookApiBaseUrlOverride, setNotebookApiBaseUrlOverride] = useState<string | null>(null);
     const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
     const accountId = meProfile?.user_local_id || fallbackAccountId;
     const accountInitial = accountId.charAt(0).toUpperCase() || "U";
@@ -308,12 +309,13 @@ export const MainLayout: React.FC = () => {
         if (!capabilityToken) return null;
         return {
             accessToken: capabilityToken,
+            apiBaseUrl: notebookApiBaseUrlOverride,
             hsUrl: matrixHsUrl,
             matrixUserId: matrixCredentials?.user_id ?? null,
             userType,
             capabilities: capabilityValues,
         };
-    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl, userType, capabilityValues]);
+    }, [capabilityToken, notebookApiBaseUrlOverride, matrixCredentials?.user_id, matrixHsUrl, userType, capabilityValues]);
     const retryNotebookCapability = useCallback(() => {
         setCapabilityRefreshSeq((prev) => prev + 1);
     }, []);
@@ -510,6 +512,7 @@ export const MainLayout: React.FC = () => {
                 });
                 if (!isActive) return;
                 setMeProfile(response.profile);
+                setNotebookApiBaseUrlOverride(response.notebook_api_base_url ?? null);
                 if (response.profile?.locale) {
                     setDisplayLanguage(response.profile.locale);
                     if (response.profile.locale === "en" || response.profile.locale === "zh-CN") {
@@ -523,6 +526,7 @@ export const MainLayout: React.FC = () => {
             } catch {
                 if (!isActive) return;
                 setMeProfile(null);
+                setNotebookApiBaseUrlOverride(null);
             }
         })();
         return () => {
@@ -550,6 +554,7 @@ export const MainLayout: React.FC = () => {
         setCapabilityError(null);
         void getNotebookCapabilities({
             accessToken: capabilityToken,
+            apiBaseUrl: notebookApiBaseUrlOverride,
             hsUrl: matrixHsUrl,
             matrixUserId: matrixCredentials?.user_id,
         }).then((result) => {
@@ -573,7 +578,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason]);
+    }, [capabilityToken, notebookApiBaseUrlOverride, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -2092,6 +2097,7 @@ export const MainLayout: React.FC = () => {
                             onRetryNotebookCapability: retryNotebookCapability,
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
+                            notebookApiBaseUrl: notebookApiBaseUrlOverride,
                         }}
                     />
                 )}
