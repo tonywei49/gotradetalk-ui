@@ -45,6 +45,13 @@ export type GetNotebookItemsResponse = {
     next_cursor: string | null;
 };
 
+export type NotebookCapabilitiesResponse = {
+    user_id: string;
+    company_id: string;
+    role: "staff" | "client" | "admin";
+    capabilities: string[];
+};
+
 export type AssistFromContextRequest = {
     room_id: string;
     anchor_event_id: string;
@@ -210,6 +217,10 @@ export async function getNotebookItems(
     if (input?.cursor) query.cursor = input.cursor;
     if (input?.limit) query.limit = String(input.limit);
     return getJson<GetNotebookItemsResponse>(auth, "/notebook/items", query);
+}
+
+export async function getNotebookCapabilities(auth: NotebookApiAuth): Promise<NotebookCapabilitiesResponse> {
+    return getJson<NotebookCapabilitiesResponse>(auth, "/me/capabilities");
 }
 
 export async function createNotebookItem(

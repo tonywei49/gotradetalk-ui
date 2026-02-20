@@ -13,7 +13,7 @@ import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
 import type { ContactSummary } from "../features/rooms/RoomList";
-import { hubGetCapabilities, hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
+import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
@@ -46,6 +46,7 @@ import {
     useNotebookModule,
 } from "../features/notebook";
 import type { NotebookAuthContext } from "../features/notebook";
+import { getNotebookCapabilities } from "../services/notebookApi";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -495,7 +496,7 @@ export const MainLayout: React.FC = () => {
         }
         let alive = true;
         setCapabilityLoaded(false);
-        void hubGetCapabilities({
+        void getNotebookCapabilities({
             accessToken: capabilityToken,
             hsUrl: matrixHsUrl,
             matrixUserId: matrixCredentials?.user_id,
