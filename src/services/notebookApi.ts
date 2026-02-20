@@ -7,6 +7,7 @@ export type NotebookApiErrorCode =
     | "VALIDATION_ERROR"
     | "UNAUTHORIZED"
     | "NOT_FOUND"
+    | "NO_VALID_HUB_TOKEN"
     | "UNKNOWN";
 
 export class NotebookServiceError extends Error {
@@ -141,8 +142,27 @@ function toErrorCode(input: string | undefined, status: number): NotebookApiErro
     if (code === "VALIDATION_ERROR") return "VALIDATION_ERROR";
     if (code === "UNAUTHORIZED") return "UNAUTHORIZED";
     if (code === "NOT_FOUND") return "NOT_FOUND";
+    if (code === "NO_VALID_HUB_TOKEN") return "NO_VALID_HUB_TOKEN";
     if (status === 403) return "FORBIDDEN_ROLE";
     return "UNKNOWN";
+}
+
+function isLikelyHubJwtToken(token: string): boolean {
+    const trimmed = token.trim();
+    if (!trimmed.startsWith("eyJ")) return false;
+    const parts = trimmed.split(".");
+    if (parts.length !== 3) return false;
+    return parts.every((part) => part.length > 0);
+}
+
+function assertHubJwtToken(auth: NotebookApiAuth): void {
+    if (!auth.accessToken || !isLikelyHubJwtToken(auth.accessToken)) {
+        throw new NotebookServiceError(
+            "Notebook 驗證失敗，缺少可驗證的 Hub/Supabase JWT",
+            401,
+            "NO_VALID_HUB_TOKEN",
+        );
+    }
 }
 
 async function readError(response: Response): Promise<NotebookServiceError> {
@@ -158,6 +178,7 @@ async function readError(response: Response): Promise<NotebookServiceError> {
 }
 
 async function getJson<T>(auth: NotebookApiAuth, path: string, query?: Record<string, string>): Promise<T> {
+    assertHubJwtToken(auth);
     const response = await fetch(buildUrl(path, auth, query), {
         method: "GET",
         cache: "no-store",
@@ -170,6 +191,7 @@ async function getJson<T>(auth: NotebookApiAuth, path: string, query?: Record<st
 }
 
 async function postJson<T>(auth: NotebookApiAuth, path: string, body: Record<string, unknown>): Promise<T> {
+    assertHubJwtToken(auth);
     const response = await fetch(buildUrl(path, auth), {
         method: "POST",
         headers: {
@@ -183,6 +205,7 @@ async function postJson<T>(auth: NotebookApiAuth, path: string, body: Record<str
 }
 
 async function patchJson<T>(auth: NotebookApiAuth, path: string, body: Record<string, unknown>): Promise<T> {
+    assertHubJwtToken(auth);
     const response = await fetch(buildUrl(path, auth), {
         method: "PATCH",
         headers: {
@@ -196,6 +219,7 @@ async function patchJson<T>(auth: NotebookApiAuth, path: string, body: Record<st
 }
 
 async function deleteRequest<T>(auth: NotebookApiAuth, path: string): Promise<T> {
+    assertHubJwtToken(auth);
     const response = await fetch(buildUrl(path, auth), {
         method: "DELETE",
         headers: {

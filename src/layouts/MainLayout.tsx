@@ -502,7 +502,11 @@ export const MainLayout: React.FC = () => {
         if (!capabilityToken) {
             setCapabilityLoaded(true);
             setCapabilityValues([]);
-            if (notebookToken.reason === "expired_hub_token" || notebookToken.reason === "missing_hub_token") {
+            if (
+                notebookToken.reason === "expired_hub_token" ||
+                notebookToken.reason === "missing_hub_token" ||
+                notebookToken.reason === "invalid_hub_token_format"
+            ) {
                 setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
             } else {
                 setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");

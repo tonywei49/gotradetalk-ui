@@ -1274,7 +1274,10 @@ export const ChatRoom: React.FC = () => {
     };
 
     const mapAssistError = (error: unknown): string => {
-        if (error instanceof NotebookApiError && (error.status === 403 || error.status === 422)) {
+        if (error instanceof NotebookApiError && (error.status === 401 || error.status === 403 || error.status === 422)) {
+            if (error.code === "NO_VALID_HUB_TOKEN") {
+                return "NO_VALID_HUB_TOKEN: Notebook API requires a valid Hub/Supabase JWT.";
+            }
             if (error.code === "FORBIDDEN_ROLE") {
                 return "403 FORBIDDEN_ROLE: client role cannot use Notebook AI.";
             }
