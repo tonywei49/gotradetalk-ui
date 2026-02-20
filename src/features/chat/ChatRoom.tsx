@@ -1296,6 +1296,7 @@ export const ChatRoom: React.FC = () => {
             const result = await notebookAdapter.assistQuery(notebookAuth, {
                 roomId: activeRoomId,
                 query: trimmed,
+                responseLang: (chatReceiveLanguage || "").trim() || "zh-TW",
             });
             applyAssistOutput(result);
             setLastAssistTrigger({ type: "query", query: trimmed });
@@ -1314,6 +1315,7 @@ export const ChatRoom: React.FC = () => {
                 roomId: activeRoomId,
                 anchorEventId,
                 windowSize: 5,
+                responseLang: (chatReceiveLanguage || "").trim() || "zh-TW",
             });
             applyAssistOutput(result);
             setLastAssistTrigger({ type: "context", anchorEventId, windowSize: 5 });

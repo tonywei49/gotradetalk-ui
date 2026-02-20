@@ -31,12 +31,14 @@ export type AttachNotebookFileInput = {
 export type NotebookAssistQueryInput = {
     roomId: string;
     query: string;
+    responseLang?: string;
 };
 
 export type NotebookAssistFromContextInput = {
     roomId: string;
     anchorEventId: string;
     windowSize?: number;
+    responseLang?: string;
 };
 
 export type NotebookSyncPushInput = {

@@ -49,6 +49,7 @@ export type AssistFromContextRequest = {
     room_id: string;
     anchor_event_id: string;
     window_size?: number;
+    response_lang?: string;
 };
 
 export type NotebookAssistSourceDto = {
@@ -266,7 +267,7 @@ export async function assistFromContext(
 
 export async function assistQuery(
     auth: NotebookApiAuth,
-    input: { room_id: string; query: string; top_k?: number },
+    input: { room_id: string; query: string; top_k?: number; response_lang?: string },
 ): Promise<NotebookAssistResponseDto> {
     return postJson<NotebookAssistResponseDto>(auth, "/chat/assist/query", input);
 }
