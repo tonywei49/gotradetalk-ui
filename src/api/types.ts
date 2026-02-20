@@ -16,6 +16,10 @@ export type HubClientLoginResponse = {
     supabase?: HubSupabaseSession;
 };
 
+export type HubStaffSessionExchangeResponse = {
+    supabase?: HubSupabaseSession;
+};
+
 export type HubClientSignupPayload = {
     user_local_id: string;
     company_name: string;

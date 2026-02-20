@@ -23,6 +23,7 @@ type AuthState = {
         matrixCredentials: HubMatrixCredentials;
         hubSession: HubSupabaseSession | null;
     }) => void;
+    setHubSession: (hubSession: HubSupabaseSession | null) => void;
     validateSession: () => Promise<void>;
     clearSession: () => void;
 };
@@ -115,6 +116,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             hubSession,
             matrixClient,
         });
+    },
+    setHubSession: (hubSession) => {
+        const state = get();
+        if (!state.userType || !state.matrixCredentials) return;
+        persistState({
+            userType: state.userType,
+            matrixCredentials: state.matrixCredentials,
+            hubSession,
+            persistedAt: Date.now(),
+        });
+        set({ hubSession });
     },
     validateSession: async () => {
         const state = get();

@@ -24,6 +24,7 @@ import { GroupInviteList } from "../features/groups/GroupInviteList";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
 import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
+import { getSupabaseClient } from "../api/supabase";
 import { setLanguage } from "../i18n";
 import { markRoomDeprecated } from "../services/matrix";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
@@ -250,6 +251,7 @@ export const MainLayout: React.FC = () => {
     const matrixAccessToken = useAuthStore((state) => state.matrixCredentials?.access_token ?? null);
     const matrixHsUrl = useAuthStore((state) => state.matrixCredentials?.hs_url ?? null);
     const userType = useAuthStore((state) => state.userType);
+    const setHubSession = useAuthStore((state) => state.setHubSession);
     const clearSession = useAuthStore((state) => state.clearSession);
     const navigate = useNavigate();
     const [showAccountMenu, setShowAccountMenu] = useState(false);
@@ -286,6 +288,7 @@ export const MainLayout: React.FC = () => {
     const [capabilityLoaded, setCapabilityLoaded] = useState(false);
     const [capabilityError, setCapabilityError] = useState<string | null>(null);
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
+    const [capabilityTokenRefreshSeq, setCapabilityTokenRefreshSeq] = useState(0);
     const notebookToken = useMemo(
         () => resolveNotebookAccessToken(hubSession),
         [hubSession],
@@ -314,6 +317,35 @@ export const MainLayout: React.FC = () => {
     const retryNotebookCapability = useCallback(() => {
         setCapabilityRefreshSeq((prev) => prev + 1);
     }, []);
+    useEffect(() => {
+        if (notebookToken.reason !== "expired_hub_token") return;
+        if (!hubSession?.refresh_token) return;
+        let alive = true;
+        void (async (): Promise<void> => {
+            try {
+                const supabase = getSupabaseClient();
+                const { data, error } = await supabase.auth.refreshSession({
+                    refresh_token: hubSession.refresh_token,
+                });
+                if (error || !data.session?.access_token) {
+                    throw new Error("INVALID_AUTH_TOKEN");
+                }
+                if (!alive) return;
+                setHubSession({
+                    access_token: data.session.access_token,
+                    refresh_token: data.session.refresh_token || hubSession.refresh_token,
+                    expires_at: data.session.expires_at ?? undefined,
+                });
+                setCapabilityTokenRefreshSeq((prev) => prev + 1);
+            } catch {
+                if (!alive) return;
+                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+            }
+        })();
+        return () => {
+            alive = false;
+        };
+    }, [hubSession, notebookToken.reason, setHubSession]);
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
         auth: notebookAuth,
@@ -541,7 +573,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, notebookToken.reason]);
+    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {

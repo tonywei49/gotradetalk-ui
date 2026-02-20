@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
     hubClientLogin,
     hubClientProvision,
+    hubStaffExchangeSession,
     hubStaffActivatePasswordState,
     hubStaffPasswordState,
 } from "../api/hub";
@@ -80,10 +81,48 @@ export function AuthPage() {
               accessToken: string;
               hsUrl: string;
               matrixUserId: string;
+              hubSession: HubSupabaseSession;
               matrixCredentials: HubClientLoginResponse["matrix"];
           }
         | null
     >(null);
+
+    const ensureHubSessionForStaff = async (params: {
+        username: string;
+        password: string;
+        matrixAccessToken: string;
+        hsUrl: string;
+        matrixUserId: string;
+    }): Promise<HubSupabaseSession> => {
+        if (params.username.includes("@")) {
+            try {
+                const login = await hubClientLogin(params.username, params.password);
+                if (login.supabase?.access_token?.startsWith("eyJ")) {
+                    return {
+                        access_token: login.supabase.access_token,
+                        refresh_token: login.supabase.refresh_token || "",
+                        expires_at: login.supabase.expires_at,
+                    };
+                }
+            } catch {
+                // fallback to matrix->hub exchange
+            }
+        }
+
+        const exchanged = await hubStaffExchangeSession({
+            matrixAccessToken: params.matrixAccessToken,
+            hsUrl: params.hsUrl,
+            matrixUserId: params.matrixUserId,
+        });
+        if (!exchanged.access_token || !exchanged.access_token.startsWith("eyJ")) {
+            throw new Error("NO_VALID_HUB_TOKEN");
+        }
+        return {
+            access_token: exchanged.access_token,
+            refresh_token: exchanged.refresh_token || "",
+            expires_at: exchanged.expires_at,
+        };
+    };
 
     useEffect(() => {
         const supabase = getSupabaseClient();
@@ -209,6 +248,13 @@ export function AuthPage() {
                 const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
                 const credentials = await loginWithPassword(hsUrl, companyUsername.trim(), companyPassword);
                 const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
+                const hubSession = await ensureHubSessionForStaff({
+                    username: companyUsername.trim(),
+                    password: companyPassword,
+                    matrixAccessToken: credentials.accessToken,
+                    hsUrl: credentials.homeserverUrl,
+                    matrixUserId: credentials.userId,
+                });
                 if (passwordState.password_state === "RESET_REQUIRED") {
                     setForceResetAccessToken(credentials.accessToken);
                     setForceResetHsUrl(credentials.homeserverUrl);
@@ -225,6 +271,7 @@ export function AuthPage() {
                         matrixUserId: credentials.userId,
                         accessToken: credentials.accessToken,
                         hsUrl: credentials.homeserverUrl,
+                        hubSession,
                         matrixCredentials: {
                             access_token: credentials.accessToken,
                             device_id: credentials.deviceId,
@@ -244,11 +291,15 @@ export function AuthPage() {
                         user_id: credentials.userId,
                         hs_url: credentials.homeserverUrl,
                     },
-                    hubSession: null,
+                    hubSession,
                 });
                 navigate("/app");
             } catch (error) {
-                const message = mapAuthErrorToMessage(t, error);
+                const baseMessage = mapAuthErrorToMessage(t, error);
+                const normalized = String(baseMessage).toUpperCase();
+                const message = normalized.includes("NO_VALID_HUB_TOKEN") || normalized.includes("INVALID_AUTH_TOKEN")
+                    ? "Notebook 驗證失敗，請重新登入（token 無效或類型不符）"
+                    : baseMessage;
                 setCompanyError(message);
                 pushToast("error", message);
             } finally {
@@ -720,15 +771,25 @@ export function AuthPage() {
                             hsUrl={forceResetHsUrl}
                             userId={forceResetUserId}
                             initialPassword={forceResetInitialPassword}
-                            onComplete={async (): Promise<void> => {
+                            onComplete={async (newPassword): Promise<void> => {
                                 try {
                                     await hubStaffActivatePasswordState(forceResetAccessToken, forceResetHsUrl);
                                     setShowForceReset(false);
+                                    const hubSession = await ensureHubSessionForStaff({
+                                        username: forceResetUserId.startsWith("@")
+                                            ? forceResetUserId.slice(1).split(":")[0]
+                                            : forceResetUserId,
+                                        password: newPassword,
+                                        matrixAccessToken: forceResetAccessToken,
+                                        hsUrl: forceResetHsUrl,
+                                        matrixUserId: forceResetUserId,
+                                    });
                                     setPendingLanguageContext({
                                         matrixUserId: forceResetUserId,
                                         userType: "staff",
                                         accessToken: forceResetAccessToken,
                                         hsUrl: forceResetHsUrl,
+                                        hubSession,
                                         matrixCredentials: {
                                             access_token: forceResetAccessToken,
                                             device_id: "",
@@ -766,7 +827,7 @@ export function AuthPage() {
                         setAuthSession({
                             userType: "staff",
                             matrixCredentials: pendingLanguageContext.matrixCredentials,
-                            hubSession: null,
+                            hubSession: pendingLanguageContext.hubSession,
                         });
                     }
                     setLanguage(language);
@@ -790,7 +851,7 @@ type ForcePasswordResetProps = {
     hsUrl: string;
     userId: string;
     initialPassword: string;
-    onComplete: () => Promise<void>;
+    onComplete: (newPassword: string) => Promise<void>;
     onCancel: () => void;
 };
 
@@ -834,7 +895,7 @@ function ForcePasswordResetForm({
             setBusy(true);
             try {
                 await changeMatrixPassword(hsUrl, accessToken, userId, currentPassword, newPassword);
-                await onComplete();
+                await onComplete(newPassword);
             } catch (error) {
                 const message = mapAuthErrorToMessage(t, error);
                 setError(message);

@@ -5,6 +5,8 @@ import type {
     HubClientSignupPayload,
     HubMatrixCredentials,
     HubMeResponse,
+    HubStaffSessionExchangeResponse,
+    HubSupabaseSession,
 } from "./types";
 
 function normalizeBaseUrl(value: string): string {
@@ -107,6 +109,67 @@ export async function hubClientResetPassword(accessToken: string, password: stri
 export type HubStaffPasswordStateResponse = {
     password_state: string;
 };
+
+const staffSessionExchangeCandidates = [
+    "/staff/session/exchange",
+    "/staff/auth/session/exchange",
+    "/auth/staff/session/exchange",
+] as const;
+
+function isLikelyJwtToken(token: string): boolean {
+    const trimmed = token.trim();
+    if (!trimmed.startsWith("eyJ")) return false;
+    const parts = trimmed.split(".");
+    return parts.length === 3 && parts.every((part) => part.length > 0);
+}
+
+function normalizeHubSession(input: HubSupabaseSession | null | undefined): HubSupabaseSession | null {
+    if (!input?.access_token || !isLikelyJwtToken(input.access_token)) return null;
+    return {
+        access_token: input.access_token,
+        refresh_token: input.refresh_token || "",
+        expires_at: input.expires_at,
+    };
+}
+
+export async function hubStaffExchangeSession(params: {
+    matrixAccessToken: string;
+    hsUrl: string;
+    matrixUserId?: string | null;
+}): Promise<HubSupabaseSession> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+
+    for (const path of staffSessionExchangeCandidates) {
+        const url = joinUrl(hubBaseUrl, path);
+        try {
+            const response = await fetch(url, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${params.matrixAccessToken}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    hs_url: params.hsUrl,
+                    matrix_user_id: params.matrixUserId ?? undefined,
+                }),
+            });
+            if (!response.ok) {
+                const message = await readResponseMessage(response);
+                throw new Error(message || `Request failed (${response.status})`);
+            }
+            const payload = (await response.json()) as HubStaffSessionExchangeResponse;
+            const session = normalizeHubSession(payload.supabase);
+            if (!session) {
+                throw new Error("NO_VALID_HUB_TOKEN");
+            }
+            return session;
+        } catch {
+            // try next candidate path
+        }
+    }
+
+    throw new Error("NO_VALID_HUB_TOKEN");
+}
 
 export async function hubStaffPasswordState(
     accessToken: string,

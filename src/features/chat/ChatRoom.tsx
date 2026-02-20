@@ -1278,6 +1278,9 @@ export const ChatRoom: React.FC = () => {
             if (error.code === "NO_VALID_HUB_TOKEN") {
                 return "NO_VALID_HUB_TOKEN: Notebook API requires a valid Hub/Supabase JWT.";
             }
+            if (error.code === "INVALID_AUTH_TOKEN" || error.code === "UNAUTHORIZED") {
+                return "INVALID_AUTH_TOKEN: Notebook auth token is invalid or expired, please re-login.";
+            }
             if (error.code === "FORBIDDEN_ROLE") {
                 return "403 FORBIDDEN_ROLE: client role cannot use Notebook AI.";
             }

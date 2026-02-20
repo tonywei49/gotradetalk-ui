@@ -6,6 +6,7 @@ export type NotebookApiErrorCode =
     | "FORBIDDEN_ROLE"
     | "VALIDATION_ERROR"
     | "UNAUTHORIZED"
+    | "INVALID_AUTH_TOKEN"
     | "NOT_FOUND"
     | "NO_VALID_HUB_TOKEN"
     | "UNKNOWN";
@@ -141,8 +142,10 @@ function toErrorCode(input: string | undefined, status: number): NotebookApiErro
     if (code === "FORBIDDEN_ROLE") return "FORBIDDEN_ROLE";
     if (code === "VALIDATION_ERROR") return "VALIDATION_ERROR";
     if (code === "UNAUTHORIZED") return "UNAUTHORIZED";
+    if (code === "INVALID_AUTH_TOKEN") return "INVALID_AUTH_TOKEN";
     if (code === "NOT_FOUND") return "NOT_FOUND";
     if (code === "NO_VALID_HUB_TOKEN") return "NO_VALID_HUB_TOKEN";
+    if (status === 401) return "INVALID_AUTH_TOKEN";
     if (status === 403) return "FORBIDDEN_ROLE";
     return "UNKNOWN";
 }
