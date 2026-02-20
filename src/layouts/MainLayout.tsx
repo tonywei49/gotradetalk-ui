@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import {
     ChatBubbleLeftRightIcon,
@@ -46,7 +46,8 @@ import {
     useNotebookModule,
 } from "../features/notebook";
 import type { NotebookAuthContext } from "../features/notebook";
-import { getNotebookCapabilities } from "../services/notebookApi";
+import { getNotebookCapabilities, NotebookServiceError } from "../services/notebookApi";
+import { resolveNotebookAccessToken } from "../services/notebookTokenProvider";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -283,7 +284,13 @@ export const MainLayout: React.FC = () => {
             };
     const [capabilityValues, setCapabilityValues] = useState<string[]>([]);
     const [capabilityLoaded, setCapabilityLoaded] = useState(false);
-    const capabilityToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : matrixAccessToken;
+    const [capabilityError, setCapabilityError] = useState<string | null>(null);
+    const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
+    const notebookToken = useMemo(
+        () => resolveNotebookAccessToken(hubSession),
+        [hubSession],
+    );
+    const capabilityToken = notebookToken.accessToken;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
     const notebookCapabilityState = useMemo(
         () =>
@@ -304,6 +311,9 @@ export const MainLayout: React.FC = () => {
             capabilities: capabilityValues,
         };
     }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl, userType, capabilityValues]);
+    const retryNotebookCapability = useCallback(() => {
+        setCapabilityRefreshSeq((prev) => prev + 1);
+    }, []);
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
         auth: notebookAuth,
@@ -490,12 +500,18 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         if (!capabilityToken) {
-            setCapabilityLoaded(false);
+            setCapabilityLoaded(true);
             setCapabilityValues([]);
+            if (notebookToken.reason === "expired_hub_token" || notebookToken.reason === "missing_hub_token") {
+                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+            } else {
+                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+            }
             return;
         }
         let alive = true;
         setCapabilityLoaded(false);
+        setCapabilityError(null);
         void getNotebookCapabilities({
             accessToken: capabilityToken,
             hsUrl: matrixHsUrl,
@@ -507,16 +523,21 @@ export const MainLayout: React.FC = () => {
                 : [];
             setCapabilityValues(values);
             setCapabilityLoaded(true);
-        }).catch(() => {
+            setCapabilityError(null);
+        }).catch((error) => {
             if (!alive) return;
-            // Fallback: Notebook basic is V1 baseline capability.
-            setCapabilityValues(["NOTEBOOK_BASIC"]);
+            setCapabilityValues([]);
             setCapabilityLoaded(true);
+            if (error instanceof NotebookServiceError && error.status === 401) {
+                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+                return;
+            }
+            setCapabilityError("Notebook 能力讀取失敗，請稍後重試。");
         });
         return () => {
             alive = false;
         };
-    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl]);
+    }, [capabilityToken, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, notebookToken.reason]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -1469,6 +1490,27 @@ export const MainLayout: React.FC = () => {
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
             >
+                {capabilityError && (
+                    <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                        <div>{capabilityError}</div>
+                        <div className="mt-2 flex gap-2">
+                            <button
+                                type="button"
+                                onClick={retryNotebookCapability}
+                                className="rounded-md border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/40"
+                            >
+                                Retry
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onLogout}
+                                className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-700"
+                            >
+                                Re-login
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
@@ -2010,6 +2052,10 @@ export const MainLayout: React.FC = () => {
                             onJumpHandled: () => setJumpToEventId(null),
                             notebookAssistEnabled: notebookCapabilityState.canUseNotebookAssist,
                             notebookCapabilities: capabilityValues,
+                            notebookCapabilityError: capabilityError,
+                            onRetryNotebookCapability: retryNotebookCapability,
+                            onReloginForNotebook: onLogout,
+                            hasNotebookAuthToken: Boolean(capabilityToken),
                         }}
                     />
                 )}

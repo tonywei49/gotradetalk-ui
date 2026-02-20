@@ -59,6 +59,7 @@ import {
 import { getMessageEventKey, useMessageTranslation } from "./hooks/useMessageTranslation";
 import { getNotebookAdapter, NotebookApiError } from "../notebook";
 import type { NotebookAssistResponse, NotebookAuthContext } from "../notebook";
+import { resolveNotebookAccessToken } from "../../services/notebookTokenProvider";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -415,6 +416,10 @@ type ChatRoomContext = {
     onJumpHandled?: () => void;
     notebookAssistEnabled?: boolean;
     notebookCapabilities?: string[];
+    notebookCapabilityError?: string | null;
+    onRetryNotebookCapability?: () => void;
+    onReloginForNotebook?: () => void;
+    hasNotebookAuthToken?: boolean;
 };
 
 type RemoveTarget = {
@@ -576,6 +581,10 @@ export const ChatRoom: React.FC = () => {
         onJumpHandled,
         notebookAssistEnabled,
         notebookCapabilities,
+        notebookCapabilityError,
+        onRetryNotebookCapability,
+        onReloginForNotebook,
+        hasNotebookAuthToken,
     } =
         useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
@@ -658,9 +667,12 @@ export const ChatRoom: React.FC = () => {
     const translateHsUrl = useHubTokenForTranslate ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
-    const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client");
+    const notebookToken = useMemo(
+        () => resolveNotebookAccessToken(hubSession),
+        [hubSession],
+    );
     const notebookAuth = useMemo<NotebookAuthContext | null>(() => {
-        const accessToken = hubAccessToken || matrixAccessToken;
+        const accessToken = notebookToken.accessToken;
         if (!accessToken) return null;
         return {
             accessToken,
@@ -669,7 +681,8 @@ export const ChatRoom: React.FC = () => {
             userType,
             capabilities: notebookCapabilities,
         };
-    }, [hubAccessToken, matrixAccessToken, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
+    }, [notebookToken.accessToken, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
+    const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client" && notebookAuth);
     const assistLowConfidence = (assistOutput?.confidence ?? 1) < 0.6;
     const {
         pendingAttachmentsByRoom,
@@ -2017,6 +2030,30 @@ export const ChatRoom: React.FC = () => {
 
             {/* Composer */}
             <div data-testid="chat-composer" className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800 relative">
+                {notebookCapabilityError && (
+                    <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                        <div>{notebookCapabilityError}</div>
+                        <div className="mt-2 flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => onRetryNotebookCapability?.()}
+                                className="rounded-md border border-rose-300 px-2 py-1 font-semibold hover:bg-rose-100 dark:border-rose-700 dark:hover:bg-rose-900/40"
+                            >
+                                Retry
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onReloginForNotebook?.()}
+                                className="rounded-md bg-rose-600 px-2 py-1 font-semibold text-white hover:bg-rose-700"
+                            >
+                                Re-login
+                            </button>
+                            {!hasNotebookAuthToken && (
+                                <span className="self-center text-[11px] opacity-90">No valid Hub/Supabase token.</span>
+                            )}
+                        </div>
+                    </div>
+                )}
                 {/* Toolbar */}
                 <div className="flex gap-4 mb-2 px-1 text-gray-400 dark:text-slate-500">
                     <button
