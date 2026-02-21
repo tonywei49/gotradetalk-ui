@@ -1,6 +1,10 @@
 import { MsgType, type MatrixClient } from "matrix-js-sdk";
 import { hubTranslate } from "../../api/hub";
-import { collectGroupClientTargetLanguages, normalizeHubLanguage } from "./translationPolicy";
+import {
+    collectGroupClientTargetLanguages,
+    normalizeHubLanguage,
+    resolveSourceLangHint,
+} from "./translationPolicy";
 import type { ContactEntry } from "../../api/contacts";
 import { sendFileMessageEvent, sendTextMessageEvent } from "../../matrix/adapters/chatAdapter";
 
@@ -61,7 +65,7 @@ export function pretranslateDirectToClient(params: {
     if (!enabled || !messageId || !translate.accessToken) return;
     const normalizedTargetLang = normalizeHubLanguage(peerLanguage) ?? (peerLanguage ?? "").trim();
     if (!normalizedTargetLang) return;
-    const normalizedSourceLangHint = normalizeHubLanguage(translate.sourceLang);
+    const normalizedSourceLangHint = resolveSourceLangHint(translate.sourceLang, normalizedTargetLang);
 
     void hubTranslate({
         accessToken: translate.accessToken,
@@ -98,7 +102,6 @@ export function pretranslateGroupToClients(params: {
     } = params;
 
     if (!enabled || !messageId || !translate.accessToken) return;
-    const normalizedSourceLangHint = normalizeHubLanguage(translate.sourceLang);
     const targetLangs = collectGroupClientTargetLanguages({
         memberIds,
         selfUserId,
@@ -107,6 +110,7 @@ export function pretranslateGroupToClients(params: {
 
     targetLangs.forEach((lang) => {
         const normalizedTargetLang = normalizeHubLanguage(lang) ?? lang;
+        const normalizedSourceLangHint = resolveSourceLangHint(translate.sourceLang, normalizedTargetLang);
         void hubTranslate({
             accessToken: translate.accessToken as string,
             text,

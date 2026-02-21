@@ -34,6 +34,20 @@ export function normalizeHubLanguage(language?: string | null): string | undefin
     return normalized === "zh-TW" ? "Traditional Chinese" : normalized;
 }
 
+export function resolveSourceLangHint(
+    sourceLanguage?: string | null,
+    targetLanguage?: string | null,
+): string | undefined {
+    const source = normalizeHubLanguage(sourceLanguage);
+    if (!source) return undefined;
+    const target = normalizeHubLanguage(targetLanguage);
+    if (target && source.toLowerCase() === target.toLowerCase()) {
+        // Avoid passing same source/target hint, which can short-circuit translation.
+        return undefined;
+    }
+    return source;
+}
+
 export function isDirectTranslationEnabled(params: {
     isDirectRoom: boolean;
     userType?: string | null;

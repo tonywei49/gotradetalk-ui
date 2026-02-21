@@ -3,10 +3,18 @@ import type { MatrixEvent, Room } from "matrix-js-sdk";
 import { hubTranslate } from "../../../api/hub";
 import type { ContactEntry } from "../../../api/contacts";
 import { createTranslationCacheStore } from "../translationCache";
-import { normalizeHubLanguage, shouldTranslateIncomingMessage } from "../translationPolicy";
+import { normalizeHubLanguage, resolveSourceLangHint, shouldTranslateIncomingMessage } from "../translationPolicy";
 
 const TRANSLATION_CACHE_STORAGE_KEY = "gtt_translation_cache_v1";
 const TRANSLATION_CACHE_MAX_ITEMS = 1500;
+
+function looksLikeStaleEnglishCache(sourceText: string, translatedText: string, targetLanguage: string): boolean {
+    const target = (targetLanguage || "").toLowerCase();
+    const isEnglishTarget = target === "en" || target.startsWith("en-");
+    if (!isEnglishTarget) return false;
+    if (translatedText !== sourceText) return false;
+    return /[\u3400-\u9fff]/.test(sourceText);
+}
 
 export function getMessageEventKey(event: MatrixEvent): string {
     return event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
@@ -112,6 +120,9 @@ export function useMessageTranslation(params: Params) {
             if (!forceRetry && roomId && targetLanguage) {
                 const cachedText = translationCacheStore.read(roomId, messageId, targetLanguage, messageText);
                 if (cachedText) {
+                    if (looksLikeStaleEnglishCache(messageText, cachedText, targetLanguage)) {
+                        // Skip stale same-text cache for English target and CJK source.
+                    } else {
                     setTranslationMap((prev) => ({ ...prev, [key]: { text: cachedText, loading: false, error: false } }));
                     setTranslationView((prev) =>
                         prev[key] === undefined
@@ -119,6 +130,7 @@ export function useMessageTranslation(params: Params) {
                             : prev,
                     );
                     return;
+                    }
                 }
             }
 
@@ -134,7 +146,7 @@ export function useMessageTranslation(params: Params) {
 
             try {
                 const normalizedTargetLang = normalizeHubLanguage(targetLanguage) ?? targetLanguage;
-                const normalizedSourceLangHint = normalizeHubLanguage(senderLangHint);
+                const normalizedSourceLangHint = resolveSourceLangHint(senderLangHint, normalizedTargetLang);
                 const result = await hubTranslate({
                     accessToken: translateAccessToken,
                     text: messageText,
