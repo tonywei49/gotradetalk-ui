@@ -336,13 +336,13 @@ export const MainLayout: React.FC = () => {
                 setCapabilityTokenRefreshSeq((prev) => prev + 1);
             } catch {
                 if (!alive) return;
-                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+                setCapabilityError(t("layout.notebook.authFailed"));
             }
         })();
         return () => {
             alive = false;
         };
-    }, [hubSession, notebookToken.reason, setHubSession]);
+    }, [hubSession, notebookToken.reason, setHubSession, t]);
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
         auth: notebookAuth,
@@ -546,9 +546,9 @@ export const MainLayout: React.FC = () => {
                 notebookToken.reason === "missing_hub_token" ||
                 notebookToken.reason === "invalid_hub_token_format"
             ) {
-                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+                setCapabilityError(t("layout.notebook.authFailed"));
             } else {
-                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+                setCapabilityError(t("layout.notebook.authFailed"));
             }
             return;
         }
@@ -560,7 +560,11 @@ export const MainLayout: React.FC = () => {
         if (!notebookApiBaseUrlOverride) {
             setCapabilityLoaded(true);
             setCapabilityValues([]);
-            setCapabilityError("Notebook 服務設定缺失，請重新登入後重試。");
+            if (userType === "client") {
+                setCapabilityError(null);
+            } else {
+                setCapabilityError(t("layout.notebook.serviceMissing"));
+            }
             return;
         }
         let alive = true;
@@ -584,15 +588,15 @@ export const MainLayout: React.FC = () => {
             setCapabilityValues([]);
             setCapabilityLoaded(true);
             if (error instanceof NotebookServiceError && error.status === 401) {
-                setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
+                setCapabilityError(t("layout.notebook.authFailed"));
                 return;
             }
-                setCapabilityError("Notebook 能力讀取失敗，請稍後重試。");
+            setCapabilityError(t("layout.notebook.capabilityLoadFailed"));
         });
         return () => {
             alive = false;
         };
-    }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason]);
+    }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason, userType, t]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -1554,14 +1558,14 @@ export const MainLayout: React.FC = () => {
                                 onClick={retryNotebookCapability}
                                 className="rounded-md border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/40"
                             >
-                                Retry
+                                {t("layout.notebook.retry")}
                             </button>
                             <button
                                 type="button"
                                 onClick={onLogout}
                                 className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-700"
                             >
-                                Re-login
+                                {t("layout.notebook.relogin")}
                             </button>
                         </div>
                     </div>

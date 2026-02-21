@@ -1279,22 +1279,22 @@ export const ChatRoom: React.FC = () => {
     const mapAssistError = (error: unknown): string => {
         if (error instanceof NotebookApiError && (error.status === 401 || error.status === 403 || error.status === 422)) {
             if (error.code === "NO_VALID_HUB_TOKEN") {
-                return "NO_VALID_HUB_TOKEN: Notebook API requires a valid Hub/Supabase JWT.";
+                return t("chat.notebook.errors.noValidHubToken");
             }
             if (error.code === "INVALID_AUTH_TOKEN" || error.code === "UNAUTHORIZED") {
-                return "INVALID_AUTH_TOKEN: Notebook auth token is invalid or expired, please re-login.";
+                return t("chat.notebook.errors.invalidAuth");
             }
             if (error.code === "FORBIDDEN_ROLE") {
-                return "403 FORBIDDEN_ROLE: client role cannot use Notebook AI.";
+                return t("chat.notebook.errors.forbiddenRole");
             }
             if (error.code === "CAPABILITY_DISABLED") {
-                return "403 CAPABILITY_DISABLED: Notebook AI is disabled by company setting.";
+                return t("chat.notebook.errors.capabilityDisabled");
             }
             if (error.code === "INVALID_CONTEXT") {
-                return "422 INVALID_CONTEXT: invalid anchor event or context window.";
+                return t("chat.notebook.errors.invalidContext");
             }
         }
-        return error instanceof Error ? error.message : "Notebook assist request failed.";
+        return error instanceof Error ? error.message : t("chat.notebook.errors.requestFailed");
     };
 
     const applyAssistOutput = (result: NotebookAssistResponse): void => {
@@ -1309,7 +1309,7 @@ export const ChatRoom: React.FC = () => {
         const trimmed = query.trim();
         if (!trimmed) {
             setAssistState("error");
-            setAssistError("請先輸入問題再調用知識庫。");
+            setAssistError(t("chat.notebook.errors.emptyQuery"));
             return;
         }
         setAssistState("loading");
@@ -2015,7 +2015,7 @@ export const ChatRoom: React.FC = () => {
                                             }}
                                             className="rounded-md border border-emerald-300 bg-white px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
                                         >
-                                            調用知識庫
+                                            {t("chat.notebook.useKnowledgeBase")}
                                         </button>
                                     </div>
                                 );
@@ -2048,17 +2048,17 @@ export const ChatRoom: React.FC = () => {
                                 onClick={() => onRetryNotebookCapability?.()}
                                 className="rounded-md border border-rose-300 px-2 py-1 font-semibold hover:bg-rose-100 dark:border-rose-700 dark:hover:bg-rose-900/40"
                             >
-                                Retry
+                                {t("chat.notebook.retry")}
                             </button>
                             <button
                                 type="button"
                                 onClick={() => onReloginForNotebook?.()}
                                 className="rounded-md bg-rose-600 px-2 py-1 font-semibold text-white hover:bg-rose-700"
                             >
-                                Re-login
+                                {t("chat.notebook.relogin")}
                             </button>
                             {!hasNotebookAuthToken && (
-                                <span className="self-center text-[11px] opacity-90">No valid Hub/Supabase token.</span>
+                                <span className="self-center text-[11px] opacity-90">{t("chat.notebook.noValidHubTokenHint")}</span>
                             )}
                         </div>
                     </div>
@@ -2092,7 +2092,7 @@ export const ChatRoom: React.FC = () => {
                                 void runAssistQuery(composerText);
                             }}
                             className="hover:text-[#2F5C56] dark:hover:text-emerald-400"
-                            title="Notebook AI"
+                            title={t("chat.notebook.panelTitle")}
                         >
                             <SparklesIcon className="w-6 h-6" />
                         </button>
@@ -2103,7 +2103,7 @@ export const ChatRoom: React.FC = () => {
                     <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-900/20">
                         <div className="flex items-center justify-between">
                             <div className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
-                                Notebook AI
+                                {t("chat.notebook.panelTitle")}
                             </div>
                             <button
                                 type="button"
@@ -2115,11 +2115,11 @@ export const ChatRoom: React.FC = () => {
                                 }}
                                 className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                             >
-                                Close
+                                {t("chat.notebook.close")}
                             </button>
                         </div>
                         {assistState === "loading" && (
-                            <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">Generating answer from notebook...</div>
+                            <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("chat.notebook.generating")}</div>
                         )}
                         {assistError && (
                             <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
@@ -2136,12 +2136,12 @@ export const ChatRoom: React.FC = () => {
                                 />
                                 {assistLowConfidence && (
                                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/30 dark:text-amber-200">
-                                        建議僅供參考（低信心），已禁用直接發送。
+                                        {t("chat.notebook.lowConfidenceWarning")}
                                     </div>
                                 )}
                                 {!assistOutput.citations.length && (
                                     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                                        知識庫未找到明確依據，請人工確認後再回覆。
+                                        {t("chat.notebook.noEvidenceWarning")}
                                     </div>
                                 )}
                                 <div>
@@ -2150,12 +2150,12 @@ export const ChatRoom: React.FC = () => {
                                         onClick={() => setAssistCitationsExpanded((prev) => !prev)}
                                         className="text-xs font-medium text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
                                     >
-                                        {assistCitationsExpanded ? "Hide citations" : "Show citations"}
+                                        {assistCitationsExpanded ? t("chat.notebook.hideCitations") : t("chat.notebook.showCitations")}
                                     </button>
                                     {assistCitationsExpanded && (
                                         <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
                                             {assistOutput.citations.length === 0 ? (
-                                                <div>No citations returned.</div>
+                                                <div>{t("chat.notebook.noCitations")}</div>
                                             ) : assistOutput.citations.map((citation, idx) => (
                                                 <div key={`${citation.sourceId}-${idx}`} className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
                                                     {(citation.title || citation.sourceId)}{citation.locator ? ` · ${citation.locator}` : ""}
@@ -2170,7 +2170,7 @@ export const ChatRoom: React.FC = () => {
                                         onClick={() => setComposerText(assistDraft)}
                                         className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
                                     >
-                                        套用到輸入框
+                                        {t("chat.notebook.applyToInput")}
                                     </button>
                                     <button
                                         type="button"
@@ -2180,7 +2180,7 @@ export const ChatRoom: React.FC = () => {
                                         disabled={assistLowConfidence || assistSending || assistDraft.trim().length === 0}
                                         className="rounded-lg bg-[#2F5C56] px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                                     >
-                                        {assistSending ? "Sending..." : "直接發送"}
+                                        {assistSending ? t("chat.notebook.sending") : t("chat.notebook.directSend")}
                                     </button>
                                     <button
                                         type="button"
@@ -2190,7 +2190,7 @@ export const ChatRoom: React.FC = () => {
                                         disabled={assistState === "loading" || !lastAssistTrigger}
                                         className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
                                     >
-                                        重新生成
+                                        {t("chat.notebook.regenerate")}
                                     </button>
                                 </div>
                             </div>

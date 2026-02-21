@@ -223,6 +223,13 @@
         "fileFilterTypePdf": "PDF",
         "fileFilterTypeOther": "Other",
         "fileFilterRoomAll": "All rooms",
+        "notebook": {
+            "authFailed": "Notebook authentication failed. Please sign in again (invalid or mismatched token type).",
+            "serviceMissing": "Notebook service is not configured. Please sign in again and retry.",
+            "capabilityLoadFailed": "Failed to load notebook capabilities. Please try again later.",
+            "retry": "Retry",
+            "relogin": "Re-login"
+        },
         "accountSubtitleFallback": "Account",
         "contactFallback": "Contact",
         "chatAction": "Chat",
@@ -360,7 +367,34 @@
         "removedPopupMessage": "You have been removed from room - {{roomName}}",
         "deprecatedTag": "Deprecated",
         "deprecatedNotice": "This conversation has been deprecated. Please start a new chat.",
-        "deprecatedPlaceholder": "This chat is deprecated."
+        "deprecatedPlaceholder": "This chat is deprecated.",
+        "notebook": {
+            "useKnowledgeBase": "Use Knowledge Base",
+            "retry": "Retry",
+            "relogin": "Re-login",
+            "noValidHubTokenHint": "No valid Hub/Supabase token.",
+            "panelTitle": "Notebook AI",
+            "close": "Close",
+            "generating": "Generating answer from notebook...",
+            "lowConfidenceWarning": "Low confidence response. Direct send is disabled.",
+            "noEvidenceWarning": "No clear evidence found in knowledge base. Please verify manually before replying.",
+            "hideCitations": "Hide citations",
+            "showCitations": "Show citations",
+            "noCitations": "No citations returned.",
+            "applyToInput": "Apply to input",
+            "directSend": "Send directly",
+            "sending": "Sending...",
+            "regenerate": "Regenerate",
+            "errors": {
+                "emptyQuery": "Please enter a question before using knowledge base.",
+                "requestFailed": "Notebook assist request failed.",
+                "noValidHubToken": "NO_VALID_HUB_TOKEN: Notebook API requires a valid Hub/Supabase JWT.",
+                "invalidAuth": "INVALID_AUTH_TOKEN: Notebook auth token is invalid or expired, please re-login.",
+                "forbiddenRole": "403 FORBIDDEN_ROLE: client role cannot use Notebook AI.",
+                "capabilityDisabled": "403 CAPABILITY_DISABLED: Notebook AI is disabled by company setting.",
+                "invalidContext": "422 INVALID_CONTEXT: invalid anchor event or context window."
+            }
+        }
     },
     "group": {
         "createTitle": "Create Group",

@@ -223,6 +223,13 @@
         "fileFilterTypePdf": "PDF",
         "fileFilterTypeOther": "其他",
         "fileFilterRoomAll": "全部聊天室",
+        "notebook": {
+            "authFailed": "Notebook 驗證失敗，請重新登入（token 無效或類型不符）",
+            "serviceMissing": "Notebook 服務設定缺失，請重新登入後重試。",
+            "capabilityLoadFailed": "Notebook 能力讀取失敗，請稍後重試。",
+            "retry": "重試",
+            "relogin": "重新登入"
+        },
         "accountSubtitleFallback": "账号",
         "contactFallback": "联系人",
         "chatAction": "聊天",
@@ -360,7 +367,34 @@
         "removedPopupMessage": "你已經被移出聊天室 - {{roomName}}",
         "deprecatedTag": "已棄用",
         "deprecatedNotice": "此聊天室已棄用，請重新開始新的聊天。",
-        "deprecatedPlaceholder": "此聊天室已棄用"
+        "deprecatedPlaceholder": "此聊天室已棄用",
+        "notebook": {
+            "useKnowledgeBase": "調用知識庫",
+            "retry": "重試",
+            "relogin": "重新登入",
+            "noValidHubTokenHint": "缺少有效的 Hub/Supabase token。",
+            "panelTitle": "Notebook AI",
+            "close": "關閉",
+            "generating": "正在從知識庫生成答案...",
+            "lowConfidenceWarning": "建議僅供參考（低信心），已禁用直接發送。",
+            "noEvidenceWarning": "知識庫未找到明確依據，請人工確認後再回覆。",
+            "hideCitations": "隱藏引用",
+            "showCitations": "顯示引用",
+            "noCitations": "未返回引用。",
+            "applyToInput": "套用到輸入框",
+            "directSend": "直接發送",
+            "sending": "發送中...",
+            "regenerate": "重新生成",
+            "errors": {
+                "emptyQuery": "請先輸入問題再調用知識庫。",
+                "requestFailed": "Notebook 輔助請求失敗。",
+                "noValidHubToken": "NO_VALID_HUB_TOKEN：Notebook API 需要有效的 Hub/Supabase JWT。",
+                "invalidAuth": "INVALID_AUTH_TOKEN：Notebook 驗證 token 無效或過期，請重新登入。",
+                "forbiddenRole": "403 FORBIDDEN_ROLE：client 角色不可使用 Notebook AI。",
+                "capabilityDisabled": "403 CAPABILITY_DISABLED：公司設定已停用 Notebook AI。",
+                "invalidContext": "422 INVALID_CONTEXT：錨點事件或上下文範圍無效。"
+            }
+        }
     },
     "group": {
         "createTitle": "创建群聊",
