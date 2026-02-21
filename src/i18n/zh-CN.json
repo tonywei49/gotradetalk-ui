@@ -308,6 +308,7 @@
         "pin": "置顶",
         "unpin": "取消置顶",
         "actionsMenu": "聊天操作",
+        "messageActions": "訊息操作",
         "leaveGroup": "退出群聊",
         "membersButton": "人員名單",
         "membersTitle": "人員名單",

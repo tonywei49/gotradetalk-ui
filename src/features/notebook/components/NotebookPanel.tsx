@@ -1,4 +1,5 @@
 import type { NotebookItem } from "../types";
+import { useTranslation } from "react-i18next";
 
 type NotebookPanelProps = {
     enabled: boolean;
@@ -12,6 +13,7 @@ type NotebookPanelProps = {
     onAttachFile: () => void;
     busy: boolean;
     actionError: string | null;
+    onMobileBack?: () => void;
 };
 
 function indexHint(item: NotebookItem): { tone: string; text: string } {
@@ -51,7 +53,9 @@ export function NotebookPanel({
     onAttachFile,
     busy,
     actionError,
+    onMobileBack,
 }: NotebookPanelProps) {
+    const { t } = useTranslation();
     if (!enabled) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -73,7 +77,19 @@ export function NotebookPanel({
     return (
         <div className="flex h-full flex-col bg-white dark:bg-slate-900">
             <div className="border-b border-gray-100 px-6 py-4 dark:border-slate-800">
-                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Notebook Detail</div>
+                <div className="flex items-center gap-3">
+                    {onMobileBack && (
+                        <button
+                            type="button"
+                            onClick={onMobileBack}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                            aria-label={t("layout.backToList")}
+                        >
+                            &lt;
+                        </button>
+                    )}
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Notebook Detail</div>
+                </div>
                 <div className={`mt-2 rounded-lg border px-3 py-2 text-sm ${hint.tone}`}>{hint.text}</div>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-4">

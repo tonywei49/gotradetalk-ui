@@ -308,6 +308,7 @@
         "pin": "Pin",
         "unpin": "Unpin",
         "actionsMenu": "Chat actions",
+        "messageActions": "Message actions",
         "leaveGroup": "Leave group",
         "membersButton": "Members",
         "membersTitle": "Members",

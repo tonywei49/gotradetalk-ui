@@ -85,6 +85,8 @@ type MessageBubbleProps = {
     canDeleteFile?: boolean;
     deleteBusy?: boolean;
     onDeleteFile?: (event: MatrixEvent) => void;
+    canUseNotebookAssist?: boolean;
+    onAssistFromContext?: (anchorEventId: string) => void;
 };
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -175,9 +177,12 @@ const MessageBubble = ({
     canDeleteFile,
     deleteBusy,
     onDeleteFile,
+    canUseNotebookAssist,
+    onAssistFromContext,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const [showFileMenu, setShowFileMenu] = useState(false);
+    const [showQuickActionMenu, setShowQuickActionMenu] = useState(false);
     const content = event.getContent() as { body?: string; msgtype?: string; info?: { mimetype?: string } } | undefined;
     const messageText = content?.body ?? "";
     const isSending =
@@ -203,6 +208,16 @@ const MessageBubble = ({
     const showUnavailableInline = Boolean(
         isText && showTranslated && !translationLoading && !hasTranslatedText && translationError,
     );
+    const anchorEventId = event.getId();
+    const canToggleTranslation = Boolean(isText && !isMe && onToggleTranslation);
+    const canAssistFromContext = Boolean(
+        canUseNotebookAssist &&
+        event.getType() === EventType.RoomMessage &&
+        content?.msgtype !== MsgType.Notice &&
+        anchorEventId &&
+        onAssistFromContext,
+    );
+    const hasQuickActions = canToggleTranslation || canAssistFromContext;
     const displayText = showTranslated
         ? hasTranslatedText
             ? (translatedText as string)
@@ -337,6 +352,51 @@ const MessageBubble = ({
                     {!isMe && (
                         <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
                     )}
+                    {!isMe && hasQuickActions && (
+                        <div className="relative self-end mb-1">
+                            <button
+                                type="button"
+                                onClick={() => setShowQuickActionMenu((prev) => !prev)}
+                                className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                aria-label={t("chat.messageActions")}
+                            >
+                                <EllipsisVerticalIcon className="h-4 w-4" />
+                            </button>
+                            {showQuickActionMenu && (
+                                <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                    {canToggleTranslation && (
+                                        <button
+                                            type="button"
+                                            className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                            onClick={() => {
+                                                setShowQuickActionMenu(false);
+                                                onToggleTranslation?.();
+                                            }}
+                                            disabled={translationLoading}
+                                        >
+                                            {translationLoading
+                                                ? t("chat.translationPending")
+                                                : showTranslated
+                                                    ? t("chat.showOriginal")
+                                                    : t("chat.showTranslation")}
+                                        </button>
+                                    )}
+                                    {canAssistFromContext && anchorEventId && (
+                                        <button
+                                            type="button"
+                                            className="w-full px-3 py-1.5 text-left text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
+                                            onClick={() => {
+                                                setShowQuickActionMenu(false);
+                                                onAssistFromContext?.(anchorEventId);
+                                            }}
+                                        >
+                                            {t("chat.notebook.useKnowledgeBase")}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {!isMe && isFileLike && canDeleteFile && onDeleteFile && (
                         <div className="relative self-end mb-1">
                             <button
@@ -368,25 +428,9 @@ const MessageBubble = ({
                         </div>
                     )}
                 </div>
-            {isText && !isMe && onToggleTranslation && (
-                <div className="mt-1 flex items-center gap-2 text-[11px]">
-                    <button
-                        type="button"
-                        className={`${isMe ? "text-emerald-100/80" : "text-emerald-600 dark:text-emerald-300"}`}
-                        onClick={onToggleTranslation}
-                        disabled={translationLoading}
-                    >
-                        {translationLoading
-                            ? t("chat.translationPending")
-                            : showTranslated
-                                ? t("chat.showOriginal")
-                                : t("chat.showTranslation")}
-                    </button>
-                    {showUnavailableInline && (
-                        <span className={`${isMe ? "text-emerald-100/80" : "text-emerald-600 dark:text-emerald-300"}`}>
-                            {t("chat.translationUnavailable")}
-                        </span>
-                    )}
+            {showUnavailableInline && (
+                <div className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-300">
+                    {t("chat.translationUnavailable")}
                 </div>
             )}
             {isFailed && (
@@ -1983,6 +2027,10 @@ export const ChatRoom: React.FC = () => {
                                 onDeleteFile={(targetEvent) => {
                                     void onDeleteFileEvent(targetEvent);
                                 }}
+                                canUseNotebookAssist={canUseNotebookAssist}
+                                onAssistFromContext={(anchorId) => {
+                                    void runAssistFromContext(anchorId);
+                                }}
                                 onToggleTranslation={() => {
                                     const key = getMessageEventKey(event);
                                     const nextValue = !(translationView[key] ?? false);
@@ -2000,26 +2048,6 @@ export const ChatRoom: React.FC = () => {
                                     }
                                 }}
                             />
-                            {canUseNotebookAssist && event.getType() === EventType.RoomMessage && (() => {
-                                const bodyContent = event.getContent() as { msgtype?: string; body?: string } | undefined;
-                                const isNotice = bodyContent?.msgtype === MsgType.Notice;
-                                if (isNotice) return null;
-                                const anchorEventId = event.getId();
-                                if (!anchorEventId) return null;
-                                return (
-                                    <div className={`mt-1 mb-2 flex ${isMe ? "justify-end" : "justify-start"}`}>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                void runAssistFromContext(anchorEventId);
-                                            }}
-                                            className="rounded-md border border-emerald-300 bg-white px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                                        >
-                                            {t("chat.notebook.useKnowledgeBase")}
-                                        </button>
-                                    </div>
-                                );
-                            })()}
                         </div>
                     );
                 })}

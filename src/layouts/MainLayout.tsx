@@ -1381,9 +1381,13 @@ export const MainLayout: React.FC = () => {
                         onSearchChange={notebookModule.setSearch}
                         items={notebookModule.items}
                         selectedItemId={notebookModule.selectedItemId}
-                        onSelect={notebookModule.setSelectedItemId}
+                        onSelect={(itemId) => {
+                            notebookModule.setSelectedItemId(itemId);
+                            setMobileView("detail");
+                        }}
                         onCreate={() => {
                             void notebookModule.createItem();
+                            setMobileView("detail");
                         }}
                         busy={notebookModule.actionBusy}
                     />
@@ -1984,6 +1988,7 @@ export const MainLayout: React.FC = () => {
                         }}
                         busy={notebookModule.actionBusy}
                         actionError={notebookModule.actionError}
+                        onMobileBack={() => setMobileView("list")}
                     />
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
