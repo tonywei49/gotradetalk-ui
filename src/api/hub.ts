@@ -139,6 +139,7 @@ export async function hubStaffExchangeSession(params: {
     matrixUserId?: string | null;
 }): Promise<HubSupabaseSession> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    let lastErrorMessage = "NO_VALID_HUB_TOKEN";
 
     for (const path of staffSessionExchangeCandidates) {
         const url = joinUrl(hubBaseUrl, path);
@@ -165,12 +166,15 @@ export async function hubStaffExchangeSession(params: {
                 throw new Error("NO_VALID_HUB_TOKEN");
             }
             return session;
-        } catch {
+        } catch (error) {
+            if (error instanceof Error && error.message) {
+                lastErrorMessage = error.message;
+            }
             // try next candidate path
         }
     }
 
-    throw new Error("NO_VALID_HUB_TOKEN");
+    throw new Error(lastErrorMessage || "NO_VALID_HUB_TOKEN");
 }
 
 export async function hubStaffPasswordState(

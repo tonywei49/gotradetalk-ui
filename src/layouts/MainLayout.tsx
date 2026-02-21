@@ -259,6 +259,7 @@ export const MainLayout: React.FC = () => {
     const accountButtonRef = useRef<HTMLButtonElement | null>(null);
     const [meProfile, setMeProfile] = useState<HubProfileSummary | null>(null);
     const [notebookApiBaseUrlOverride, setNotebookApiBaseUrlOverride] = useState<string | null>(null);
+    const [hubMeResolved, setHubMeResolved] = useState(false);
     const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
     const accountId = meProfile?.user_local_id || fallbackAccountId;
     const accountInitial = accountId.charAt(0).toUpperCase() || "U";
@@ -277,14 +278,8 @@ export const MainLayout: React.FC = () => {
         () => `gtt_translation_default_view:${matrixCredentials?.user_id ?? "guest"}`,
         [matrixCredentials?.user_id],
     );
-    const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : matrixAccessToken;
-    const meUpdateOptions =
-        hubAccessToken && !localeTokenExpired
-            ? undefined
-            : {
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials?.user_id ?? null,
-            };
+    const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : null;
+    const meUpdateOptions = undefined;
     const [capabilityValues, setCapabilityValues] = useState<string[]>([]);
     const [capabilityLoaded, setCapabilityLoaded] = useState(false);
     const [capabilityError, setCapabilityError] = useState<string | null>(null);
@@ -500,13 +495,18 @@ export const MainLayout: React.FC = () => {
     }, [unreadBadgeCount]);
 
     useEffect(() => {
-        const accessToken = hubAccessToken || matrixAccessToken;
-        if (!accessToken) return;
+        if (!hubAccessToken) {
+            setMeProfile(null);
+            setNotebookApiBaseUrlOverride(null);
+            setHubMeResolved(true);
+            return;
+        }
         let isActive = true;
+        setHubMeResolved(false);
         void (async () => {
             try {
                 const response = await hubGetMe({
-                    accessToken,
+                    accessToken: hubAccessToken,
                     hsUrl: matrixHsUrl,
                     matrixUserId: matrixCredentials?.user_id,
                 });
@@ -527,12 +527,15 @@ export const MainLayout: React.FC = () => {
                 if (!isActive) return;
                 setMeProfile(null);
                 setNotebookApiBaseUrlOverride(null);
+            } finally {
+                if (!isActive) return;
+                setHubMeResolved(true);
             }
         })();
         return () => {
             isActive = false;
         };
-    }, [hubAccessToken, matrixAccessToken, matrixHsUrl, matrixCredentials?.user_id]);
+    }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id]);
 
     useEffect(() => {
         if (!capabilityToken) {
@@ -547,6 +550,17 @@ export const MainLayout: React.FC = () => {
             } else {
                 setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
             }
+            return;
+        }
+        if (!hubMeResolved) {
+            setCapabilityLoaded(false);
+            setCapabilityError(null);
+            return;
+        }
+        if (!notebookApiBaseUrlOverride) {
+            setCapabilityLoaded(true);
+            setCapabilityValues([]);
+            setCapabilityError("Notebook 服務設定缺失，請重新登入後重試。");
             return;
         }
         let alive = true;
@@ -573,12 +587,12 @@ export const MainLayout: React.FC = () => {
                 setCapabilityError("Notebook 驗證失敗，請重新登入（token 無效或類型不符）");
                 return;
             }
-            setCapabilityError("Notebook 能力讀取失敗，請稍後重試。");
+                setCapabilityError("Notebook 能力讀取失敗，請稍後重試。");
         });
         return () => {
             alive = false;
         };
-    }, [capabilityToken, notebookApiBaseUrlOverride, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason]);
+    }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -2116,7 +2130,7 @@ export const MainLayout: React.FC = () => {
                     setMobileView("detail");
                 }}
                 matrixClient={matrixClient}
-                accessToken={hubAccessToken || matrixAccessToken}
+                accessToken={hubAccessToken}
                 hsUrl={matrixHsUrl}
             />
             {removedFromRoomNotice && (
