@@ -16,6 +16,14 @@ function looksLikeStaleEnglishCache(sourceText: string, translatedText: string, 
     return /[\u3400-\u9fff]/.test(sourceText);
 }
 
+function shouldRetryEnglishTranslation(sourceText: string, translatedText: string, targetLanguage: string): boolean {
+    const target = (targetLanguage || "").toLowerCase();
+    const isEnglishTarget = target === "en" || target.startsWith("en-");
+    if (!isEnglishTarget) return false;
+    if (translatedText !== sourceText) return false;
+    return /[\u3400-\u9fff]/.test(sourceText);
+}
+
 export function getMessageEventKey(event: MatrixEvent): string {
     return event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
 }
@@ -147,21 +155,26 @@ export function useMessageTranslation(params: Params) {
             try {
                 const normalizedTargetLang = normalizeHubLanguage(targetLanguage) ?? targetLanguage;
                 const normalizedSourceLangHint = resolveSourceLangHint(senderLangHint, normalizedTargetLang);
-                const result = await hubTranslate({
+                const basePayload = {
                     accessToken: translateAccessToken,
                     text: messageText,
                     targetLang: normalizedTargetLang,
                     sourceLangHint: normalizedSourceLangHint,
                     roomId: activeRoomId ?? undefined,
-                    messageId,
                     sourceMatrixUserId: event.getSender() ?? undefined,
                     hsUrl: translateHsUrl,
                     matrixUserId: translateMatrixUserId,
-                });
+                } as const;
+                const result = await hubTranslate({ ...basePayload, messageId });
+                const retryResult =
+                    shouldRetryEnglishTranslation(messageText, result.translation, normalizedTargetLang)
+                        ? await hubTranslate(basePayload)
+                        : null;
+                const finalTranslation = retryResult?.translation ?? result.translation;
                 if (roomId && targetLanguage) {
-                    translationCacheStore.write(roomId, messageId, targetLanguage, messageText, result.translation);
+                    translationCacheStore.write(roomId, messageId, targetLanguage, messageText, finalTranslation);
                 }
-                setTranslationMap((prev) => ({ ...prev, [key]: { text: result.translation, loading: false, error: false } }));
+                setTranslationMap((prev) => ({ ...prev, [key]: { text: finalTranslation, loading: false, error: false } }));
                 setTranslationView((prev) =>
                     prev[key] === undefined
                         ? { ...prev, [key]: translationDefaultView !== "original" }
