@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { NotebookAdapter } from "./adapters/types";
-import type { NotebookAuthContext, NotebookChunk, NotebookItem, NotebookListState, NotebookParsedPreview } from "./types";
+import type { NotebookAuthContext, NotebookItem, NotebookListState } from "./types";
+import { useNotebookParsedView } from "./hooks/useNotebookParsedView";
+import { useNotebookItemFiles } from "./hooks/useNotebookItemFiles";
 
 type UseNotebookModuleParams = {
     adapter: NotebookAdapter;
@@ -18,11 +20,6 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [editorContent, setEditorContent] = useState("");
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
-    const [previewBusy, setPreviewBusy] = useState(false);
-    const [previewError, setPreviewError] = useState<string | null>(null);
-    const [parsedPreview, setParsedPreview] = useState<NotebookParsedPreview | null>(null);
-    const [chunks, setChunks] = useState<NotebookChunk[]>([]);
-    const [chunksTotal, setChunksTotal] = useState(0);
 
     const selectedItem = useMemo(
         () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -80,39 +77,12 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         void loadItems();
     }, [loadItems]);
 
-    useEffect(() => {
-        if (!enabled || !auth || !selectedItemId) {
-            setParsedPreview(null);
-            setChunks([]);
-            setChunksTotal(0);
-            setPreviewError(null);
-            return;
-        }
-        let alive = true;
-        setPreviewBusy(true);
-        setPreviewError(null);
-        void Promise.all([
-            adapter.getParsedPreview(auth, selectedItemId),
-            adapter.getChunks(auth, selectedItemId),
-        ]).then(([preview, chunkPayload]) => {
-            if (!alive) return;
-            setParsedPreview(preview);
-            setChunks(chunkPayload.chunks);
-            setChunksTotal(chunkPayload.total);
-        }).catch((error) => {
-            if (!alive) return;
-            setParsedPreview(null);
-            setChunks([]);
-            setChunksTotal(0);
-            setPreviewError(error instanceof Error ? error.message : "Failed to load parsed preview");
-        }).finally(() => {
-            if (!alive) return;
-            setPreviewBusy(false);
-        });
-        return () => {
-            alive = false;
-        };
-    }, [adapter, auth, enabled, selectedItemId]);
+    const parsedView = useNotebookParsedView({
+        adapter,
+        auth,
+        enabled,
+        selectedItemId,
+    });
 
     useEffect(() => {
         if (!enabled || !auth) return undefined;
@@ -193,39 +163,14 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         }
     }, [adapter, applySelection, auth, items, selectedItemId]);
 
-    const attachFile = useCallback(async (input: {
-        matrixMediaMxc: string;
-        matrixMediaName?: string;
-        matrixMediaMime?: string;
-        matrixMediaSize?: number;
-        isIndexable?: boolean;
-    }) => {
-        if (!auth || !selectedItemId) return;
-        setActionBusy(true);
-        setActionError(null);
-        try {
-            const updated = await adapter.attachFile(auth, selectedItemId, input);
-            setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : "Failed to attach file");
-        } finally {
-            setActionBusy(false);
-        }
-    }, [adapter, auth, selectedItemId]);
-
-    const removeFile = useCallback(async (fileId: string) => {
-        if (!auth || !selectedItemId) return;
-        setActionBusy(true);
-        setActionError(null);
-        try {
-            const updated = await adapter.removeFile(auth, selectedItemId, fileId);
-            setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : "Failed to remove file");
-        } finally {
-            setActionBusy(false);
-        }
-    }, [adapter, auth, selectedItemId]);
+    const { attachFile, removeFile } = useNotebookItemFiles({
+        adapter,
+        auth,
+        selectedItemId,
+        setActionBusy,
+        setActionError,
+        setItems,
+    });
 
     return {
         search,
@@ -248,10 +193,6 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         deleteItem,
         attachFile,
         removeFile,
-        previewBusy,
-        previewError,
-        parsedPreview,
-        chunks,
-        chunksTotal,
+        ...parsedView,
     };
 }

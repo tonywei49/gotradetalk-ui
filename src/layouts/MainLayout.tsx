@@ -46,9 +46,8 @@ import {
     resolveNotebookCapabilities,
     useNotebookModule,
 } from "../features/notebook";
-import type { NotebookAuthContext } from "../features/notebook";
 import { getNotebookCapabilities, NotebookServiceError } from "../services/notebookApi";
-import { resolveNotebookAccessToken } from "../services/notebookTokenProvider";
+import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -285,10 +284,13 @@ export const MainLayout: React.FC = () => {
     const [capabilityError, setCapabilityError] = useState<string | null>(null);
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
     const [capabilityTokenRefreshSeq, setCapabilityTokenRefreshSeq] = useState(0);
-    const notebookToken = useMemo(
-        () => resolveNotebookAccessToken(hubSession),
-        [hubSession],
-    );
+    const { notebookAuth, notebookToken } = useMemo(() => buildNotebookAuth({
+        hubSession,
+        matrixCredentials,
+        userType,
+        capabilities: capabilityValues,
+        apiBaseUrl: notebookApiBaseUrlOverride,
+    }), [hubSession, matrixCredentials, userType, capabilityValues, notebookApiBaseUrlOverride]);
     const capabilityToken = notebookToken.accessToken;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
     const notebookCapabilityState = useMemo(
@@ -300,18 +302,6 @@ export const MainLayout: React.FC = () => {
             }),
         [capabilityLoaded, capabilityValues, userType],
     );
-    const notebookAuth = useMemo<NotebookAuthContext | null>(() => {
-        if (!capabilityToken) return null;
-        return {
-            accessToken: capabilityToken,
-            matrixAccessToken: matrixAccessToken,
-            apiBaseUrl: notebookApiBaseUrlOverride,
-            hsUrl: matrixHsUrl,
-            matrixUserId: matrixCredentials?.user_id ?? null,
-            userType,
-            capabilities: capabilityValues,
-        };
-    }, [capabilityToken, matrixAccessToken, notebookApiBaseUrlOverride, matrixCredentials?.user_id, matrixHsUrl, userType, capabilityValues]);
     const retryNotebookCapability = useCallback(() => {
         setCapabilityRefreshSeq((prev) => prev + 1);
     }, []);

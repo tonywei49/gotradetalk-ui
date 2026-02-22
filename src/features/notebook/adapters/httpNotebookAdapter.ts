@@ -19,6 +19,7 @@ import {
 import type { NotebookAssistResponse, NotebookIndexStatus, NotebookItem } from "../types";
 import type { NotebookAdapter } from "./types";
 import { NotebookApiError } from "./types";
+import { NOTEBOOK_CHUNKS_FETCH_LIMIT, NOTEBOOK_PARSED_PREVIEW_CHARS, NOTEBOOK_PARSED_PREVIEW_LIMIT } from "../constants";
 
 function mapItem(dto: NotebookItemDto): NotebookItem {
     const files = (dto.files ?? []).map((file: NotebookItemFileDto) => ({
@@ -163,7 +164,10 @@ export const httpNotebookAdapter: NotebookAdapter = {
     },
     async getParsedPreview(auth, itemId) {
         try {
-            const data = await getNotebookItemParsedPreview(auth, itemId, { limit: 12, chars: 10000 });
+            const data = await getNotebookItemParsedPreview(auth, itemId, {
+                limit: NOTEBOOK_PARSED_PREVIEW_LIMIT,
+                chars: NOTEBOOK_PARSED_PREVIEW_CHARS,
+            });
             return {
                 text: data.preview.text || "",
                 truncated: Boolean(data.preview.truncated),
@@ -178,7 +182,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
     },
     async getChunks(auth, itemId) {
         try {
-            const data = await getNotebookItemChunks(auth, itemId, { limit: 160 });
+            const data = await getNotebookItemChunks(auth, itemId, { limit: NOTEBOOK_CHUNKS_FETCH_LIMIT });
             return {
                 chunks: (data.chunks || []).map((chunk) => ({
                     id: chunk.id,

@@ -57,9 +57,11 @@ import {
     type PendingAttachment,
 } from "./hooks/useAttachmentDrafts";
 import { getMessageEventKey, useMessageTranslation } from "./hooks/useMessageTranslation";
-import { getNotebookAdapter, NotebookApiError } from "../notebook";
-import type { NotebookAssistResponse, NotebookAuthContext } from "../notebook";
-import { resolveNotebookAccessToken } from "../../services/notebookTokenProvider";
+import { useNotebookAssist } from "./hooks/useNotebookAssist";
+import { MessageActionsMenu } from "./components/MessageActionsMenu";
+import { getNotebookAdapter } from "../notebook";
+import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
+import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -375,62 +377,31 @@ const MessageBubble = ({
                                 <EllipsisVerticalIcon className="h-4 w-4" />
                             </button>
                             {showQuickActionMenu && (
-                                <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                                    {canToggleTranslation && (
-                                        <button
-                                            type="button"
-                                            className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                            onClick={() => {
-                                                setShowQuickActionMenu(false);
-                                                onToggleTranslation?.();
-                                            }}
-                                            disabled={translationLoading}
-                                        >
-                                            {translationLoading
-                                                ? t("chat.translationPending")
-                                                : showTranslated
-                                                    ? t("chat.showOriginal")
-                                                    : t("chat.showTranslation")}
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                        onClick={() => {
-                                            setShowQuickActionMenu(false);
-                                            onCopyMessage?.(event, displayText);
-                                        }}
-                                    >
-                                        {t("chat.copyMessage")}
-                                    </button>
-                                    {canAssistFromContext && anchorEventId && (
-                                        <button
-                                            type="button"
-                                            className="w-full px-3 py-1.5 text-left text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
-                                            onClick={() => {
-                                                setShowQuickActionMenu(false);
-                                                onAssistFromContext?.(anchorEventId);
-                                            }}
-                                        >
-                                            {t("chat.notebook.useKnowledgeBase")}
-                                        </button>
-                                    )}
-                                    {canSendFileToNotebook && (
-                                        <button
-                                            type="button"
-                                            className="w-full px-3 py-1.5 text-left text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
-                                            onClick={() => {
-                                                setShowQuickActionMenu(false);
-                                                onSendFileToNotebook?.(event);
-                                            }}
-                                            disabled={sendFileToNotebookBusy}
-                                        >
-                                            {sendFileToNotebookBusy
-                                                ? t("chat.notebook.sendingToKnowledgeBase")
-                                                : t("chat.notebook.sendFileToKnowledgeBase")}
-                                        </button>
-                                    )}
-                                </div>
+                                <MessageActionsMenu
+                                    canToggleTranslation={canToggleTranslation}
+                                    translationLoading={translationLoading}
+                                    showTranslated={showTranslated}
+                                    canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
+                                    canSendFileToNotebook={canSendFileToNotebook}
+                                    sendFileToNotebookBusy={sendFileToNotebookBusy}
+                                    onToggleTranslation={() => {
+                                        setShowQuickActionMenu(false);
+                                        onToggleTranslation?.();
+                                    }}
+                                    onCopyMessage={() => {
+                                        setShowQuickActionMenu(false);
+                                        onCopyMessage?.(event, displayText);
+                                    }}
+                                    onAssistFromContext={() => {
+                                        if (!anchorEventId) return;
+                                        setShowQuickActionMenu(false);
+                                        onAssistFromContext?.(anchorEventId);
+                                    }}
+                                    onSendFileToNotebook={() => {
+                                        setShowQuickActionMenu(false);
+                                        onSendFileToNotebook?.(event);
+                                    }}
+                                />
                             )}
                         </div>
                     )}
@@ -726,17 +697,7 @@ export const ChatRoom: React.FC = () => {
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
-    const [assistState, setAssistState] = useState<"idle" | "loading" | "success" | "error">("idle");
-    const [assistError, setAssistError] = useState<string | null>(null);
-    const [assistOutput, setAssistOutput] = useState<NotebookAssistResponse | null>(null);
-    const [assistDraft, setAssistDraft] = useState("");
-    const [assistCitationsExpanded, setAssistCitationsExpanded] = useState(false);
     const [assistSending, setAssistSending] = useState(false);
-    const [lastAssistTrigger, setLastAssistTrigger] = useState<
-        | { type: "query"; query: string }
-        | { type: "context"; anchorEventId: string; windowSize: number }
-        | null
-    >(null);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -750,27 +711,38 @@ export const ChatRoom: React.FC = () => {
     const translateHsUrl = useHubTokenForTranslate ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
-    const notebookToken = useMemo(
-        () => resolveNotebookAccessToken(hubSession),
-        [hubSession],
-    );
-    const notebookAuth = useMemo<NotebookAuthContext | null>(() => {
-        const accessToken = notebookToken.accessToken;
-        if (!accessToken) return null;
-        return {
-            accessToken,
-            matrixAccessToken: matrixAccessToken,
-            apiBaseUrl: notebookApiBaseUrl,
-            hsUrl: matrixHsUrl,
-            matrixUserId: matrixCredentials?.user_id ?? null,
-            userType,
-            capabilities: notebookCapabilities,
-        };
-    }, [notebookToken.accessToken, matrixAccessToken, notebookApiBaseUrl, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
+    const { notebookAuth } = useMemo(() => buildNotebookAuth({
+        hubSession,
+        matrixCredentials,
+        userType,
+        capabilities: notebookCapabilities,
+        apiBaseUrl: notebookApiBaseUrl,
+    }), [hubSession, matrixCredentials, userType, notebookCapabilities, notebookApiBaseUrl]);
     const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client" && notebookAuth);
     const canUseNotebookBasic = Boolean(notebookAuth && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
+    const {
+        assistState,
+        assistError,
+        assistOutput,
+        assistDraft,
+        setAssistDraft,
+        assistCitationsExpanded,
+        setAssistCitationsExpanded,
+        lastAssistTrigger,
+        setLastAssistTrigger,
+        assistLowConfidence,
+        runAssistQuery,
+        runAssistFromContext,
+        resetAssist,
+    } = useNotebookAssist({
+        adapter: notebookAdapter,
+        notebookAuth,
+        activeRoomId,
+        canUseNotebookAssist,
+        responseLang: chatReceiveLanguage,
+        t,
+    });
     const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);
-    const assistLowConfidence = (assistOutput?.confidence ?? 1) < 0.6;
     const {
         pendingAttachmentsByRoom,
         setPendingAttachmentsByRoom,
@@ -895,13 +867,9 @@ export const ChatRoom: React.FC = () => {
     }, [showActionsMenu]);
 
     useEffect(() => {
-        setAssistState("idle");
-        setAssistError(null);
-        setAssistOutput(null);
-        setAssistDraft("");
-        setAssistCitationsExpanded(false);
+        resetAssist();
         setLastAssistTrigger(null);
-    }, [activeRoomId]);
+    }, [activeRoomId, resetAssist, setLastAssistTrigger]);
 
     useEffect(() => {
         try {
@@ -1360,77 +1328,6 @@ export const ChatRoom: React.FC = () => {
         });
     };
 
-    const mapAssistError = (error: unknown): string => {
-        if (error instanceof NotebookApiError && (error.status === 401 || error.status === 403 || error.status === 422)) {
-            if (error.code === "NO_VALID_HUB_TOKEN") {
-                return t("chat.notebook.errors.noValidHubToken");
-            }
-            if (error.code === "INVALID_AUTH_TOKEN" || error.code === "UNAUTHORIZED") {
-                return t("chat.notebook.errors.invalidAuth");
-            }
-            if (error.code === "FORBIDDEN_ROLE") {
-                return t("chat.notebook.errors.forbiddenRole");
-            }
-            if (error.code === "CAPABILITY_DISABLED") {
-                return t("chat.notebook.errors.capabilityDisabled");
-            }
-            if (error.code === "INVALID_CONTEXT") {
-                return t("chat.notebook.errors.invalidContext");
-            }
-        }
-        return error instanceof Error ? error.message : t("chat.notebook.errors.requestFailed");
-    };
-
-    const applyAssistOutput = (result: NotebookAssistResponse): void => {
-        setAssistOutput(result);
-        setAssistDraft(result.answer);
-        setAssistState("success");
-        setAssistError(null);
-    };
-
-    const runAssistQuery = async (query: string): Promise<void> => {
-        if (!canUseNotebookAssist || !notebookAuth || !activeRoomId) return;
-        const trimmed = query.trim();
-        if (!trimmed) {
-            setAssistState("error");
-            setAssistError(t("chat.notebook.errors.emptyQuery"));
-            return;
-        }
-        setAssistState("loading");
-        setAssistError(null);
-        try {
-            const result = await notebookAdapter.assistQuery(notebookAuth, {
-                roomId: activeRoomId,
-                query: trimmed,
-                responseLang: (chatReceiveLanguage || "").trim() || "zh-TW",
-            });
-            applyAssistOutput(result);
-            setLastAssistTrigger({ type: "query", query: trimmed });
-        } catch (error) {
-            setAssistState("error");
-            setAssistError(mapAssistError(error));
-        }
-    };
-
-    const runAssistFromContext = async (anchorEventId: string): Promise<void> => {
-        if (!canUseNotebookAssist || !notebookAuth || !activeRoomId) return;
-        setAssistState("loading");
-        setAssistError(null);
-        try {
-            const result = await notebookAdapter.assistFromContext(notebookAuth, {
-                roomId: activeRoomId,
-                anchorEventId,
-                windowSize: 5,
-                responseLang: (chatReceiveLanguage || "").trim() || "zh-TW",
-            });
-            applyAssistOutput(result);
-            setLastAssistTrigger({ type: "context", anchorEventId, windowSize: 5 });
-        } catch (error) {
-            setAssistState("error");
-            setAssistError(mapAssistError(error));
-        }
-    };
-
     const sendMessageFileToNotebook = async (event: MatrixEvent): Promise<void> => {
         if (!notebookAuth || !canUseNotebookBasic) return;
         const content = event.getContent() as { body?: string; msgtype?: string; info?: { mimetype?: string; size?: number }; url?: string } | undefined;
@@ -1457,7 +1354,7 @@ export const ChatRoom: React.FC = () => {
             });
             pushToast("success", t("chat.notebook.sendFileToKnowledgeBaseSuccess"));
         } catch (error) {
-            const message = mapAssistError(error);
+            const message = mapNotebookErrorToMessage(error, t);
             pushToast("error", message);
         } finally {
             setSendingFileToNotebookEventId(null);
@@ -1498,10 +1395,7 @@ export const ChatRoom: React.FC = () => {
         setAssistSending(true);
         try {
             await sendTextMessage(matrixClient, activeRoomId, finalText);
-            setAssistState("idle");
-            setAssistOutput(null);
-            setAssistDraft("");
-            setAssistError(null);
+            resetAssist();
         } finally {
             setAssistSending(false);
         }
@@ -2234,12 +2128,7 @@ export const ChatRoom: React.FC = () => {
                             </div>
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setAssistState("idle");
-                                    setAssistError(null);
-                                    setAssistOutput(null);
-                                    setAssistDraft("");
-                                }}
+                                onClick={resetAssist}
                                 className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                             >
                                 {t("chat.notebook.close")}

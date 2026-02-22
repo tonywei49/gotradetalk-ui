@@ -1,6 +1,7 @@
 import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../types";
 import { useTranslation } from "react-i18next";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRef } from "react";
+import { NotebookParsedSection } from "./NotebookParsedSection";
 
 type NotebookPanelProps = {
     enabled: boolean;
@@ -74,23 +75,6 @@ export function NotebookPanel({
 }: NotebookPanelProps) {
     const { t } = useTranslation();
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
-    const [chunkPage, setChunkPage] = useState(1);
-    const chunkPageSize = 10;
-
-    useEffect(() => {
-        setChunkPage(1);
-    }, [selectedItem?.id]);
-
-    const chunkPageCount = useMemo(() => {
-        const total = Math.max(chunks.length, chunksTotal);
-        return Math.max(1, Math.ceil(total / chunkPageSize));
-    }, [chunks.length, chunksTotal]);
-
-    const chunkPageSafe = Math.min(chunkPage, chunkPageCount);
-    const visibleChunks = useMemo(() => {
-        const start = (chunkPageSafe - 1) * chunkPageSize;
-        return (chunks || []).slice(start, start + chunkPageSize);
-    }, [chunkPageSafe, chunks]);
     if (!enabled) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -179,65 +163,14 @@ export function NotebookPanel({
                         </div>
                     )}
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    <div className="mb-2 font-semibold">Parsed preview & chunks</div>
-                    {previewBusy ? (
-                        <div className="text-slate-500 dark:text-slate-400">Loading parsed result...</div>
-                    ) : previewError ? (
-                        <div className="text-rose-600 dark:text-rose-300">{previewError}</div>
-                    ) : !parsedPreview ? (
-                        <div className="text-slate-500 dark:text-slate-400">No parsed result yet.</div>
-                    ) : (
-                        <div className="space-y-2">
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                Total chunks: {parsedPreview.chunkCountTotal} · Sampled: {parsedPreview.chunkCountSampled} · Chars: {parsedPreview.totalChars} · Tokens: {parsedPreview.totalTokens}
-                            </div>
-                            <textarea
-                                readOnly
-                                value={parsedPreview.text || ""}
-                                rows={8}
-                                className="w-full rounded border border-slate-200 bg-white px-2 py-2 text-[12px] text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                            />
-                            <div className="space-y-2">
-                                {visibleChunks.map((chunk) => (
-                                    <div key={chunk.id} className="rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
-                                        <div className="mb-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                            #{chunk.chunkIndex} · {chunk.sourceType || "unknown"} {chunk.sourceLocator ? `· ${chunk.sourceLocator}` : ""}
-                                        </div>
-                                        <div className="max-h-24 overflow-auto whitespace-pre-wrap text-[12px] text-slate-700 dark:text-slate-100">
-                                            {chunk.chunkText}
-                                        </div>
-                                    </div>
-                                ))}
-                                {Math.max(chunks.length, chunksTotal) > 10 && (
-                                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                                        <div>
-                                            Page {chunkPageSafe}/{chunkPageCount} · Total {Math.max(chunks.length, chunksTotal)} chunks
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setChunkPage((prev) => Math.max(1, prev - 1))}
-                                                disabled={chunkPageSafe <= 1}
-                                                className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50 dark:border-slate-600"
-                                            >
-                                                Prev
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setChunkPage((prev) => Math.min(chunkPageCount, prev + 1))}
-                                                disabled={chunkPageSafe >= chunkPageCount}
-                                                className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50 dark:border-slate-600"
-                                            >
-                                                Next
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
+                <NotebookParsedSection
+                    key={selectedItem.id}
+                    previewBusy={previewBusy}
+                    previewError={previewError}
+                    parsedPreview={parsedPreview}
+                    chunks={chunks}
+                    chunksTotal={chunksTotal}
+                />
                 {actionError && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         {actionError}
