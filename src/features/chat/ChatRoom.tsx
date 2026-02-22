@@ -759,13 +759,14 @@ export const ChatRoom: React.FC = () => {
         if (!accessToken) return null;
         return {
             accessToken,
+            matrixAccessToken: matrixAccessToken,
             apiBaseUrl: notebookApiBaseUrl,
             hsUrl: matrixHsUrl,
             matrixUserId: matrixCredentials?.user_id ?? null,
             userType,
             capabilities: notebookCapabilities,
         };
-    }, [notebookToken.accessToken, notebookApiBaseUrl, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
+    }, [notebookToken.accessToken, matrixAccessToken, notebookApiBaseUrl, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
     const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client" && notebookAuth);
     const canUseNotebookBasic = Boolean(notebookAuth && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
     const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);

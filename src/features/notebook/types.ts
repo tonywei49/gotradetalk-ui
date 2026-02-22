@@ -73,6 +73,7 @@ export type NotebookListState = "loading" | "error" | "empty" | "ready";
 
 export type NotebookAuthContext = {
     accessToken: string;
+    matrixAccessToken?: string | null;
     apiBaseUrl?: string | null;
     hsUrl?: string | null;
     matrixUserId?: string | null;

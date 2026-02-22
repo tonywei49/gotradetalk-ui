@@ -304,13 +304,14 @@ export const MainLayout: React.FC = () => {
         if (!capabilityToken) return null;
         return {
             accessToken: capabilityToken,
+            matrixAccessToken: matrixAccessToken,
             apiBaseUrl: notebookApiBaseUrlOverride,
             hsUrl: matrixHsUrl,
             matrixUserId: matrixCredentials?.user_id ?? null,
             userType,
             capabilities: capabilityValues,
         };
-    }, [capabilityToken, notebookApiBaseUrlOverride, matrixCredentials?.user_id, matrixHsUrl, userType, capabilityValues]);
+    }, [capabilityToken, matrixAccessToken, notebookApiBaseUrlOverride, matrixCredentials?.user_id, matrixHsUrl, userType, capabilityValues]);
     const retryNotebookCapability = useCallback(() => {
         setCapabilityRefreshSeq((prev) => prev + 1);
     }, []);

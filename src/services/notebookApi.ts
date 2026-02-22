@@ -26,6 +26,7 @@ export class NotebookServiceError extends Error {
 
 export type NotebookApiAuth = {
     accessToken: string;
+    matrixAccessToken?: string | null;
     apiBaseUrl?: string | null;
     hsUrl?: string | null;
     matrixUserId?: string | null;
@@ -374,7 +375,18 @@ export async function assistFromContext(
     auth: NotebookApiAuth,
     input: AssistFromContextRequest,
 ): Promise<NotebookAssistResponseDto> {
-    return postJson<NotebookAssistResponseDto>(auth, "/chat/assist/from-context", input);
+    assertHubJwtToken(auth);
+    const response = await fetch(buildUrl("/chat/assist/from-context", auth), {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${auth.accessToken}`,
+            "Content-Type": "application/json",
+            ...(auth.matrixAccessToken ? { "X-Matrix-Access-Token": auth.matrixAccessToken } : {}),
+        },
+        body: JSON.stringify(input),
+    });
+    if (!response.ok) throw await readError(response);
+    return (await response.json()) as NotebookAssistResponseDto;
 }
 
 export async function assistQuery(
