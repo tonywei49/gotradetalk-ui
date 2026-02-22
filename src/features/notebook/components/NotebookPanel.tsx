@@ -1,4 +1,4 @@
-import type { NotebookItem } from "../types";
+import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../types";
 import { useTranslation } from "react-i18next";
 import { useRef } from "react";
 
@@ -15,6 +15,11 @@ type NotebookPanelProps = {
     onUploadFile: (file: File) => void;
     onDeleteFile: (fileId: string) => void;
     onDownloadFile: (mxcUrl: string, preferredName?: string | null) => void;
+    previewBusy: boolean;
+    previewError: string | null;
+    parsedPreview: NotebookParsedPreview | null;
+    chunks: NotebookChunk[];
+    chunksTotal: number;
     busy: boolean;
     actionError: string | null;
     onMobileBack?: () => void;
@@ -58,6 +63,11 @@ export function NotebookPanel({
     onUploadFile,
     onDeleteFile,
     onDownloadFile,
+    previewBusy,
+    previewError,
+    parsedPreview,
+    chunks,
+    chunksTotal,
     busy,
     actionError,
     onMobileBack,
@@ -149,6 +159,45 @@ export function NotebookPanel({
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    )}
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <div className="mb-2 font-semibold">Parsed preview & chunks</div>
+                    {previewBusy ? (
+                        <div className="text-slate-500 dark:text-slate-400">Loading parsed result...</div>
+                    ) : previewError ? (
+                        <div className="text-rose-600 dark:text-rose-300">{previewError}</div>
+                    ) : !parsedPreview ? (
+                        <div className="text-slate-500 dark:text-slate-400">No parsed result yet.</div>
+                    ) : (
+                        <div className="space-y-2">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Total chunks: {parsedPreview.chunkCountTotal} · Sampled: {parsedPreview.chunkCountSampled} · Chars: {parsedPreview.totalChars} · Tokens: {parsedPreview.totalTokens}
+                            </div>
+                            <textarea
+                                readOnly
+                                value={parsedPreview.text || ""}
+                                rows={8}
+                                className="w-full rounded border border-slate-200 bg-white px-2 py-2 text-[12px] text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            />
+                            <div className="space-y-2">
+                                {(chunks || []).slice(0, 20).map((chunk) => (
+                                    <div key={chunk.id} className="rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                        <div className="mb-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                            #{chunk.chunkIndex} · {chunk.sourceType || "unknown"} {chunk.sourceLocator ? `· ${chunk.sourceLocator}` : ""}
+                                        </div>
+                                        <div className="max-h-24 overflow-auto whitespace-pre-wrap text-[12px] text-slate-700 dark:text-slate-100">
+                                            {chunk.chunkText}
+                                        </div>
+                                    </div>
+                                ))}
+                                {chunksTotal > 20 && (
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                        Showing first 20 chunks, total {chunksTotal}.
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>

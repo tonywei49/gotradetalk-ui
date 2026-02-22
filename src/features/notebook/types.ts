@@ -24,6 +24,24 @@ export type NotebookItem = {
     files: NotebookItemFile[];
 };
 
+export type NotebookChunk = {
+    id: string;
+    chunkIndex: number;
+    chunkText: string;
+    tokenCount?: number | null;
+    sourceType?: string | null;
+    sourceLocator?: string | null;
+};
+
+export type NotebookParsedPreview = {
+    text: string;
+    truncated: boolean;
+    chunkCountSampled: number;
+    chunkCountTotal: number;
+    totalChars: number;
+    totalTokens: number;
+};
+
 export type NotebookCapability =
     | "NOTEBOOK_BASIC"
     | "NOTEBOOK_LLM_ASSIST"

@@ -1,8 +1,10 @@
 import type {
     NotebookAssistResponse,
     NotebookAuthContext,
+    NotebookChunk,
     NotebookIndexStatus,
     NotebookItem,
+    NotebookParsedPreview,
 } from "../types";
 
 export type NotebookListQuery = {
@@ -62,6 +64,8 @@ export type NotebookAdapter = {
         auth: NotebookAuthContext,
         itemId: string,
     ) => Promise<{ indexStatus: NotebookIndexStatus; indexError?: string | null }>;
+    getParsedPreview: (auth: NotebookAuthContext, itemId: string) => Promise<NotebookParsedPreview>;
+    getChunks: (auth: NotebookAuthContext, itemId: string) => Promise<{ chunks: NotebookChunk[]; total: number }>;
     assistQuery: (auth: NotebookAuthContext, input: NotebookAssistQueryInput) => Promise<NotebookAssistResponse>;
     assistFromContext: (
         auth: NotebookAuthContext,

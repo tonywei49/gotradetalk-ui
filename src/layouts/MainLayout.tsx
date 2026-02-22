@@ -2042,6 +2042,11 @@ export const MainLayout: React.FC = () => {
                             anchor.click();
                             document.body.removeChild(anchor);
                         }}
+                        previewBusy={notebookModule.previewBusy}
+                        previewError={notebookModule.previewError}
+                        parsedPreview={notebookModule.parsedPreview}
+                        chunks={notebookModule.chunks}
+                        chunksTotal={notebookModule.chunksTotal}
                         busy={notebookModule.actionBusy}
                         actionError={notebookModule.actionError}
                         onMobileBack={() => setMobileView("list")}

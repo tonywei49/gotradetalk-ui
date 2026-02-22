@@ -6,6 +6,8 @@ import {
     deleteNotebookItemFile,
     deleteNotebookItem,
     getNotebookItemIndexStatus,
+    getNotebookItemParsedPreview,
+    getNotebookItemChunks,
     getNotebookItems,
     type NotebookAssistSourceDto,
     type NotebookItemFileDto,
@@ -154,6 +156,39 @@ export const httpNotebookAdapter: NotebookAdapter = {
             return {
                 indexStatus: data.index_status as NotebookIndexStatus,
                 indexError: data.index_error,
+            };
+        } catch (error) {
+            throw mapError(error);
+        }
+    },
+    async getParsedPreview(auth, itemId) {
+        try {
+            const data = await getNotebookItemParsedPreview(auth, itemId, { limit: 12, chars: 10000 });
+            return {
+                text: data.preview.text || "",
+                truncated: Boolean(data.preview.truncated),
+                chunkCountSampled: Number(data.preview.chunk_count_sampled || 0),
+                chunkCountTotal: Number(data.preview.chunk_count_total || 0),
+                totalChars: Number(data.preview.total_chars || 0),
+                totalTokens: Number(data.preview.total_tokens || 0),
+            };
+        } catch (error) {
+            throw mapError(error);
+        }
+    },
+    async getChunks(auth, itemId) {
+        try {
+            const data = await getNotebookItemChunks(auth, itemId, { limit: 160 });
+            return {
+                chunks: (data.chunks || []).map((chunk) => ({
+                    id: chunk.id,
+                    chunkIndex: Number(chunk.chunk_index || 0),
+                    chunkText: chunk.chunk_text || "",
+                    tokenCount: chunk.token_count ?? null,
+                    sourceType: chunk.source_type || null,
+                    sourceLocator: chunk.source_locator || null,
+                })),
+                total: Number(data.total || 0),
             };
         } catch (error) {
             throw mapError(error);

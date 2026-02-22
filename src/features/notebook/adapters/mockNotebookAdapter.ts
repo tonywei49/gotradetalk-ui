@@ -225,6 +225,43 @@ export const mockNotebookAdapter: NotebookAdapter = {
             indexError: target.indexError,
         };
     },
+    async getParsedPreview(_auth, itemId) {
+        await wait(120);
+        const target = db.find((item) => item.id === itemId);
+        if (!target) {
+            throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
+        }
+        const text = `${target.title}\n\n${target.contentMarkdown}`.trim();
+        return {
+            text,
+            truncated: false,
+            chunkCountSampled: text ? 1 : 0,
+            chunkCountTotal: text ? 1 : 0,
+            totalChars: text.length,
+            totalTokens: Math.ceil(text.length / 3),
+        };
+    },
+    async getChunks(_auth, itemId) {
+        await wait(120);
+        const target = db.find((item) => item.id === itemId);
+        if (!target) {
+            throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
+        }
+        const text = `${target.title}\n\n${target.contentMarkdown}`.trim();
+        return {
+            chunks: text
+                ? [{
+                    id: `${itemId}-chunk-1`,
+                    chunkIndex: 0,
+                    chunkText: text,
+                    tokenCount: Math.ceil(text.length / 3),
+                    sourceType: target.itemType === "file" ? "docx" : "text",
+                    sourceLocator: target.itemType === "file" ? "page:1" : null,
+                }]
+                : [],
+            total: text ? 1 : 0,
+        };
+    },
     async assistQuery(auth, input) {
         await wait(450);
         ensureAssistAllowed({ userType: auth.userType, capabilities: auth.capabilities });

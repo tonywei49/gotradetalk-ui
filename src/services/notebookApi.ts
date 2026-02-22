@@ -54,6 +54,18 @@ export type NotebookItemFileDto = {
     created_at: string;
 };
 
+export type NotebookChunkDto = {
+    id: string;
+    item_id: string;
+    chunk_index: number;
+    chunk_text: string;
+    token_count?: number | null;
+    source_type?: string | null;
+    source_locator?: string | null;
+    created_at: string;
+    updated_at: string;
+};
+
 export type GetNotebookItemsResponse = {
     items: NotebookItemDto[];
     next_cursor: string | null;
@@ -317,6 +329,45 @@ export async function getNotebookItemIndexStatus(
         auth,
         `/notebook/items/${encodeURIComponent(itemId)}/index-status`,
     );
+}
+
+export async function getNotebookItemParsedPreview(
+    auth: NotebookApiAuth,
+    itemId: string,
+    input?: { limit?: number; chars?: number },
+): Promise<{
+    item_id: string;
+    index_status: NotebookItemDto["index_status"];
+    index_error?: string | null;
+    preview: {
+        text: string;
+        truncated: boolean;
+        chunk_count_sampled: number;
+        chunk_count_total: number;
+        total_chars: number;
+        total_tokens: number;
+    };
+}> {
+    const query: Record<string, string> = {};
+    if (input?.limit) query.limit = String(input.limit);
+    if (input?.chars) query.chars = String(input.chars);
+    return getJson(auth, `/notebook/items/${encodeURIComponent(itemId)}/parsed-preview`, query);
+}
+
+export async function getNotebookItemChunks(
+    auth: NotebookApiAuth,
+    itemId: string,
+    input?: { limit?: number },
+): Promise<{
+    item_id: string;
+    index_status: NotebookItemDto["index_status"];
+    index_error?: string | null;
+    chunks: NotebookChunkDto[];
+    total: number;
+}> {
+    const query: Record<string, string> = {};
+    if (input?.limit) query.limit = String(input.limit);
+    return getJson(auth, `/notebook/items/${encodeURIComponent(itemId)}/chunks`, query);
 }
 
 export async function assistFromContext(
