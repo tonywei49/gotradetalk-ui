@@ -87,6 +87,10 @@ type MessageBubbleProps = {
     onDeleteFile?: (event: MatrixEvent) => void;
     canUseNotebookAssist?: boolean;
     onAssistFromContext?: (anchorEventId: string) => void;
+    canUseNotebookBasic?: boolean;
+    onSendFileToNotebook?: (event: MatrixEvent) => void;
+    sendFileToNotebookBusy?: boolean;
+    onCopyMessage?: (event: MatrixEvent, displayText: string) => void;
 };
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -179,6 +183,10 @@ const MessageBubble = ({
     onDeleteFile,
     canUseNotebookAssist,
     onAssistFromContext,
+    canUseNotebookBasic,
+    onSendFileToNotebook,
+    sendFileToNotebookBusy,
+    onCopyMessage,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const [showFileMenu, setShowFileMenu] = useState(false);
@@ -217,7 +225,11 @@ const MessageBubble = ({
         anchorEventId &&
         onAssistFromContext,
     );
-    const hasQuickActions = canToggleTranslation || canAssistFromContext;
+    const rawMxc = typeof (content as { url?: unknown } | undefined)?.url === "string"
+        ? String((content as { url?: string }).url)
+        : "";
+    const canSendFileToNotebook = Boolean(canUseNotebookBasic && isFileLike && rawMxc.startsWith("mxc://") && onSendFileToNotebook);
+    const hasQuickActions = canToggleTranslation || canAssistFromContext || canSendFileToNotebook;
     const displayText = showTranslated
         ? hasTranslatedText
             ? (translatedText as string)
@@ -381,6 +393,16 @@ const MessageBubble = ({
                                                     : t("chat.showTranslation")}
                                         </button>
                                     )}
+                                    <button
+                                        type="button"
+                                        className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                        onClick={() => {
+                                            setShowQuickActionMenu(false);
+                                            onCopyMessage?.(event, displayText);
+                                        }}
+                                    >
+                                        {t("chat.copyMessage")}
+                                    </button>
                                     {canAssistFromContext && anchorEventId && (
                                         <button
                                             type="button"
@@ -391,6 +413,21 @@ const MessageBubble = ({
                                             }}
                                         >
                                             {t("chat.notebook.useKnowledgeBase")}
+                                        </button>
+                                    )}
+                                    {canSendFileToNotebook && (
+                                        <button
+                                            type="button"
+                                            className="w-full px-3 py-1.5 text-left text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
+                                            onClick={() => {
+                                                setShowQuickActionMenu(false);
+                                                onSendFileToNotebook?.(event);
+                                            }}
+                                            disabled={sendFileToNotebookBusy}
+                                        >
+                                            {sendFileToNotebookBusy
+                                                ? t("chat.notebook.sendingToKnowledgeBase")
+                                                : t("chat.notebook.sendFileToKnowledgeBase")}
                                         </button>
                                     )}
                                 </div>
@@ -730,6 +767,8 @@ export const ChatRoom: React.FC = () => {
         };
     }, [notebookToken.accessToken, notebookApiBaseUrl, matrixHsUrl, matrixCredentials?.user_id, userType, notebookCapabilities]);
     const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client" && notebookAuth);
+    const canUseNotebookBasic = Boolean(notebookAuth && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
+    const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);
     const assistLowConfidence = (assistOutput?.confidence ?? 1) < 0.6;
     const {
         pendingAttachmentsByRoom,
@@ -1391,6 +1430,57 @@ export const ChatRoom: React.FC = () => {
         }
     };
 
+    const sendMessageFileToNotebook = async (event: MatrixEvent): Promise<void> => {
+        if (!notebookAuth || !canUseNotebookBasic) return;
+        const content = event.getContent() as { body?: string; msgtype?: string; info?: { mimetype?: string; size?: number }; url?: string } | undefined;
+        const mxc = String(content?.url || "");
+        if (!mxc.startsWith("mxc://")) {
+            pushToast("error", t("chat.notebook.errors.invalidMxc"));
+            return;
+        }
+        const eventId = event.getId() || "";
+        setSendingFileToNotebookEventId(eventId || "busy");
+        try {
+            const fileName = (content?.body || "").trim() || t("chat.notebook.importedAttachmentFallbackName");
+            const created = await notebookAdapter.createItem(notebookAuth, {
+                title: fileName,
+                contentMarkdown: t("chat.notebook.importedFromChat"),
+                itemType: "file",
+            });
+            await notebookAdapter.attachFile(notebookAuth, created.id, {
+                matrixMediaMxc: mxc,
+                matrixMediaName: fileName,
+                matrixMediaMime: content?.info?.mimetype,
+                matrixMediaSize: content?.info?.size,
+                isIndexable: true,
+            });
+            pushToast("success", t("chat.notebook.sendFileToKnowledgeBaseSuccess"));
+        } catch (error) {
+            const message = mapAssistError(error);
+            pushToast("error", message);
+        } finally {
+            setSendingFileToNotebookEventId(null);
+        }
+    };
+
+    const copyMessageContent = async (event: MatrixEvent, displayText: string): Promise<void> => {
+        const content = event.getContent() as { body?: string; url?: string } | undefined;
+        const parts = [
+            (displayText || "").trim(),
+            String(content?.body || "").trim(),
+            String(content?.url || "").trim(),
+        ].filter(Boolean);
+        const unique = Array.from(new Set(parts));
+        const payload = unique.join("\n");
+        if (!payload) return;
+        try {
+            await navigator.clipboard.writeText(payload);
+            pushToast("success", t("chat.copyMessageSuccess"));
+        } catch {
+            pushToast("error", t("chat.copyMessageFailed"));
+        }
+    };
+
     const onRegenerateAssist = async (): Promise<void> => {
         if (!lastAssistTrigger) return;
         if (lastAssistTrigger.type === "query") {
@@ -2030,6 +2120,14 @@ export const ChatRoom: React.FC = () => {
                                 canUseNotebookAssist={canUseNotebookAssist}
                                 onAssistFromContext={(anchorId) => {
                                     void runAssistFromContext(anchorId);
+                                }}
+                                canUseNotebookBasic={canUseNotebookBasic}
+                                onSendFileToNotebook={(targetEvent) => {
+                                    void sendMessageFileToNotebook(targetEvent);
+                                }}
+                                sendFileToNotebookBusy={Boolean(sendingFileToNotebookEventId && sendingFileToNotebookEventId === eventId)}
+                                onCopyMessage={(targetEvent, text) => {
+                                    void copyMessageContent(targetEvent, text);
                                 }}
                                 onToggleTranslation={() => {
                                     const key = getMessageEventKey(event);

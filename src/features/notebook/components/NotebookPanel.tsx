@@ -1,5 +1,6 @@
 import type { NotebookItem } from "../types";
 import { useTranslation } from "react-i18next";
+import { useRef } from "react";
 
 type NotebookPanelProps = {
     enabled: boolean;
@@ -11,6 +12,7 @@ type NotebookPanelProps = {
     onSave: () => void;
     onDelete: () => void;
     onAttachFile: () => void;
+    onUploadFile: (file: File) => void;
     busy: boolean;
     actionError: string | null;
     onMobileBack?: () => void;
@@ -51,11 +53,13 @@ export function NotebookPanel({
     onSave,
     onDelete,
     onAttachFile,
+    onUploadFile,
     busy,
     actionError,
     onMobileBack,
 }: NotebookPanelProps) {
     const { t } = useTranslation();
+    const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
     if (!enabled) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -123,6 +127,17 @@ export function NotebookPanel({
                 )}
             </div>
             <div className="border-t border-gray-100 px-6 py-4 dark:border-slate-800">
+                <input
+                    ref={notebookUploadInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (!file) return;
+                        onUploadFile(file);
+                    }}
+                />
                 <div className="flex flex-wrap gap-2">
                     <button
                         type="button"
@@ -131,6 +146,14 @@ export function NotebookPanel({
                         className="rounded-lg bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                         Save
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => notebookUploadInputRef.current?.click()}
+                        disabled={busy}
+                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                    >
+                        Upload file
                     </button>
                     <button
                         type="button"

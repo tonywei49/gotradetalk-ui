@@ -1986,6 +1986,47 @@ export const MainLayout: React.FC = () => {
                                 isIndexable: true,
                             });
                         }}
+                        onUploadFile={(file) => {
+                            if (!matrixClient) return;
+                            void (async () => {
+                                try {
+                                    const uploadResult = (await matrixClient.uploadContent(file, {
+                                        includeFilename: false,
+                                    })) as unknown;
+
+                                    let mxcUrl = "";
+                                    if (typeof uploadResult === "string") {
+                                        if (uploadResult.startsWith("mxc://")) {
+                                            mxcUrl = uploadResult;
+                                        } else {
+                                            try {
+                                                const parsed = JSON.parse(uploadResult) as { content_uri?: string };
+                                                mxcUrl = parsed.content_uri || "";
+                                            } catch {
+                                                mxcUrl = "";
+                                            }
+                                        }
+                                    } else if (uploadResult && typeof uploadResult === "object") {
+                                        const uri = (uploadResult as { content_uri?: string }).content_uri;
+                                        mxcUrl = typeof uri === "string" ? uri : "";
+                                    }
+
+                                    if (!mxcUrl.startsWith("mxc://")) {
+                                        throw new Error("Failed to upload file to Matrix media");
+                                    }
+
+                                    await notebookModule.attachFile({
+                                        matrixMediaMxc: mxcUrl,
+                                        matrixMediaName: file.name,
+                                        matrixMediaMime: file.type || undefined,
+                                        matrixMediaSize: file.size,
+                                        isIndexable: true,
+                                    });
+                                } catch {
+                                    // attach/upload failures are reflected by notebook module action state or ignored safely
+                                }
+                            })();
+                        }}
                         busy={notebookModule.actionBusy}
                         actionError={notebookModule.actionError}
                         onMobileBack={() => setMobileView("list")}
