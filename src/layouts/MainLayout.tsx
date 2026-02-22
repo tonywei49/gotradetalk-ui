@@ -2027,6 +2027,21 @@ export const MainLayout: React.FC = () => {
                                 }
                             })();
                         }}
+                        onDeleteFile={(fileId) => {
+                            void notebookModule.removeFile(fileId);
+                        }}
+                        onDownloadFile={(mxcUrl, preferredName) => {
+                            if (!matrixClient) return;
+                            const url = matrixClient.mxcUrlToHttp(mxcUrl);
+                            if (!url) return;
+                            const anchor = document.createElement("a");
+                            anchor.href = url;
+                            anchor.download = preferredName || "notebook-file";
+                            anchor.rel = "noopener noreferrer";
+                            document.body.appendChild(anchor);
+                            anchor.click();
+                            document.body.removeChild(anchor);
+                        }}
                         busy={notebookModule.actionBusy}
                         actionError={notebookModule.actionError}
                         onMobileBack={() => setMobileView("list")}

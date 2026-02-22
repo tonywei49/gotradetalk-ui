@@ -2,6 +2,15 @@ export type NotebookItemType = "text" | "file";
 
 export type NotebookIndexStatus = "pending" | "running" | "success" | "failed" | "skipped";
 
+export type NotebookItemFile = {
+    id: string;
+    matrixMediaMxc: string;
+    matrixMediaName?: string | null;
+    matrixMediaMime?: string | null;
+    matrixMediaSize?: number | null;
+    createdAt: string;
+};
+
 export type NotebookItem = {
     id: string;
     title: string;
@@ -12,6 +21,7 @@ export type NotebookItem = {
     updatedAt: string;
     createdAt: string;
     matrixMediaName?: string | null;
+    files: NotebookItemFile[];
 };
 
 export type NotebookCapability =

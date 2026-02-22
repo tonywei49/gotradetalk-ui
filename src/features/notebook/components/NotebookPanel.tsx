@@ -13,6 +13,8 @@ type NotebookPanelProps = {
     onDelete: () => void;
     onAttachFile: () => void;
     onUploadFile: (file: File) => void;
+    onDeleteFile: (fileId: string) => void;
+    onDownloadFile: (mxcUrl: string, preferredName?: string | null) => void;
     busy: boolean;
     actionError: string | null;
     onMobileBack?: () => void;
@@ -54,6 +56,8 @@ export function NotebookPanel({
     onDelete,
     onAttachFile,
     onUploadFile,
+    onDeleteFile,
+    onDownloadFile,
     busy,
     actionError,
     onMobileBack,
@@ -115,11 +119,39 @@ export function NotebookPanel({
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                 </label>
-                {selectedItem.matrixMediaName && (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        Linked file: {selectedItem.matrixMediaName}
-                    </div>
-                )}
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <div className="mb-2 font-semibold">Attached files ({selectedItem.files.length})</div>
+                    {selectedItem.files.length === 0 ? (
+                        <div className="text-slate-500 dark:text-slate-400">No files yet.</div>
+                    ) : (
+                        <div className="space-y-2">
+                            {selectedItem.files.map((file) => (
+                                <div key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                    <div className="min-w-0 flex-1 truncate">
+                                        {file.matrixMediaName || file.matrixMediaMxc}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => onDownloadFile(file.matrixMediaMxc, file.matrixMediaName)}
+                                            className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+                                        >
+                                            Download
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => onDeleteFile(file.id)}
+                                            disabled={busy}
+                                            className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
                 {actionError && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         {actionError}

@@ -3,10 +3,12 @@ import {
     assistQuery,
     attachNotebookFile,
     createNotebookItem,
+    deleteNotebookItemFile,
     deleteNotebookItem,
     getNotebookItemIndexStatus,
     getNotebookItems,
     type NotebookAssistSourceDto,
+    type NotebookItemFileDto,
     type NotebookItemDto,
     type NotebookServiceError,
     pushNotebookSync,
@@ -17,6 +19,14 @@ import type { NotebookAdapter } from "./types";
 import { NotebookApiError } from "./types";
 
 function mapItem(dto: NotebookItemDto): NotebookItem {
+    const files = (dto.files ?? []).map((file: NotebookItemFileDto) => ({
+        id: file.id,
+        matrixMediaMxc: file.matrix_media_mxc,
+        matrixMediaName: file.matrix_media_name,
+        matrixMediaMime: file.matrix_media_mime,
+        matrixMediaSize: file.matrix_media_size,
+        createdAt: file.created_at,
+    }));
     return {
         id: dto.id,
         title: dto.title || "",
@@ -27,6 +37,7 @@ function mapItem(dto: NotebookItemDto): NotebookItem {
         updatedAt: dto.updated_at,
         createdAt: dto.created_at,
         matrixMediaName: dto.matrix_media_name,
+        files,
     };
 }
 
@@ -124,6 +135,14 @@ export const httpNotebookAdapter: NotebookAdapter = {
                 matrix_media_size: input.matrixMediaSize,
                 is_indexable: input.isIndexable ?? true,
             });
+            return mapItem(response.item);
+        } catch (error) {
+            throw mapError(error);
+        }
+    },
+    async removeFile(auth, itemId, fileId) {
+        try {
+            const response = await deleteNotebookItemFile(auth, itemId, fileId);
             return mapItem(response.item);
         } catch (error) {
             throw mapError(error);

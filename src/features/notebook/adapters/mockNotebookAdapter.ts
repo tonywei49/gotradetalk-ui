@@ -16,6 +16,7 @@ const initialItems: NotebookItem[] = [
         indexError: null,
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
         updatedAt: new Date(Date.now() - 1000 * 60 * 50).toISOString(),
+        files: [],
     },
     {
         id: "nb-2",
@@ -27,6 +28,16 @@ const initialItems: NotebookItem[] = [
         indexError: null,
         createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
         updatedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+        files: [
+            {
+                id: "nb-2-file-1",
+                matrixMediaMxc: "mxc://mock.server/q4-catalog",
+                matrixMediaName: "Q4-catalog.pdf",
+                matrixMediaMime: "application/pdf",
+                matrixMediaSize: 123456,
+                createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+            },
+        ],
     },
 ];
 
@@ -45,6 +56,7 @@ function nextId(): string {
 function cloneItem(item: NotebookItem): NotebookItem {
     return {
         ...item,
+        files: item.files.map((file) => ({ ...file })),
     };
 }
 
@@ -132,6 +144,7 @@ export const mockNotebookAdapter: NotebookAdapter = {
             createdAt: now,
             updatedAt: now,
             matrixMediaName: null,
+            files: [],
         };
         db = [created, ...db];
         return cloneItem(created);
@@ -166,6 +179,35 @@ export const mockNotebookAdapter: NotebookAdapter = {
             itemType: "file",
             matrixMediaName: input.matrixMediaName || "file",
             indexStatus: "pending",
+            updatedAt: new Date().toISOString(),
+            files: [
+                {
+                    id: nextId(),
+                    matrixMediaMxc: input.matrixMediaMxc,
+                    matrixMediaName: input.matrixMediaName || "file",
+                    matrixMediaMime: input.matrixMediaMime || null,
+                    matrixMediaSize: input.matrixMediaSize || null,
+                    createdAt: new Date().toISOString(),
+                },
+                ...target.files,
+            ],
+        };
+        db = db.map((item) => (item.id === itemId ? next : item));
+        return cloneItem(next);
+    },
+    async removeFile(_auth, itemId, fileId) {
+        await wait();
+        const target = db.find((item) => item.id === itemId);
+        if (!target) {
+            throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
+        }
+        const files = target.files.filter((file) => file.id !== fileId);
+        const next: NotebookItem = {
+            ...target,
+            itemType: files.length > 0 ? "file" : "text",
+            matrixMediaName: files[0]?.matrixMediaName || null,
+            files,
+            indexStatus: files.length > 0 ? "pending" : "skipped",
             updatedAt: new Date().toISOString(),
         };
         db = db.map((item) => (item.id === itemId ? next : item));

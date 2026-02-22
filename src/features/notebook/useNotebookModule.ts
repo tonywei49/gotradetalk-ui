@@ -174,6 +174,20 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         }
     }, [adapter, auth, selectedItemId]);
 
+    const removeFile = useCallback(async (fileId: string) => {
+        if (!auth || !selectedItemId) return;
+        setActionBusy(true);
+        setActionError(null);
+        try {
+            const updated = await adapter.removeFile(auth, selectedItemId, fileId);
+            setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : "Failed to remove file");
+        } finally {
+            setActionBusy(false);
+        }
+    }, [adapter, auth, selectedItemId]);
+
     return {
         search,
         setSearch,
@@ -194,5 +208,6 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         saveItem,
         deleteItem,
         attachFile,
+        removeFile,
     };
 }

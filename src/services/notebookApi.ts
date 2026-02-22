@@ -41,6 +41,17 @@ export type NotebookItemDto = {
     updated_at: string;
     created_at: string;
     matrix_media_name?: string | null;
+    files?: NotebookItemFileDto[];
+};
+
+export type NotebookItemFileDto = {
+    id: string;
+    item_id: string;
+    matrix_media_mxc: string;
+    matrix_media_name?: string | null;
+    matrix_media_mime?: string | null;
+    matrix_media_size?: number | null;
+    created_at: string;
 };
 
 export type GetNotebookItemsResponse = {
@@ -285,6 +296,17 @@ export async function attachNotebookFile(
     },
 ): Promise<{ item: NotebookItemDto; index_job: { id: string } | null }> {
     return postJson<{ item: NotebookItemDto; index_job: { id: string } | null }>(auth, `/notebook/items/${encodeURIComponent(itemId)}/files`, input);
+}
+
+export async function deleteNotebookItemFile(
+    auth: NotebookApiAuth,
+    itemId: string,
+    fileId: string,
+): Promise<{ ok: boolean; item: NotebookItemDto }> {
+    return deleteRequest<{ ok: boolean; item: NotebookItemDto }>(
+        auth,
+        `/notebook/items/${encodeURIComponent(itemId)}/files/${encodeURIComponent(fileId)}`,
+    );
 }
 
 export async function getNotebookItemIndexStatus(
