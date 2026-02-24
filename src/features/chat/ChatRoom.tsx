@@ -238,6 +238,8 @@ const MessageBubble = ({
     const { t } = useTranslation();
     const [showFileMenu, setShowFileMenu] = useState(false);
     const [showQuickActionMenu, setShowQuickActionMenu] = useState(false);
+    const quickActionMenuRef = useRef<HTMLDivElement | null>(null);
+    const fileMenuRef = useRef<HTMLDivElement | null>(null);
     const content = event.getContent() as { body?: string; msgtype?: string; info?: { mimetype?: string } } | undefined;
     const messageText = content?.body ?? "";
     const isSending =
@@ -293,6 +295,26 @@ const MessageBubble = ({
                 : messageText
         : messageText;
 
+    useEffect(() => {
+        if (!showQuickActionMenu && !showFileMenu) return;
+        const onPointerDown = (event: MouseEvent | TouchEvent): void => {
+            const target = event.target as Node | null;
+            if (!target) return;
+            if (showQuickActionMenu && quickActionMenuRef.current && !quickActionMenuRef.current.contains(target)) {
+                setShowQuickActionMenu(false);
+            }
+            if (showFileMenu && fileMenuRef.current && !fileMenuRef.current.contains(target)) {
+                setShowFileMenu(false);
+            }
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("touchstart", onPointerDown);
+        return () => {
+            document.removeEventListener("mousedown", onPointerDown);
+            document.removeEventListener("touchstart", onPointerDown);
+        };
+    }, [showQuickActionMenu, showFileMenu]);
+
     return (
         <div className={`flex w-full mb-3 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
             {/* Avatar (Incoming only) */}
@@ -313,7 +335,7 @@ const MessageBubble = ({
                         </div>
                     )}
                     {isMe && isFileLike && canDeleteFile && onDeleteFile && (
-                        <div className="relative self-end mb-1">
+                        <div ref={fileMenuRef} className="relative self-end mb-1">
                             <button
                                 type="button"
                                 data-testid={`chat-file-action-trigger-${eventId}`}
@@ -420,7 +442,7 @@ const MessageBubble = ({
                         <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
                     )}
                     {hasQuickActions && (
-                        <div className="relative self-end mb-1">
+                        <div ref={quickActionMenuRef} className="relative self-end mb-1">
                             <button
                                 type="button"
                                 onClick={() => setShowQuickActionMenu((prev) => !prev)}
@@ -464,7 +486,7 @@ const MessageBubble = ({
                         </div>
                     )}
                     {!isMe && isFileLike && canDeleteFile && onDeleteFile && (
-                        <div className="relative self-end mb-1">
+                        <div ref={fileMenuRef} className="relative self-end mb-1">
                             <button
                                 type="button"
                                 data-testid={`chat-file-action-trigger-${eventId}`}
