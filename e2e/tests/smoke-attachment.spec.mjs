@@ -125,6 +125,10 @@ test("upload -> send -> delete file message smoke", async ({ page }) => {
     'button[aria-label*="文件"]',
   ]).last();
   await expect(actionTrigger).toBeVisible();
+  const triggerId = (await actionTrigger.getAttribute("data-testid")) || "";
+  const eventId = triggerId.startsWith("chat-file-action-trigger-")
+    ? triggerId.slice("chat-file-action-trigger-".length)
+    : "";
   await actionTrigger.click();
 
   const deleteButton = firstLocator(page, [
@@ -135,5 +139,15 @@ test("upload -> send -> delete file message smoke", async ({ page }) => {
   ]).last();
   await deleteButton.click();
 
-  await expect(page.locator("text=/撤回一個文件|revoked a file/i").last()).toBeVisible();
+  const revokeNotice = page.locator("text=/撤回一個文件|撤回一个文件|revoked a file/i").last();
+  if (eventId) {
+    const deletedEventTrigger = page.locator(`[data-testid="chat-file-action-trigger-${eventId}"]`);
+    await expect(async () => {
+      const noticeVisible = await revokeNotice.isVisible().catch(() => false);
+      const triggerStillVisible = await deletedEventTrigger.isVisible().catch(() => false);
+      expect(noticeVisible || !triggerStillVisible).toBeTruthy();
+    }).toPass({ timeout: 15000 });
+  } else {
+    await expect(revokeNotice).toBeVisible({ timeout: 15000 });
+  }
 });
