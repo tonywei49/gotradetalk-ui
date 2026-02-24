@@ -11,6 +11,8 @@ import {
     MicrophoneIcon,
     ChevronLeftIcon,
     SparklesIcon,
+    ArrowsPointingOutIcon,
+    ArrowsPointingInIcon,
 } from "@heroicons/react/24/outline";
 import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
@@ -99,6 +101,24 @@ const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
 const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
+
+function extractReferenceAnswer(text: string): string {
+    const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (lines.length === 0) return "";
+    const tagged = lines.find((line) => /^(參考答案|参考答案|結論|结论|答案)\s*[:：]/i.test(line));
+    if (tagged) {
+        return tagged.replace(/^(參考答案|参考答案|結論|结论|答案)\s*[:：]\s*/i, "").trim();
+    }
+    for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
+        const line = lines[idx];
+        if (line.startsWith("[S") || line.startsWith("【")) continue;
+        if (line.length > 2) return line;
+    }
+    return lines[lines.length - 1];
+}
 
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
@@ -231,7 +251,7 @@ const MessageBubble = ({
         ? String((content as { url?: string }).url)
         : "";
     const canSendFileToNotebook = Boolean(canUseNotebookBasic && isFileLike && rawMxc.startsWith("mxc://") && onSendFileToNotebook);
-    const hasQuickActions = canToggleTranslation || canAssistFromContext || canSendFileToNotebook;
+    const hasQuickActions = Boolean(onCopyMessage) || canToggleTranslation || canAssistFromContext || canSendFileToNotebook;
     const displayText = showTranslated
         ? hasTranslatedText
             ? (translatedText as string)
@@ -366,7 +386,7 @@ const MessageBubble = ({
                     {!isMe && (
                         <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
                     )}
-                    {!isMe && hasQuickActions && (
+                    {hasQuickActions && (
                         <div className="relative self-end mb-1">
                             <button
                                 type="button"
@@ -698,6 +718,8 @@ export const ChatRoom: React.FC = () => {
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
     const [assistSending, setAssistSending] = useState(false);
+    const [assistEditorRows, setAssistEditorRows] = useState(5);
+    const [assistEditorFullscreen, setAssistEditorFullscreen] = useState(false);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -742,6 +764,18 @@ export const ChatRoom: React.FC = () => {
         responseLang: chatReceiveLanguage,
         t,
     });
+    const assistSourceMap = useMemo(() => {
+        const map = new Map<string, { title: string; snippet: string }>();
+        (assistOutput?.sources || []).forEach((source, index) => {
+            const label = source.title || source.itemId;
+            map.set(`${source.itemId}:${index + 1}`, { title: label, snippet: source.snippet || "" });
+            if (!map.has(source.itemId)) {
+                map.set(source.itemId, { title: label, snippet: source.snippet || "" });
+            }
+        });
+        return map;
+    }, [assistOutput?.sources]);
+    const assistReferenceAnswer = useMemo(() => extractReferenceAnswer(assistDraft || assistOutput?.answer || ""), [assistDraft, assistOutput?.answer]);
     const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);
     const {
         pendingAttachmentsByRoom,
@@ -869,6 +903,8 @@ export const ChatRoom: React.FC = () => {
     useEffect(() => {
         resetAssist();
         setLastAssistTrigger(null);
+        setAssistEditorRows(5);
+        setAssistEditorFullscreen(false);
     }, [activeRoomId, resetAssist, setLastAssistTrigger]);
 
     useEffect(() => {
@@ -1391,7 +1427,7 @@ export const ChatRoom: React.FC = () => {
 
     const onDirectSendAssist = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
-        const finalText = assistDraft.trim();
+        const finalText = assistReferenceAnswer.trim() || assistDraft.trim();
         if (!finalText || assistLowConfidence) return;
         setAssistSending(true);
         try {
@@ -2122,18 +2158,45 @@ export const ChatRoom: React.FC = () => {
                 </div>
 
                 {(assistState !== "idle" || assistOutput || assistError) && (
-                    <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-900/20">
+                    <div className={`${assistEditorFullscreen
+                        ? "fixed inset-2 z-50 mb-0 overflow-y-auto rounded-xl border border-emerald-300 bg-emerald-50 p-3 shadow-2xl dark:border-emerald-800 dark:bg-slate-900"
+                        : "mb-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-900/20"
+                        }`}>
                         <div className="flex items-center justify-between">
                             <div className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
                                 {t("chat.notebook.panelTitle")}
                             </div>
-                            <button
-                                type="button"
-                                onClick={resetAssist}
-                                className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                            >
-                                {t("chat.notebook.close")}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setAssistEditorRows((prev) => Math.max(4, prev - 2))}
+                                    className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                >
+                                    -
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setAssistEditorRows((prev) => Math.min(18, prev + 2))}
+                                    className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                >
+                                    +
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setAssistEditorFullscreen((prev) => !prev)}
+                                    className="rounded border border-slate-300 p-1 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                    aria-label={assistEditorFullscreen ? "collapse ai panel" : "expand ai panel"}
+                                >
+                                    {assistEditorFullscreen ? <ArrowsPointingInIcon className="h-3.5 w-3.5" /> : <ArrowsPointingOutIcon className="h-3.5 w-3.5" />}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={resetAssist}
+                                    className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                >
+                                    {t("chat.notebook.close")}
+                                </button>
+                            </div>
                         </div>
                         {assistState === "loading" && (
                             <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("chat.notebook.generating")}</div>
@@ -2148,9 +2211,13 @@ export const ChatRoom: React.FC = () => {
                                 <textarea
                                     value={assistDraft}
                                     onChange={(event) => setAssistDraft(event.target.value)}
-                                    rows={5}
+                                    rows={assistEditorFullscreen ? 16 : assistEditorRows}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                 />
+                                <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm dark:border-emerald-900/40 dark:bg-slate-900">
+                                    <div className="mb-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">參考答案</div>
+                                    <div className="text-slate-700 dark:text-slate-100">{assistReferenceAnswer || "（尚未生成）"}</div>
+                                </div>
                                 {assistLowConfidence && (
                                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/30 dark:text-amber-200">
                                         {t("chat.notebook.lowConfidenceWarning")}
@@ -2175,7 +2242,25 @@ export const ChatRoom: React.FC = () => {
                                                 <div>{t("chat.notebook.noCitations")}</div>
                                             ) : assistOutput.citations.map((citation, idx) => (
                                                 <div key={`${citation.sourceId}-${idx}`} className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
-                                                    {(citation.title || citation.sourceId)}{citation.locator ? ` · ${citation.locator}` : ""}
+                                                    {(() => {
+                                                        const linked = assistSourceMap.get(citation.sourceId)
+                                                            || assistSourceMap.get(citation.sourceId.split(":")[0] || citation.sourceId);
+                                                        const parsedOrdinal = Number(citation.sourceId.split(":").pop() || "");
+                                                        const sourceOrdinal = Number.isFinite(parsedOrdinal) && parsedOrdinal > 0 ? parsedOrdinal : idx + 1;
+                                                        const title = citation.title || linked?.title || citation.sourceId;
+                                                        const snippet = (linked?.snippet || "").trim();
+                                                        return (
+                                                            <div className="space-y-1">
+                                                                <div className="font-semibold text-slate-700 dark:text-slate-100">
+                                                                    {`【${title}，S${sourceOrdinal}】`}
+                                                                    {snippet ? ` 明確指出「${snippet}」` : ""}
+                                                                </div>
+                                                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                                    {citation.locator ? `${citation.locator} · #${sourceOrdinal}` : `#${sourceOrdinal}`}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             ))}
                                         </div>
@@ -2194,10 +2279,10 @@ export const ChatRoom: React.FC = () => {
                                         onClick={() => {
                                             void onDirectSendAssist();
                                         }}
-                                        disabled={assistLowConfidence || assistSending || assistDraft.trim().length === 0}
+                                        disabled={assistLowConfidence || assistSending || (assistReferenceAnswer.trim() || assistDraft.trim()).length === 0}
                                         className="rounded-lg bg-[#2F5C56] px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                                     >
-                                        {assistSending ? t("chat.notebook.sending") : t("chat.notebook.directSend")}
+                                        {assistSending ? t("chat.notebook.sending") : "發送參考答案"}
                                     </button>
                                     <button
                                         type="button"
