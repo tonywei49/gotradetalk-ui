@@ -34,6 +34,7 @@ function mapItem(dto: NotebookItemDto): NotebookItem {
         id: dto.id,
         title: dto.title || "",
         contentMarkdown: dto.content_markdown || "",
+        isIndexable: dto.is_indexable !== false,
         itemType: dto.item_type,
         indexStatus: dto.index_status,
         indexError: dto.index_error,
@@ -93,7 +94,10 @@ function mapError(error: unknown): NotebookApiError {
 export const httpNotebookAdapter: NotebookAdapter = {
     async listItems(auth, query) {
         try {
-            const data = await getNotebookItems(auth, { q: query?.keyword || "" });
+            const data = await getNotebookItems(auth, {
+                q: query?.keyword || "",
+                is_indexable: query?.isIndexable,
+            });
             return (data.items ?? []).map(mapItem);
         } catch (error) {
             throw mapError(error);
@@ -104,6 +108,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
             const response = await createNotebookItem(auth, {
                 title: input.title,
                 content_markdown: input.contentMarkdown,
+                is_indexable: input.isIndexable ?? true,
                 item_type: input.itemType ?? "text",
             });
             return mapItem(response.item);
@@ -116,6 +121,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
             const response = await updateNotebookItem(auth, itemId, {
                 title: input.title,
                 content_markdown: input.contentMarkdown,
+                is_indexable: input.isIndexable,
             });
             return mapItem(response.item);
         } catch (error) {
@@ -146,6 +152,16 @@ export const httpNotebookAdapter: NotebookAdapter = {
     async removeFile(auth, itemId, fileId) {
         try {
             const response = await deleteNotebookItemFile(auth, itemId, fileId);
+            return mapItem(response.item);
+        } catch (error) {
+            throw mapError(error);
+        }
+    },
+    async retryIndex(auth, itemId) {
+        try {
+            const response = await updateNotebookItem(auth, itemId, {
+                is_indexable: true,
+            });
             return mapItem(response.item);
         } catch (error) {
             throw mapError(error);

@@ -1372,6 +1372,9 @@ export const MainLayout: React.FC = () => {
                         onSearchChange={notebookModule.setSearch}
                         items={notebookModule.items}
                         selectedItemId={notebookModule.selectedItemId}
+                        filter={notebookModule.viewFilter}
+                        onFilterChange={notebookModule.setViewFilter}
+                        counts={notebookModule.counts}
                         onSelect={(itemId) => {
                             notebookModule.setSelectedItemId(itemId);
                             setMobileView("detail");
@@ -1380,6 +1383,8 @@ export const MainLayout: React.FC = () => {
                             void notebookModule.createItem();
                             setMobileView("detail");
                         }}
+                        createIsIndexable={notebookModule.createIsIndexable}
+                        onCreateIsIndexableChange={notebookModule.setCreateIsIndexable}
                         busy={notebookModule.actionBusy}
                     />
                 ) : activeTab === "files" ? (
@@ -1957,13 +1962,24 @@ export const MainLayout: React.FC = () => {
                         selectedItem={notebookModule.selectedItem}
                         editorTitle={notebookModule.editorTitle}
                         editorContent={notebookModule.editorContent}
+                        editorIsIndexable={notebookModule.editorIsIndexable}
                         setEditorTitle={notebookModule.setEditorTitle}
                         setEditorContent={notebookModule.setEditorContent}
+                        setEditorIsIndexable={notebookModule.setEditorIsIndexable}
                         onSave={() => {
                             void notebookModule.saveItem();
                         }}
                         onDelete={() => {
                             void notebookModule.deleteItem();
+                        }}
+                        onSwitchToKnowledge={() => {
+                            void notebookModule.switchItemMode(true);
+                        }}
+                        onSwitchToNote={() => {
+                            void notebookModule.switchItemMode(false);
+                        }}
+                        onRetryIndex={() => {
+                            void notebookModule.retryIndex();
                         }}
                         onAttachFile={() => {
                             const mxc = window.prompt("Input matrix_media_mxc (mxc://server/mediaId)");
@@ -1974,7 +1990,7 @@ export const MainLayout: React.FC = () => {
                                 matrixMediaMxc: mxc,
                                 matrixMediaName: fileName,
                                 matrixMediaMime: mime,
-                                isIndexable: true,
+                                isIndexable: notebookModule.editorIsIndexable,
                             });
                         }}
                         onUploadFile={(file) => {
@@ -2011,7 +2027,7 @@ export const MainLayout: React.FC = () => {
                                         matrixMediaName: file.name,
                                         matrixMediaMime: file.type || undefined,
                                         matrixMediaSize: file.size,
-                                        isIndexable: true,
+                                        isIndexable: notebookModule.editorIsIndexable,
                                     });
                                 } catch {
                                     // attach/upload failures are reflected by notebook module action state or ignored safely

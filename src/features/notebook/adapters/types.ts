@@ -9,17 +9,20 @@ import type {
 
 export type NotebookListQuery = {
     keyword?: string;
+    isIndexable?: boolean;
 };
 
 export type CreateNotebookItemInput = {
     title: string;
     contentMarkdown: string;
+    isIndexable?: boolean;
     itemType?: "text" | "file";
 };
 
 export type UpdateNotebookItemInput = {
     title?: string;
     contentMarkdown?: string;
+    isIndexable?: boolean;
 };
 
 export type AttachNotebookFileInput = {
@@ -60,6 +63,7 @@ export type NotebookAdapter = {
     deleteItem: (auth: NotebookAuthContext, itemId: string) => Promise<void>;
     attachFile: (auth: NotebookAuthContext, itemId: string, input: AttachNotebookFileInput) => Promise<NotebookItem>;
     removeFile: (auth: NotebookAuthContext, itemId: string, fileId: string) => Promise<NotebookItem>;
+    retryIndex: (auth: NotebookAuthContext, itemId: string) => Promise<NotebookItem>;
     getIndexStatus: (
         auth: NotebookAuthContext,
         itemId: string,

@@ -1,6 +1,6 @@
 import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../types";
 import { useTranslation } from "react-i18next";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { NotebookParsedSection } from "./NotebookParsedSection";
 
 type NotebookPanelProps = {
@@ -8,10 +8,15 @@ type NotebookPanelProps = {
     selectedItem: NotebookItem | null;
     editorTitle: string;
     editorContent: string;
+    editorIsIndexable: boolean;
     setEditorTitle: (value: string) => void;
     setEditorContent: (value: string) => void;
+    setEditorIsIndexable: (value: boolean) => void;
     onSave: () => void;
     onDelete: () => void;
+    onSwitchToKnowledge: () => void;
+    onSwitchToNote: () => void;
+    onRetryIndex: () => void;
     onAttachFile: () => void;
     onUploadFile: (file: File) => void;
     onDeleteFile: (fileId: string) => void;
@@ -27,6 +32,12 @@ type NotebookPanelProps = {
 };
 
 function indexHint(item: NotebookItem): { tone: string; text: string } {
+    if (!item.isIndexable) {
+        return {
+            tone: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
+            text: "目前為記事本模式，不參與知識庫檢索。",
+        };
+    }
     if (item.indexStatus === "pending") {
         return {
             tone: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/30 dark:text-amber-200",
@@ -56,10 +67,15 @@ export function NotebookPanel({
     selectedItem,
     editorTitle,
     editorContent,
+    editorIsIndexable,
     setEditorTitle,
     setEditorContent,
+    setEditorIsIndexable,
     onSave,
     onDelete,
+    onSwitchToKnowledge,
+    onSwitchToNote,
+    onRetryIndex,
     onAttachFile,
     onUploadFile,
     onDeleteFile,
@@ -74,6 +90,7 @@ export function NotebookPanel({
     onMobileBack,
 }: NotebookPanelProps) {
     const { t } = useTranslation();
+    const [showTypeHelp, setShowTypeHelp] = useState(false);
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
     if (!enabled) {
         return (
@@ -130,6 +147,39 @@ export function NotebookPanel({
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                 </label>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-slate-500">
+                        條目類型
+                        <button
+                            type="button"
+                            onClick={() => setShowTypeHelp((prev) => !prev)}
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-500 dark:border-slate-600 dark:text-slate-300"
+                        >
+                            ?
+                        </button>
+                    </div>
+                    {showTypeHelp && (
+                        <div className="mb-2 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                            知識庫：會被聊天視窗 AI 功能檢索到的內容。記事本：僅保存，不做為知識庫檢索內容。
+                        </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setEditorIsIndexable(true)}
+                            className={`rounded px-3 py-1 text-xs font-semibold ${editorIsIndexable ? "bg-emerald-600 text-white" : "border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300"}`}
+                        >
+                            知識庫（參與檢索）
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setEditorIsIndexable(false)}
+                            className={`rounded px-3 py-1 text-xs font-semibold ${!editorIsIndexable ? "bg-slate-700 text-white" : "border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300"}`}
+                        >
+                            記事本（不參與檢索）
+                        </button>
+                    </div>
+                </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <div className="mb-2 font-semibold">Attached files ({selectedItem.files.length})</div>
                     {selectedItem.files.length === 0 ? (
@@ -174,6 +224,19 @@ export function NotebookPanel({
                 {actionError && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         {actionError}
+                    </div>
+                )}
+                {selectedItem.indexStatus === "failed" && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                        <div>{selectedItem.indexError ? `索引失敗：${selectedItem.indexError}` : "索引失敗"}</div>
+                        <button
+                            type="button"
+                            onClick={onRetryIndex}
+                            disabled={busy}
+                            className="mt-2 rounded border border-rose-300 px-2 py-1 text-xs font-semibold disabled:opacity-60 dark:border-rose-700"
+                        >
+                            重試索引
+                        </button>
                     </div>
                 )}
             </div>
@@ -222,6 +285,25 @@ export function NotebookPanel({
                     >
                         Delete
                     </button>
+                    {!selectedItem.isIndexable ? (
+                        <button
+                            type="button"
+                            onClick={onSwitchToKnowledge}
+                            disabled={busy}
+                            className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
+                        >
+                            轉為知識庫
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={onSwitchToNote}
+                            disabled={busy}
+                            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                        >
+                            轉為記事本
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

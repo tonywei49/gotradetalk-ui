@@ -398,6 +398,7 @@
                 "emptyQuery": "請先輸入問題再調用知識庫。",
                 "requestFailed": "Notebook 輔助請求失敗。",
                 "invalidMxc": "此附件沒有有效的 Matrix 媒體參照（mxc://）。",
+                "noKnowledgeBaseItems": "目前沒有可檢索的知識庫條目，請先建立「知識庫（參與檢索）」內容。",
                 "noValidHubToken": "NO_VALID_HUB_TOKEN：Notebook API 需要有效的 Hub/Supabase JWT。",
                 "invalidAuth": "INVALID_AUTH_TOKEN：Notebook 驗證 token 無效或過期，請重新登入。",
                 "forbiddenRole": "403 FORBIDDEN_ROLE：client 角色不可使用 Notebook AI。",

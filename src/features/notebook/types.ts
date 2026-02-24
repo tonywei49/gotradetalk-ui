@@ -15,6 +15,7 @@ export type NotebookItem = {
     id: string;
     title: string;
     contentMarkdown: string;
+    isIndexable: boolean;
     itemType: NotebookItemType;
     indexStatus: NotebookIndexStatus;
     indexError?: string | null;

@@ -11,6 +11,7 @@ const initialItems: NotebookItem[] = [
         id: "nb-1",
         title: "產品 FAQ",
         contentMarkdown: "客戶常見問題與回覆模板。",
+        isIndexable: true,
         itemType: "text",
         indexStatus: "success",
         indexError: null,
@@ -22,6 +23,7 @@ const initialItems: NotebookItem[] = [
         id: "nb-2",
         title: "Q4 產品目錄.pdf",
         contentMarkdown: "已上傳檔案，等待索引。",
+        isIndexable: true,
         itemType: "file",
         matrixMediaName: "Q4-catalog.pdf",
         indexStatus: "running",
@@ -126,9 +128,13 @@ export const mockNotebookAdapter: NotebookAdapter = {
         await wait();
         refreshIndexStatuses();
         const keyword = (query?.keyword || "").trim().toLowerCase();
-        const rows = keyword
-            ? db.filter((item) => item.title.toLowerCase().includes(keyword) || item.contentMarkdown.toLowerCase().includes(keyword))
-            : db;
+        const rows = db.filter((item) => {
+            if (typeof query?.isIndexable === "boolean" && item.isIndexable !== query.isIndexable) {
+                return false;
+            }
+            if (!keyword) return true;
+            return item.title.toLowerCase().includes(keyword) || item.contentMarkdown.toLowerCase().includes(keyword);
+        });
         return cloneList(rows).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
     },
     async createItem(_auth, input) {
@@ -138,8 +144,11 @@ export const mockNotebookAdapter: NotebookAdapter = {
             id: nextId(),
             title: input.title,
             contentMarkdown: input.contentMarkdown,
+            isIndexable: input.isIndexable ?? true,
             itemType: input.itemType ?? "text",
-            indexStatus: input.itemType === "file" ? "pending" : "success",
+            indexStatus: (input.isIndexable ?? true)
+                ? (input.itemType === "file" ? "pending" : "success")
+                : "skipped",
             indexError: null,
             createdAt: now,
             updatedAt: now,
@@ -159,6 +168,13 @@ export const mockNotebookAdapter: NotebookAdapter = {
             ...target,
             title: input.title ?? target.title,
             contentMarkdown: input.contentMarkdown ?? target.contentMarkdown,
+            isIndexable: input.isIndexable ?? target.isIndexable,
+            indexStatus: typeof input.isIndexable === "boolean"
+                ? (input.isIndexable ? "pending" : "skipped")
+                : target.indexStatus,
+            indexError: typeof input.isIndexable === "boolean" && !input.isIndexable
+                ? null
+                : target.indexError,
             updatedAt: new Date().toISOString(),
         };
         db = db.map((item) => (item.id === itemId ? next : item));
@@ -178,7 +194,8 @@ export const mockNotebookAdapter: NotebookAdapter = {
             ...target,
             itemType: "file",
             matrixMediaName: input.matrixMediaName || "file",
-            indexStatus: "pending",
+            isIndexable: input.isIndexable ?? target.isIndexable,
+            indexStatus: (input.isIndexable ?? target.isIndexable) ? "pending" : "skipped",
             updatedAt: new Date().toISOString(),
             files: [
                 {
@@ -207,7 +224,22 @@ export const mockNotebookAdapter: NotebookAdapter = {
             itemType: files.length > 0 ? "file" : "text",
             matrixMediaName: files[0]?.matrixMediaName || null,
             files,
-            indexStatus: files.length > 0 ? "pending" : "skipped",
+            indexStatus: target.isIndexable && files.length > 0 ? "pending" : "skipped",
+            updatedAt: new Date().toISOString(),
+        };
+        db = db.map((item) => (item.id === itemId ? next : item));
+        return cloneItem(next);
+    },
+    async retryIndex(_auth, itemId) {
+        await wait(120);
+        const target = db.find((item) => item.id === itemId);
+        if (!target) {
+            throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
+        }
+        const next: NotebookItem = {
+            ...target,
+            indexStatus: target.isIndexable ? "pending" : "skipped",
+            indexError: null,
             updatedAt: new Date().toISOString(),
         };
         db = db.map((item) => (item.id === itemId ? next : item));
@@ -265,6 +297,9 @@ export const mockNotebookAdapter: NotebookAdapter = {
     async assistQuery(auth, input) {
         await wait(450);
         ensureAssistAllowed({ userType: auth.userType, capabilities: auth.capabilities });
+        if (!db.some((item) => item.isIndexable)) {
+            throw new NotebookApiError("No knowledge base items available", 422, "INVALID_CONTEXT");
+        }
         return buildAssistResponse(input.query);
     },
     async assistFromContext(auth, input) {

@@ -10,20 +10,37 @@ type UseNotebookModuleParams = {
     enabled: boolean;
 };
 
+export type NotebookViewFilter = "all" | "knowledge" | "note";
+
 export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleParams) {
     const [search, setSearch] = useState("");
     const [items, setItems] = useState<NotebookItem[]>([]);
+    const [viewFilter, setViewFilter] = useState<NotebookViewFilter>("all");
     const [listState, setListState] = useState<NotebookListState>("loading");
     const [listError, setListError] = useState<string | null>(null);
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
     const [editorTitle, setEditorTitle] = useState("");
     const [editorContent, setEditorContent] = useState("");
+    const [editorIsIndexable, setEditorIsIndexable] = useState(true);
+    const [createIsIndexable, setCreateIsIndexable] = useState(true);
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
 
+    const visibleItems = useMemo(() => items.filter((item) => {
+        if (viewFilter === "knowledge") return item.isIndexable;
+        if (viewFilter === "note") return !item.isIndexable;
+        return true;
+    }), [items, viewFilter]);
+
+    const counts = useMemo(() => ({
+        all: items.length,
+        knowledge: items.filter((item) => item.isIndexable).length,
+        note: items.filter((item) => !item.isIndexable).length,
+    }), [items]);
+
     const selectedItem = useMemo(
-        () => items.find((item) => item.id === selectedItemId) ?? null,
-        [items, selectedItemId],
+        () => visibleItems.find((item) => item.id === selectedItemId) ?? null,
+        [visibleItems, selectedItemId],
     );
 
     const selectItem = useCallback((itemId: string) => {
@@ -31,16 +48,23 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setSelectedItemId(next?.id ?? null);
         setEditorTitle(next?.title ?? "");
         setEditorContent(next?.contentMarkdown ?? "");
+        setEditorIsIndexable(next?.isIndexable ?? true);
     }, [items]);
 
     const applySelection = useCallback((nextItems: NotebookItem[], preferredId?: string | null) => {
         const nextSelected = preferredId ?? selectedItemId;
-        const found = nextItems.find((item) => item.id === nextSelected);
-        const fallback = found ?? nextItems[0] ?? null;
+        const filtered = nextItems.filter((item) => {
+            if (viewFilter === "knowledge") return item.isIndexable;
+            if (viewFilter === "note") return !item.isIndexable;
+            return true;
+        });
+        const found = filtered.find((item) => item.id === nextSelected);
+        const fallback = found ?? filtered[0] ?? null;
         setSelectedItemId(fallback?.id ?? null);
         setEditorTitle(fallback?.title ?? "");
         setEditorContent(fallback?.contentMarkdown ?? "");
-    }, [selectedItemId]);
+        setEditorIsIndexable(fallback?.isIndexable ?? true);
+    }, [selectedItemId, viewFilter]);
 
     const loadItems = useCallback(async () => {
         if (!enabled || !auth) {
@@ -50,6 +74,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setSelectedItemId(null);
             setEditorTitle("");
             setEditorContent("");
+            setEditorIsIndexable(true);
             return;
         }
         setListError(null);
@@ -62,6 +87,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 setSelectedItemId(null);
                 setEditorTitle("");
                 setEditorContent("");
+                setEditorIsIndexable(true);
                 return;
             }
             setListState("ready");
@@ -76,6 +102,10 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     useEffect(() => {
         void loadItems();
     }, [loadItems]);
+
+    useEffect(() => {
+        applySelection(items);
+    }, [applySelection, items, viewFilter]);
 
     const parsedView = useNotebookParsedView({
         adapter,
@@ -114,6 +144,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const created = await adapter.createItem(auth, {
                 title: "Untitled note",
                 contentMarkdown: "",
+                isIndexable: createIsIndexable,
                 itemType: "text",
             });
             const next = [created, ...items];
@@ -125,7 +156,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, items]);
+    }, [adapter, applySelection, auth, createIsIndexable, items]);
 
     const saveItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -135,14 +166,19 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const updated = await adapter.updateItem(auth, selectedItemId, {
                 title: editorTitle,
                 contentMarkdown: editorContent,
+                isIndexable: editorIsIndexable,
             });
-            setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
+            setItems((prev) => {
+                const next = prev.map((item) => (item.id === selectedItemId ? updated : item));
+                applySelection(next, selectedItemId);
+                return next;
+            });
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to save note");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, editorContent, editorTitle, selectedItemId]);
+    }, [adapter, auth, editorContent, editorIsIndexable, editorTitle, selectedItemId, applySelection]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -163,6 +199,40 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         }
     }, [adapter, applySelection, auth, items, selectedItemId]);
 
+    const switchItemMode = useCallback(async (isIndexable: boolean) => {
+        if (!auth || !selectedItem) return;
+        setActionBusy(true);
+        setActionError(null);
+        try {
+            const updated = await adapter.updateItem(auth, selectedItem.id, {
+                isIndexable,
+            });
+            setItems((prev) => {
+                const next = prev.map((item) => (item.id === selectedItem.id ? updated : item));
+                applySelection(next, selectedItem.id);
+                return next;
+            });
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : "Failed to update notebook type");
+        } finally {
+            setActionBusy(false);
+        }
+    }, [adapter, applySelection, auth, selectedItem]);
+
+    const retryIndex = useCallback(async () => {
+        if (!auth || !selectedItem) return;
+        setActionBusy(true);
+        setActionError(null);
+        try {
+            const updated = await adapter.retryIndex(auth, selectedItem.id);
+            setItems((prev) => prev.map((item) => (item.id === selectedItem.id ? updated : item)));
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : "Failed to retry index");
+        } finally {
+            setActionBusy(false);
+        }
+    }, [adapter, auth, selectedItem]);
+
     const { attachFile, removeFile } = useNotebookItemFiles({
         adapter,
         auth,
@@ -175,7 +245,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     return {
         search,
         setSearch,
-        items,
+        viewFilter,
+        setViewFilter,
+        counts,
+        items: visibleItems,
+        allItems: items,
         listState,
         listError,
         selectedItem,
@@ -185,12 +259,18 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setEditorTitle,
         editorContent,
         setEditorContent,
+        editorIsIndexable,
+        setEditorIsIndexable,
+        createIsIndexable,
+        setCreateIsIndexable,
         actionBusy,
         actionError,
         loadItems,
         createItem,
         saveItem,
         deleteItem,
+        switchItemMode,
+        retryIndex,
         attachFile,
         removeFile,
         ...parsedView,

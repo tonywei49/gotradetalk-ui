@@ -36,6 +36,7 @@ export type NotebookItemDto = {
     id: string;
     title: string | null;
     content_markdown: string | null;
+    is_indexable?: boolean | null;
     item_type: "text" | "file";
     index_status: "pending" | "running" | "success" | "failed" | "skipped";
     index_error?: string | null;
@@ -260,10 +261,11 @@ async function deleteRequest<T>(auth: NotebookApiAuth, path: string): Promise<T>
 
 export async function getNotebookItems(
     auth: NotebookApiAuth,
-    input?: { q?: string; item_type?: "text" | "file"; status?: "active" | "deleted"; cursor?: string; limit?: number },
+    input?: { q?: string; is_indexable?: boolean; item_type?: "text" | "file"; status?: "active" | "deleted"; cursor?: string; limit?: number },
 ): Promise<GetNotebookItemsResponse> {
     const query: Record<string, string> = {};
     if (input?.q) query.q = input.q;
+    if (typeof input?.is_indexable === "boolean") query.is_indexable = String(input.is_indexable);
     if (input?.item_type) query.item_type = input.item_type;
     if (input?.status) query.status = input.status;
     if (input?.cursor) query.cursor = input.cursor;

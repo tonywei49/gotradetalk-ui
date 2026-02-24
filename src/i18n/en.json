@@ -398,6 +398,7 @@
                 "emptyQuery": "Please enter a question before using knowledge base.",
                 "requestFailed": "Notebook assist request failed.",
                 "invalidMxc": "This attachment has no valid Matrix media reference (mxc://).",
+                "noKnowledgeBaseItems": "No knowledge-base items available. Create at least one item in Knowledge Base mode first.",
                 "noValidHubToken": "NO_VALID_HUB_TOKEN: Notebook API requires a valid Hub/Supabase JWT.",
                 "invalidAuth": "INVALID_AUTH_TOKEN: Notebook auth token is invalid or expired, please re-login.",
                 "forbiddenRole": "403 FORBIDDEN_ROLE: client role cannot use Notebook AI.",

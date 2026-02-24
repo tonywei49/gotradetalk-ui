@@ -33,6 +33,12 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
         setAssistError(null);
     }, []);
 
+    const ensureKnowledgeBaseAvailable = useCallback(async (): Promise<boolean> => {
+        if (!params.notebookAuth) return false;
+        const list = await params.adapter.listItems(params.notebookAuth, {});
+        return list.some((item) => item.isIndexable);
+    }, [params.adapter, params.notebookAuth]);
+
     const runAssistQuery = useCallback(async (query: string): Promise<void> => {
         if (!params.canUseNotebookAssist || !params.notebookAuth || !params.activeRoomId) return;
         const trimmed = query.trim();
@@ -44,6 +50,12 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
         setAssistState("loading");
         setAssistError(null);
         try {
+            const hasKnowledgeBase = await ensureKnowledgeBaseAvailable();
+            if (!hasKnowledgeBase) {
+                setAssistState("error");
+                setAssistError(params.t("chat.notebook.errors.noKnowledgeBaseItems"));
+                return;
+            }
             const result = await params.adapter.assistQuery(params.notebookAuth, {
                 roomId: params.activeRoomId,
                 query: trimmed,
@@ -55,13 +67,19 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
             setAssistState("error");
             setAssistError(mapNotebookErrorToMessage(error, params.t));
         }
-    }, [params, applyAssistOutput]);
+    }, [params, applyAssistOutput, ensureKnowledgeBaseAvailable]);
 
     const runAssistFromContext = useCallback(async (anchorEventId: string): Promise<void> => {
         if (!params.canUseNotebookAssist || !params.notebookAuth || !params.activeRoomId) return;
         setAssistState("loading");
         setAssistError(null);
         try {
+            const hasKnowledgeBase = await ensureKnowledgeBaseAvailable();
+            if (!hasKnowledgeBase) {
+                setAssistState("error");
+                setAssistError(params.t("chat.notebook.errors.noKnowledgeBaseItems"));
+                return;
+            }
             const result = await params.adapter.assistFromContext(params.notebookAuth, {
                 roomId: params.activeRoomId,
                 anchorEventId,
@@ -74,7 +92,7 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
             setAssistState("error");
             setAssistError(mapNotebookErrorToMessage(error, params.t));
         }
-    }, [params, applyAssistOutput]);
+    }, [params, applyAssistOutput, ensureKnowledgeBaseAvailable]);
 
     const resetAssist = useCallback(() => {
         setAssistState("idle");

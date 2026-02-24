@@ -1343,6 +1343,7 @@ export const ChatRoom: React.FC = () => {
             const created = await notebookAdapter.createItem(notebookAuth, {
                 title: fileName,
                 contentMarkdown: t("chat.notebook.importedFromChat"),
+                isIndexable: true,
                 itemType: "file",
             });
             await notebookAdapter.attachFile(notebookAuth, created.id, {
