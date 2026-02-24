@@ -6,11 +6,13 @@ type MessageActionsMenuProps = {
     showTranslated?: boolean;
     canAssistFromContext: boolean;
     canSendFileToNotebook: boolean;
+    canRecallMessage?: boolean;
     sendFileToNotebookBusy?: boolean;
     onToggleTranslation: () => void;
     onCopyMessage: () => void;
     onAssistFromContext?: () => void;
     onSendFileToNotebook?: () => void;
+    onRecallMessage?: () => void;
 };
 
 export function MessageActionsMenu({
@@ -19,11 +21,13 @@ export function MessageActionsMenu({
     showTranslated,
     canAssistFromContext,
     canSendFileToNotebook,
+    canRecallMessage,
     sendFileToNotebookBusy,
     onToggleTranslation,
     onCopyMessage,
     onAssistFromContext,
     onSendFileToNotebook,
+    onRecallMessage,
 }: MessageActionsMenuProps) {
     const { t } = useTranslation();
     return (
@@ -68,6 +72,15 @@ export function MessageActionsMenu({
                     {sendFileToNotebookBusy
                         ? t("chat.notebook.sendingToKnowledgeBase")
                         : t("chat.notebook.sendFileToKnowledgeBase")}
+                </button>
+            )}
+            {canRecallMessage && (
+                <button
+                    type="button"
+                    className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
+                    onClick={onRecallMessage}
+                >
+                    {t("chat.recallMessage")}
                 </button>
             )}
         </div>

@@ -95,6 +95,7 @@ type MessageBubbleProps = {
     onSendFileToNotebook?: (event: MatrixEvent) => void;
     sendFileToNotebookBusy?: boolean;
     onCopyMessage?: (event: MatrixEvent, displayText: string) => void;
+    onRecallMessage?: (event: MatrixEvent) => void;
 };
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -103,21 +104,44 @@ const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
 
 function extractReferenceAnswer(text: string): string {
+    const cleanup = (line: string): string => line
+        .replace(/^\s*[>\-\*\d\.\)\(]+\s*/, "")
+        .replace(/\*\*/g, "")
+        .replace(/`+/g, "")
+        .replace(/\[[sS]\d+\]/g, "")
+        .trim();
+    const stripSourcePreface = (line: string): string => line
+        .replace(/^(根據|根据)(提供的)?來源[：:\s]*/i, "")
+        .replace(/^(根據|根据)[^，,。]{0,24}[，,:：]\s*/i, "")
+        .trim();
+    const normalizeAnswerLine = (line: string): string => line
+        .replace(/(，|,)?(?:該|该)?來源[^，。；;]*(提到|指出|顯示|显示)[^，。；;]*/g, "")
+        .replace(/(，|,)?(?:來自|来自)[^，。；;]*(來源|source)[^，。；;]*/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .replace(/[，,]\s*$/, "")
+        .trim();
+    const isSeparator = (line: string): boolean => /^[\-\_=#*~\s]{3,}$/.test(line);
+    const isSourceOnly = (line: string): boolean => /^\s*(\[[sS]\d+\]|【[^】]*S\d+[^】]*】)\s*$/.test(line);
     const lines = text
         .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
+        .map((line) => stripSourcePreface(cleanup(line)))
+        .filter((line) => Boolean(line) && !isSeparator(line) && !isSourceOnly(line));
     if (lines.length === 0) return "";
     const tagged = lines.find((line) => /^(參考答案|参考答案|結論|结论|答案)\s*[:：]/i.test(line));
     if (tagged) {
-        return tagged.replace(/^(參考答案|参考答案|結論|结论|答案)\s*[:：]\s*/i, "").trim();
+        const normalized = normalizeAnswerLine(
+            tagged.replace(/^(參考答案|参考答案|結論|结论|答案)\s*[:：]\s*/i, "").trim(),
+        );
+        if (normalized && !isSeparator(normalized)) return normalized;
     }
+    const conclusionLine = lines.find((line) => /因此|所以|結論|结论|建議|建议/.test(line));
+    if (conclusionLine) return normalizeAnswerLine(conclusionLine);
     for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
         const line = lines[idx];
         if (line.startsWith("[S") || line.startsWith("【")) continue;
-        if (line.length > 2) return line;
+        if (line.length > 2) return normalizeAnswerLine(line);
     }
-    return lines[lines.length - 1];
+    return normalizeAnswerLine(lines[lines.length - 1]);
 }
 
 type DraftMediaRegistryEntry = {
@@ -209,6 +233,7 @@ const MessageBubble = ({
     onSendFileToNotebook,
     sendFileToNotebookBusy,
     onCopyMessage,
+    onRecallMessage,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const [showFileMenu, setShowFileMenu] = useState(false);
@@ -251,7 +276,15 @@ const MessageBubble = ({
         ? String((content as { url?: string }).url)
         : "";
     const canSendFileToNotebook = Boolean(canUseNotebookBasic && isFileLike && rawMxc.startsWith("mxc://") && onSendFileToNotebook);
-    const hasQuickActions = Boolean(onCopyMessage) || canToggleTranslation || canAssistFromContext || canSendFileToNotebook;
+    const canRecallMessage = Boolean(
+        onRecallMessage &&
+        isMe &&
+        isText &&
+        event.getType() === EventType.RoomMessage &&
+        content?.msgtype !== MsgType.Notice &&
+        event.getId(),
+    );
+    const hasQuickActions = Boolean(onCopyMessage) || canToggleTranslation || canAssistFromContext || canSendFileToNotebook || canRecallMessage;
     const displayText = showTranslated
         ? hasTranslatedText
             ? (translatedText as string)
@@ -420,6 +453,11 @@ const MessageBubble = ({
                                     onSendFileToNotebook={() => {
                                         setShowQuickActionMenu(false);
                                         onSendFileToNotebook?.(event);
+                                    }}
+                                    canRecallMessage={canRecallMessage}
+                                    onRecallMessage={() => {
+                                        setShowQuickActionMenu(false);
+                                        onRecallMessage?.(event);
                                     }}
                                 />
                             )}
@@ -1495,6 +1533,26 @@ export const ChatRoom: React.FC = () => {
         }
     };
 
+    const onRecallMessageEvent = async (event: MatrixEvent): Promise<void> => {
+        const eventId = event.getId();
+        if (!matrixClient || !activeRoomId || !eventId || !userId) return;
+        const content = event.getContent() as { msgtype?: string } | undefined;
+        const isTextMessage = event.getType() === EventType.RoomMessage
+            && content?.msgtype !== MsgType.Notice
+            && content?.msgtype !== MsgType.File
+            && content?.msgtype !== MsgType.Image
+            && content?.msgtype !== MsgType.Video
+            && content?.msgtype !== MsgType.Audio;
+        if (event.getSender() !== userId || !isTextMessage) return;
+        try {
+            await redactMessageEvent(matrixClient, activeRoomId, eventId);
+            pushToast("success", t("chat.recallMessageSuccess"));
+        } catch (error) {
+            const message = mapActionErrorToMessage(t, error, "chat.recallMessageFailed");
+            pushToast("error", message || t("chat.recallMessageFailed"));
+        }
+    };
+
     const otherMember = room
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
@@ -2061,6 +2119,9 @@ export const ChatRoom: React.FC = () => {
                                 onCopyMessage={(targetEvent, text) => {
                                     void copyMessageContent(targetEvent, text);
                                 }}
+                                onRecallMessage={(targetEvent) => {
+                                    void onRecallMessageEvent(targetEvent);
+                                }}
                                 onToggleTranslation={() => {
                                     const key = getMessageEventKey(event);
                                     const nextValue = !(translationView[key] ?? false);
@@ -2247,13 +2308,13 @@ export const ChatRoom: React.FC = () => {
                                                             || assistSourceMap.get(citation.sourceId.split(":")[0] || citation.sourceId);
                                                         const parsedOrdinal = Number(citation.sourceId.split(":").pop() || "");
                                                         const sourceOrdinal = Number.isFinite(parsedOrdinal) && parsedOrdinal > 0 ? parsedOrdinal : idx + 1;
-                                                        const title = citation.title || linked?.title || citation.sourceId;
+                                                        const title = linked?.title || citation.title || citation.sourceId;
                                                         const snippet = (linked?.snippet || "").trim();
                                                         return (
                                                             <div className="space-y-1">
                                                                 <div className="font-semibold text-slate-700 dark:text-slate-100">
                                                                     {`【${title}，S${sourceOrdinal}】`}
-                                                                    {snippet ? ` 明確指出「${snippet}」` : ""}
+                                                                    {snippet ? ` ${snippet}` : ""}
                                                                 </div>
                                                                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
                                                                     {citation.locator ? `${citation.locator} · #${sourceOrdinal}` : `#${sourceOrdinal}`}
