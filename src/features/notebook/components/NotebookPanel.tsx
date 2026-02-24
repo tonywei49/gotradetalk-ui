@@ -1,6 +1,6 @@
 import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../types";
 import { useTranslation } from "react-i18next";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { NotebookParsedSection } from "./NotebookParsedSection";
 
 type NotebookPanelProps = {
@@ -8,11 +8,13 @@ type NotebookPanelProps = {
     selectedItem: NotebookItem | null;
     editorTitle: string;
     editorContent: string;
-    editorIsIndexable: boolean;
+    isEditing: boolean;
     setEditorTitle: (value: string) => void;
     setEditorContent: (value: string) => void;
-    setEditorIsIndexable: (value: boolean) => void;
-    onSave: () => void;
+    onStartEdit: () => void;
+    onCancelEdit: () => void;
+    onSaveAsKnowledge: () => void;
+    onSaveAsNote: () => void;
     onDelete: () => void;
     onSwitchToKnowledge: () => void;
     onSwitchToNote: () => void;
@@ -67,11 +69,13 @@ export function NotebookPanel({
     selectedItem,
     editorTitle,
     editorContent,
-    editorIsIndexable,
+    isEditing,
     setEditorTitle,
     setEditorContent,
-    setEditorIsIndexable,
-    onSave,
+    onStartEdit,
+    onCancelEdit,
+    onSaveAsKnowledge,
+    onSaveAsNote,
     onDelete,
     onSwitchToKnowledge,
     onSwitchToNote,
@@ -90,7 +94,6 @@ export function NotebookPanel({
     onMobileBack,
 }: NotebookPanelProps) {
     const { t } = useTranslation();
-    const [showTypeHelp, setShowTypeHelp] = useState(false);
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
     if (!enabled) {
         return (
@@ -134,52 +137,21 @@ export function NotebookPanel({
                     <input
                         type="text"
                         value={editorTitle}
+                        readOnly={!isEditing}
                         onChange={(event) => setEditorTitle(event.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
                     />
                 </label>
                 <label className="block">
                     <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Content</div>
                     <textarea
                         value={editorContent}
+                        readOnly={!isEditing}
                         onChange={(event) => setEditorContent(event.target.value)}
                         rows={12}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
                     />
                 </label>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-slate-500">
-                        條目類型
-                        <button
-                            type="button"
-                            onClick={() => setShowTypeHelp((prev) => !prev)}
-                            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-500 dark:border-slate-600 dark:text-slate-300"
-                        >
-                            ?
-                        </button>
-                    </div>
-                    {showTypeHelp && (
-                        <div className="mb-2 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300">
-                            知識庫：會被聊天視窗 AI 功能檢索到的內容。記事本：僅保存，不做為知識庫檢索內容。
-                        </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setEditorIsIndexable(true)}
-                            className={`rounded px-3 py-1 text-xs font-semibold ${editorIsIndexable ? "bg-emerald-600 text-white" : "border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300"}`}
-                        >
-                            知識庫（參與檢索）
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setEditorIsIndexable(false)}
-                            className={`rounded px-3 py-1 text-xs font-semibold ${!editorIsIndexable ? "bg-slate-700 text-white" : "border border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300"}`}
-                        >
-                            記事本（不參與檢索）
-                        </button>
-                    </div>
-                </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <div className="mb-2 font-semibold">Attached files ({selectedItem.files.length})</div>
                     {selectedItem.files.length === 0 ? (
@@ -199,14 +171,16 @@ export function NotebookPanel({
                                         >
                                             Download
                                         </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => onDeleteFile(file.id)}
-                                            disabled={busy}
-                                            className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
-                                        >
-                                            Remove
-                                        </button>
+                                        {isEditing && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onDeleteFile(file.id)}
+                                                disabled={busy}
+                                                className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -253,56 +227,87 @@ export function NotebookPanel({
                     }}
                 />
                 <div className="flex flex-wrap gap-2">
-                    <button
-                        type="button"
-                        onClick={onSave}
-                        disabled={busy}
-                        className="rounded-lg bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        Save
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => notebookUploadInputRef.current?.click()}
-                        disabled={busy}
-                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                    >
-                        Upload file
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onAttachFile}
-                        disabled={busy}
-                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                    >
-                        Link file
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onDelete}
-                        disabled={busy}
-                        className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
-                    >
-                        Delete
-                    </button>
-                    {!selectedItem.isIndexable ? (
-                        <button
-                            type="button"
-                            onClick={onSwitchToKnowledge}
-                            disabled={busy}
-                            className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
-                        >
-                            轉為知識庫
-                        </button>
+                    {isEditing ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={onSaveAsKnowledge}
+                                disabled={busy}
+                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                保存為知識庫
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onSaveAsNote}
+                                disabled={busy}
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                            >
+                                保存為記事本
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => notebookUploadInputRef.current?.click()}
+                                disabled={busy}
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                            >
+                                Upload file
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onAttachFile}
+                                disabled={busy}
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                            >
+                                Link file
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onDelete}
+                                disabled={busy}
+                                className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                            >
+                                Delete
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onCancelEdit}
+                                disabled={busy}
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300"
+                            >
+                                取消編輯
+                            </button>
+                        </>
                     ) : (
-                        <button
-                            type="button"
-                            onClick={onSwitchToNote}
-                            disabled={busy}
-                            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                        >
-                            轉為記事本
-                        </button>
+                        <>
+                            <button
+                                type="button"
+                                onClick={onStartEdit}
+                                disabled={busy}
+                                className="rounded-lg bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                編輯
+                            </button>
+                            {!selectedItem.isIndexable ? (
+                                <button
+                                    type="button"
+                                    onClick={onSwitchToKnowledge}
+                                    disabled={busy}
+                                    className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
+                                >
+                                    轉為知識庫
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={onSwitchToNote}
+                                    disabled={busy}
+                                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                                >
+                                    轉為記事本
+                                </button>
+                            )}
+                        </>
                     )}
                 </div>
             </div>

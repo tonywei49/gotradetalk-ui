@@ -1,6 +1,5 @@
 import type { NotebookItem, NotebookListState } from "../types";
 import type { NotebookViewFilter } from "../useNotebookModule";
-import { useState } from "react";
 
 type NotebookSidebarProps = {
     listState: NotebookListState;
@@ -11,8 +10,6 @@ type NotebookSidebarProps = {
     selectedItemId: string | null;
     onSelect: (itemId: string) => void;
     onCreate: () => void;
-    createIsIndexable: boolean;
-    onCreateIsIndexableChange: (value: boolean) => void;
     filter: NotebookViewFilter;
     onFilterChange: (value: NotebookViewFilter) => void;
     counts: { all: number; knowledge: number; note: number };
@@ -28,9 +25,7 @@ function indexStateChip(status: NotebookItem["indexStatus"]): string {
 }
 
 function typeChip(isIndexable: boolean): string {
-    return isIndexable
-        ? "bg-emerald-100 text-emerald-700"
-        : "bg-slate-100 text-slate-600";
+    return isIndexable ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600";
 }
 
 export function NotebookSidebar({
@@ -42,14 +37,11 @@ export function NotebookSidebar({
     selectedItemId,
     onSelect,
     onCreate,
-    createIsIndexable,
-    onCreateIsIndexableChange,
     filter,
     onFilterChange,
     counts,
     busy,
 }: NotebookSidebarProps) {
-    const [showCreateTypeHelp, setShowCreateTypeHelp] = useState(false);
     return (
         <>
             <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
@@ -94,39 +86,6 @@ export function NotebookSidebar({
                     placeholder="Search notebook"
                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 />
-                <div className="mt-2 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] dark:border-slate-700 dark:bg-slate-800">
-                    <div className="flex items-center gap-1">
-                        <span className="text-slate-500 dark:text-slate-300">新增類型</span>
-                        <button
-                            type="button"
-                            onClick={() => setShowCreateTypeHelp((prev) => !prev)}
-                            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-500 dark:border-slate-600 dark:text-slate-300"
-                        >
-                            ?
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => onCreateIsIndexableChange(true)}
-                            className={`rounded px-2 py-1 ${createIsIndexable ? "bg-emerald-600 text-white" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}
-                        >
-                            知識庫
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => onCreateIsIndexableChange(false)}
-                            className={`rounded px-2 py-1 ${!createIsIndexable ? "bg-slate-700 text-white" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}
-                        >
-                            記事本
-                        </button>
-                    </div>
-                </div>
-                {showCreateTypeHelp && (
-                    <div className="mt-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300">
-                        知識庫：會被聊天視窗 AI 功能檢索到的內容。記事本：僅保存，不做為知識庫檢索內容。
-                    </div>
-                )}
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {listState === "loading" && (

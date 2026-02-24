@@ -1383,8 +1383,6 @@ export const MainLayout: React.FC = () => {
                             void notebookModule.createItem();
                             setMobileView("detail");
                         }}
-                        createIsIndexable={notebookModule.createIsIndexable}
-                        onCreateIsIndexableChange={notebookModule.setCreateIsIndexable}
                         busy={notebookModule.actionBusy}
                     />
                 ) : activeTab === "files" ? (
@@ -1962,12 +1960,20 @@ export const MainLayout: React.FC = () => {
                         selectedItem={notebookModule.selectedItem}
                         editorTitle={notebookModule.editorTitle}
                         editorContent={notebookModule.editorContent}
-                        editorIsIndexable={notebookModule.editorIsIndexable}
+                        isEditing={notebookModule.isEditing}
                         setEditorTitle={notebookModule.setEditorTitle}
                         setEditorContent={notebookModule.setEditorContent}
-                        setEditorIsIndexable={notebookModule.setEditorIsIndexable}
-                        onSave={() => {
-                            void notebookModule.saveItem();
+                        onStartEdit={() => {
+                            notebookModule.startEdit();
+                        }}
+                        onCancelEdit={() => {
+                            notebookModule.cancelEdit();
+                        }}
+                        onSaveAsKnowledge={() => {
+                            void notebookModule.saveItemAs(true);
+                        }}
+                        onSaveAsNote={() => {
+                            void notebookModule.saveItemAs(false);
                         }}
                         onDelete={() => {
                             void notebookModule.deleteItem();
@@ -1990,7 +1996,7 @@ export const MainLayout: React.FC = () => {
                                 matrixMediaMxc: mxc,
                                 matrixMediaName: fileName,
                                 matrixMediaMime: mime,
-                                isIndexable: notebookModule.editorIsIndexable,
+                                isIndexable: false,
                             });
                         }}
                         onUploadFile={(file) => {
@@ -2027,7 +2033,7 @@ export const MainLayout: React.FC = () => {
                                         matrixMediaName: file.name,
                                         matrixMediaMime: file.type || undefined,
                                         matrixMediaSize: file.size,
-                                        isIndexable: notebookModule.editorIsIndexable,
+                                        isIndexable: false,
                                     });
                                 } catch {
                                     // attach/upload failures are reflected by notebook module action state or ignored safely

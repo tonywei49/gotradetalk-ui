@@ -21,8 +21,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
     const [editorTitle, setEditorTitle] = useState("");
     const [editorContent, setEditorContent] = useState("");
-    const [editorIsIndexable, setEditorIsIndexable] = useState(true);
-    const [createIsIndexable, setCreateIsIndexable] = useState(true);
+    const [isEditing, setIsEditing] = useState(false);
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
 
@@ -39,8 +38,8 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     }), [items]);
 
     const selectedItem = useMemo(
-        () => visibleItems.find((item) => item.id === selectedItemId) ?? null,
-        [visibleItems, selectedItemId],
+        () => items.find((item) => item.id === selectedItemId) ?? null,
+        [items, selectedItemId],
     );
 
     const selectItem = useCallback((itemId: string) => {
@@ -48,22 +47,22 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setSelectedItemId(next?.id ?? null);
         setEditorTitle(next?.title ?? "");
         setEditorContent(next?.contentMarkdown ?? "");
-        setEditorIsIndexable(next?.isIndexable ?? true);
+        setIsEditing(false);
     }, [items]);
 
     const applySelection = useCallback((nextItems: NotebookItem[], preferredId?: string | null) => {
         const nextSelected = preferredId ?? selectedItemId;
+        const foundInAll = nextItems.find((item) => item.id === nextSelected);
         const filtered = nextItems.filter((item) => {
             if (viewFilter === "knowledge") return item.isIndexable;
             if (viewFilter === "note") return !item.isIndexable;
             return true;
         });
-        const found = filtered.find((item) => item.id === nextSelected);
-        const fallback = found ?? filtered[0] ?? null;
+        const fallback = foundInAll ?? filtered[0] ?? nextItems[0] ?? null;
         setSelectedItemId(fallback?.id ?? null);
         setEditorTitle(fallback?.title ?? "");
         setEditorContent(fallback?.contentMarkdown ?? "");
-        setEditorIsIndexable(fallback?.isIndexable ?? true);
+        setIsEditing(false);
     }, [selectedItemId, viewFilter]);
 
     const loadItems = useCallback(async () => {
@@ -74,7 +73,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setSelectedItemId(null);
             setEditorTitle("");
             setEditorContent("");
-            setEditorIsIndexable(true);
+            setIsEditing(false);
             return;
         }
         setListError(null);
@@ -87,7 +86,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 setSelectedItemId(null);
                 setEditorTitle("");
                 setEditorContent("");
-                setEditorIsIndexable(true);
+                setIsEditing(false);
                 return;
             }
             setListState("ready");
@@ -105,7 +104,9 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
 
     useEffect(() => {
         applySelection(items);
-    }, [applySelection, items, viewFilter]);
+        // only react to filter switch; avoid interrupting edit mode on polling refresh
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewFilter]);
 
     const parsedView = useNotebookParsedView({
         adapter,
@@ -144,21 +145,24 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const created = await adapter.createItem(auth, {
                 title: "Untitled note",
                 contentMarkdown: "",
-                isIndexable: createIsIndexable,
+                isIndexable: false,
                 itemType: "text",
             });
             const next = [created, ...items];
             setItems(next);
             setListState("ready");
-            applySelection(next, created.id);
+            setSelectedItemId(created.id);
+            setEditorTitle(created.title);
+            setEditorContent(created.contentMarkdown);
+            setIsEditing(true);
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to create note");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, createIsIndexable, items]);
+    }, [adapter, auth, items]);
 
-    const saveItem = useCallback(async () => {
+    const saveItemAs = useCallback(async (isIndexable: boolean) => {
         if (!auth || !selectedItemId) return;
         setActionBusy(true);
         setActionError(null);
@@ -166,19 +170,18 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const updated = await adapter.updateItem(auth, selectedItemId, {
                 title: editorTitle,
                 contentMarkdown: editorContent,
-                isIndexable: editorIsIndexable,
+                isIndexable,
             });
-            setItems((prev) => {
-                const next = prev.map((item) => (item.id === selectedItemId ? updated : item));
-                applySelection(next, selectedItemId);
-                return next;
-            });
+            setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
+            setEditorTitle(updated.title);
+            setEditorContent(updated.contentMarkdown);
+            setIsEditing(false);
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to save note");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, editorContent, editorIsIndexable, editorTitle, selectedItemId, applySelection]);
+    }, [adapter, auth, editorContent, editorTitle, selectedItemId]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -207,17 +210,16 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const updated = await adapter.updateItem(auth, selectedItem.id, {
                 isIndexable,
             });
-            setItems((prev) => {
-                const next = prev.map((item) => (item.id === selectedItem.id ? updated : item));
-                applySelection(next, selectedItem.id);
-                return next;
-            });
+            setItems((prev) => prev.map((item) => (item.id === selectedItem.id ? updated : item)));
+            setEditorTitle(updated.title);
+            setEditorContent(updated.contentMarkdown);
+            setIsEditing(false);
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to update notebook type");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, selectedItem]);
+    }, [adapter, auth, selectedItem]);
 
     const retryIndex = useCallback(async () => {
         if (!auth || !selectedItem) return;
@@ -242,6 +244,22 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setItems,
     });
 
+    const startEdit = useCallback(() => {
+        if (!selectedItem) return;
+        setEditorTitle(selectedItem.title);
+        setEditorContent(selectedItem.contentMarkdown);
+        setActionError(null);
+        setIsEditing(true);
+    }, [selectedItem]);
+
+    const cancelEdit = useCallback(() => {
+        if (!selectedItem) return;
+        setEditorTitle(selectedItem.title);
+        setEditorContent(selectedItem.contentMarkdown);
+        setActionError(null);
+        setIsEditing(false);
+    }, [selectedItem]);
+
     return {
         search,
         setSearch,
@@ -259,18 +277,17 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setEditorTitle,
         editorContent,
         setEditorContent,
-        editorIsIndexable,
-        setEditorIsIndexable,
-        createIsIndexable,
-        setCreateIsIndexable,
+        isEditing,
         actionBusy,
         actionError,
         loadItems,
         createItem,
-        saveItem,
+        saveItemAs,
         deleteItem,
         switchItemMode,
         retryIndex,
+        startEdit,
+        cancelEdit,
         attachFile,
         removeFile,
         ...parsedView,
