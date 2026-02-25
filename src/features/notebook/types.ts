@@ -19,6 +19,7 @@ export type NotebookItem = {
     itemType: NotebookItemType;
     indexStatus: NotebookIndexStatus;
     indexError?: string | null;
+    latestIndexJobId?: string | null;
     updatedAt: string;
     createdAt: string;
     matrixMediaName?: string | null;

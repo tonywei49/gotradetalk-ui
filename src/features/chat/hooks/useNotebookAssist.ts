@@ -35,8 +35,8 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
 
     const ensureKnowledgeBaseAvailable = useCallback(async (): Promise<boolean> => {
         if (!params.notebookAuth) return false;
-        const list = await params.adapter.listItems(params.notebookAuth, {});
-        return list.some((item) => item.isIndexable);
+        const list = await params.adapter.listItems(params.notebookAuth, { filter: "knowledge" });
+        return list.length > 0;
     }, [params.adapter, params.notebookAuth]);
 
     const runAssistQuery = useCallback(async (query: string): Promise<void> => {

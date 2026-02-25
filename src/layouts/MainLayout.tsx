@@ -46,7 +46,14 @@ import {
     resolveNotebookCapabilities,
     useNotebookModule,
 } from "../features/notebook";
-import { getNotebookCapabilities, NotebookServiceError } from "../services/notebookApi";
+import {
+    getCompanyNotebookAiSettings,
+    getCompanyTranslationSettings,
+    getNotebookCapabilities,
+    type CompanyNotebookAiSettingsResponse,
+    type CompanyTranslationSettingsResponse,
+    NotebookServiceError,
+} from "../services/notebookApi";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
 
 // Placeholder for RoomList and ChatArea to be implemented later
@@ -231,7 +238,13 @@ export const MainLayout: React.FC = () => {
     const previewDragOriginRef = useRef({ x: 0, y: 0 });
     const [jumpToEventId, setJumpToEventId] = useState<string | null>(null);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
-    const [settingsDetail, setSettingsDetail] = useState<"none" | "chat-language" | "translation-default">("none");
+    const [settingsDetail, setSettingsDetail] = useState<
+        "none" | "chat-language" | "translation-default" | "notebook-policy" | "translation-policy"
+    >("none");
+    const [notebookPolicy, setNotebookPolicy] = useState<CompanyNotebookAiSettingsResponse | null>(null);
+    const [translationPolicy, setTranslationPolicy] = useState<CompanyTranslationSettingsResponse | null>(null);
+    const [policyLoading, setPolicyLoading] = useState(false);
+    const [policyError, setPolicyError] = useState<string | null>(null);
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
@@ -519,8 +532,9 @@ export const MainLayout: React.FC = () => {
                 setMeProfile(null);
                 setNotebookApiBaseUrlOverride(null);
             } finally {
-                if (!isActive) return;
-                setHubMeResolved(true);
+                if (isActive) {
+                    setHubMeResolved(true);
+                }
             }
         })();
         return () => {
@@ -578,9 +592,32 @@ export const MainLayout: React.FC = () => {
             if (!alive) return;
             setCapabilityValues([]);
             setCapabilityLoaded(true);
-            if (error instanceof NotebookServiceError && error.status === 401) {
-                setCapabilityError(t("layout.notebook.authFailed"));
-                return;
+            if (error instanceof NotebookServiceError) {
+                if (
+                    error.code === "NO_VALID_HUB_TOKEN" ||
+                    error.code === "INVALID_AUTH_TOKEN" ||
+                    error.code === "INVALID_TOKEN_TYPE" ||
+                    error.status === 401
+                ) {
+                    setCapabilityError(t("layout.notebook.authFailed"));
+                    return;
+                }
+                if (error.code === "CAPABILITY_DISABLED") {
+                    setCapabilityError(t("layout.notebook.capabilityDisabled"));
+                    return;
+                }
+                if (error.code === "CAPABILITY_EXPIRED") {
+                    setCapabilityError(t("layout.notebook.capabilityExpired"));
+                    return;
+                }
+                if (error.code === "QUOTA_EXCEEDED") {
+                    setCapabilityError(t("layout.notebook.quotaExceeded"));
+                    return;
+                }
+                if (error.status >= 500) {
+                    setCapabilityError(t("layout.notebook.systemBusy"));
+                    return;
+                }
             }
             setCapabilityError(t("layout.notebook.capabilityLoadFailed"));
         });
@@ -588,6 +625,50 @@ export const MainLayout: React.FC = () => {
             alive = false;
         };
     }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason, userType, t]);
+
+    useEffect(() => {
+        if (activeTab !== "settings") return;
+        if (!notebookAuth || !notebookApiBaseUrlOverride) {
+            setNotebookPolicy(null);
+            setTranslationPolicy(null);
+            return;
+        }
+        let alive = true;
+        setPolicyLoading(true);
+        setPolicyError(null);
+        void Promise.all([
+            getCompanyNotebookAiSettings(notebookAuth),
+            getCompanyTranslationSettings(notebookAuth),
+        ]).then(([nb, tr]) => {
+            if (!alive) return;
+            setNotebookPolicy(nb);
+            setTranslationPolicy(tr);
+            setPolicyError(null);
+        }).catch((error) => {
+            if (!alive) return;
+            if (error instanceof NotebookServiceError) {
+                if (error.code === "NO_VALID_HUB_TOKEN" || error.code === "INVALID_AUTH_TOKEN" || error.code === "INVALID_TOKEN_TYPE") {
+                    setPolicyError(t("layout.notebook.authFailed"));
+                } else if (error.code === "CAPABILITY_DISABLED") {
+                    setPolicyError(t("layout.notebook.capabilityDisabled"));
+                } else if (error.code === "CAPABILITY_EXPIRED") {
+                    setPolicyError(t("layout.notebook.capabilityExpired"));
+                } else if (error.code === "QUOTA_EXCEEDED") {
+                    setPolicyError(t("layout.notebook.quotaExceeded"));
+                } else {
+                    setPolicyError(t("layout.notebook.systemBusy"));
+                }
+            } else {
+                setPolicyError(t("layout.notebook.systemBusy"));
+            }
+        }).finally(() => {
+            if (!alive) return;
+            setPolicyLoading(false);
+        });
+        return () => {
+            alive = false;
+        };
+    }, [activeTab, notebookAuth, notebookApiBaseUrlOverride, t]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -659,12 +740,12 @@ export const MainLayout: React.FC = () => {
         const onTimelineChanged = (): void => setFileLibraryTick((prev) => prev + 1);
         matrixClient.on(RoomEvent.Timeline, onTimelineChanged);
         matrixClient.on(RoomEvent.TimelineReset, onTimelineChanged);
-        matrixClient.on("Room" as any, onTimelineChanged);
+        matrixClient.on(ClientEvent.Room, onTimelineChanged);
         matrixClient.on(RoomEvent.MyMembership, onTimelineChanged);
         return () => {
             matrixClient.off(RoomEvent.Timeline, onTimelineChanged);
             matrixClient.off(RoomEvent.TimelineReset, onTimelineChanged);
-            matrixClient.off("Room" as any, onTimelineChanged);
+            matrixClient.off(ClientEvent.Room, onTimelineChanged);
             matrixClient.off(RoomEvent.MyMembership, onTimelineChanged);
         };
     }, [matrixClient]);
@@ -849,6 +930,7 @@ export const MainLayout: React.FC = () => {
 
     const myFileLibrary = useMemo<FileLibraryItem[]>(() => {
         if (!matrixClient || !matrixCredentials?.user_id) return [];
+        void fileLibraryTick;
         const me = matrixCredentials.user_id;
         const rows: FileLibraryItem[] = [];
         matrixClient.getRooms().forEach((room) => {
@@ -1335,6 +1417,26 @@ export const MainLayout: React.FC = () => {
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
                                 {t("layout.translationDefaultContent")}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSettingsDetail("notebook-policy");
+                                    setMobileView("detail");
+                                }}
+                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                {t("layout.notebook.platformNotebookPolicy")}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSettingsDetail("translation-policy");
+                                    setMobileView("detail");
+                                }}
+                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                {t("layout.notebook.platformTranslationPolicy")}
                             </button>
                         </div>
                     </>
@@ -2167,6 +2269,96 @@ export const MainLayout: React.FC = () => {
                                             {t("layout.translationDefaultOriginal")}
                                         </button>
                                     </div>
+                                </div>
+                            </>
+                        ) : activeTab === "settings" && (settingsDetail === "notebook-policy" || settingsDetail === "translation-policy") ? (
+                            <>
+                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
+                                    {t("layout.selectItem")}
+                                </div>
+                                <div className="px-6 pb-6">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileView("list")}
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                            aria-label={t("layout.backToList")}
+                                        >
+                                            &lt;
+                                        </button>
+                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                            {settingsDetail === "notebook-policy"
+                                                ? t("layout.notebook.platformNotebookPolicy")
+                                                : t("layout.notebook.platformTranslationPolicy")}
+                                        </div>
+                                    </div>
+                                    {policyLoading ? (
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                                            {t("common.loading")}
+                                        </div>
+                                    ) : policyError ? (
+                                        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                                            {policyError}
+                                        </div>
+                                    ) : (
+                                        (() => {
+                                            const target = settingsDetail === "notebook-policy" ? notebookPolicy : translationPolicy;
+                                            const enabled = settingsDetail === "notebook-policy"
+                                                ? Boolean(notebookPolicy?.notebook_ai_enabled)
+                                                : Boolean(translationPolicy?.translation_enabled);
+                                            const expireAt = settingsDetail === "notebook-policy"
+                                                ? notebookPolicy?.notebook_ai_expire_at
+                                                : translationPolicy?.translation_expire_at;
+                                            const monthlyQuota = settingsDetail === "notebook-policy"
+                                                ? notebookPolicy?.notebook_ai_quota_monthly_requests
+                                                : translationPolicy?.translation_quota_monthly_requests;
+                                            const monthlyUsed = settingsDetail === "notebook-policy"
+                                                ? notebookPolicy?.notebook_ai_quota_used_monthly_requests
+                                                : translationPolicy?.translation_quota_used_monthly_requests;
+
+                                            return (
+                                                <div className="space-y-3">
+                                                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                                                        <div className="text-xs uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                                                            {t("layout.notebook.managedByPlatform")}
+                                                        </div>
+                                                        <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                            {target?.managed_by_platform ? t("common.confirm") : t("common.cancel")}
+                                                        </div>
+                                                        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                                            {t("layout.notebook.managedByPlatformHint")}
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.statusLabel")}</div>
+                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                                {enabled ? t("layout.notebook.enabled") : t("layout.notebook.disabled")}
+                                                            </div>
+                                                        </div>
+                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.expireAtLabel")}</div>
+                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                                {expireAt ? new Date(expireAt).toLocaleString() : t("common.placeholder")}
+                                                            </div>
+                                                        </div>
+                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.quotaMonthlyLabel")}</div>
+                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                                {typeof monthlyQuota === "number" ? monthlyQuota.toLocaleString() : t("common.placeholder")}
+                                                            </div>
+                                                        </div>
+                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.quotaUsedLabel")}</div>
+                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                                {typeof monthlyUsed === "number" ? monthlyUsed.toLocaleString() : t("common.placeholder")}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()
+                                    )}
                                 </div>
                             </>
                         ) : (

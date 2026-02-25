@@ -226,7 +226,21 @@
         "notebook": {
             "authFailed": "Notebook authentication failed. Please sign in again (invalid or mismatched token type).",
             "serviceMissing": "Notebook service is not configured. Please sign in again and retry.",
+            "capabilityDisabled": "Notebook is disabled by platform policy.",
+            "capabilityExpired": "Notebook policy has expired. Please contact the platform admin.",
+            "quotaExceeded": "Notebook monthly quota has been exceeded.",
+            "systemBusy": "System is busy. Please try again later.",
             "capabilityLoadFailed": "Failed to load notebook capabilities. Please try again later.",
+            "platformNotebookPolicy": "Notebook AI (Platform Managed)",
+            "platformTranslationPolicy": "Translation (Platform Managed)",
+            "managedByPlatform": "Managed by platform",
+            "managedByPlatformHint": "This setting is centrally managed by platform admin. Company side is read-only.",
+            "statusLabel": "Status",
+            "enabled": "Enabled",
+            "disabled": "Disabled",
+            "expireAtLabel": "Expire at",
+            "quotaMonthlyLabel": "Monthly quota",
+            "quotaUsedLabel": "Monthly usage",
             "retry": "Retry",
             "relogin": "Re-login"
         },
@@ -400,12 +414,17 @@
             "errors": {
                 "emptyQuery": "Please enter a question before using knowledge base.",
                 "requestFailed": "Notebook assist request failed.",
+                "timeout": "Notebook request timed out. Please retry later.",
+                "systemBusy": "System is busy. Please try again later.",
                 "invalidMxc": "This attachment has no valid Matrix media reference (mxc://).",
                 "noKnowledgeBaseItems": "No knowledge-base items available. Create at least one item in Knowledge Base mode first.",
                 "noValidHubToken": "NO_VALID_HUB_TOKEN: Notebook API requires a valid Hub/Supabase JWT.",
                 "invalidAuth": "INVALID_AUTH_TOKEN: Notebook auth token is invalid or expired, please re-login.",
-                "forbiddenRole": "403 FORBIDDEN_ROLE: client role cannot use Notebook AI.",
+                "forbiddenRole": "403 FORBIDDEN_ROLE: current role is not allowed to use this feature.",
                 "capabilityDisabled": "403 CAPABILITY_DISABLED: Notebook AI is disabled by company setting.",
+                "capabilityExpired": "403 CAPABILITY_EXPIRED: feature has expired.",
+                "quotaExceeded": "429 QUOTA_EXCEEDED: monthly quota exceeded.",
+                "managedByPlatform": "403 MANAGED_BY_PLATFORM: this setting is managed by platform.",
                 "invalidContext": "422 INVALID_CONTEXT: invalid anchor event or context window."
             }
         }

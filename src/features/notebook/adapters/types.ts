@@ -9,6 +9,7 @@ import type {
 
 export type NotebookListQuery = {
     keyword?: string;
+    filter?: "all" | "knowledge" | "note";
     isIndexable?: boolean;
 };
 

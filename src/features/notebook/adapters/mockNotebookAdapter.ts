@@ -129,6 +129,8 @@ export const mockNotebookAdapter: NotebookAdapter = {
         refreshIndexStatuses();
         const keyword = (query?.keyword || "").trim().toLowerCase();
         const rows = db.filter((item) => {
+            if (query?.filter === "knowledge" && !item.isIndexable) return false;
+            if (query?.filter === "note" && item.isIndexable) return false;
             if (typeof query?.isIndexable === "boolean" && item.isIndexable !== query.isIndexable) {
                 return false;
             }

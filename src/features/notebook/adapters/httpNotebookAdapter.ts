@@ -9,6 +9,8 @@ import {
     getNotebookItemParsedPreview,
     getNotebookItemChunks,
     getNotebookItems,
+    reindexNotebookItem,
+    retryNotebookIndexJob,
     type NotebookAssistSourceDto,
     type NotebookItemFileDto,
     type NotebookItemDto,
@@ -38,6 +40,7 @@ function mapItem(dto: NotebookItemDto): NotebookItem {
         itemType: dto.item_type,
         indexStatus: dto.index_status,
         indexError: dto.index_error,
+        latestIndexJobId: dto.latest_index_job_id || dto.last_index_job_id || dto.index_job_id || null,
         updatedAt: dto.updated_at,
         createdAt: dto.created_at,
         matrixMediaName: dto.matrix_media_name,
@@ -96,6 +99,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
         try {
             const data = await getNotebookItems(auth, {
                 q: query?.keyword || "",
+                filter: query?.filter,
                 is_indexable: query?.isIndexable,
             });
             return (data.items ?? []).map(mapItem);
@@ -159,10 +163,17 @@ export const httpNotebookAdapter: NotebookAdapter = {
     },
     async retryIndex(auth, itemId) {
         try {
-            const response = await updateNotebookItem(auth, itemId, {
-                is_indexable: true,
-            });
-            return mapItem(response.item);
+            const list = await getNotebookItems(auth, { filter: "all", limit: 200 });
+            const current = (list.items ?? []).find((item) => item.id === itemId);
+            const latestJobId = current?.latest_index_job_id || current?.last_index_job_id || current?.index_job_id || null;
+
+            if (latestJobId) {
+                const retried = await retryNotebookIndexJob(auth, latestJobId);
+                if (retried.item) return mapItem(retried.item);
+            }
+
+            const reindexed = await reindexNotebookItem(auth, itemId);
+            return mapItem(reindexed.item);
         } catch (error) {
             throw mapError(error);
         }

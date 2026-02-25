@@ -226,7 +226,21 @@
         "notebook": {
             "authFailed": "Notebook 驗證失敗，請重新登入（token 無效或類型不符）",
             "serviceMissing": "Notebook 服務設定缺失，請重新登入後重試。",
+            "capabilityDisabled": "Notebook 功能未啟用，請聯繫平台管理員。",
+            "capabilityExpired": "Notebook 功能已到期，請聯繫平台管理員續期。",
+            "quotaExceeded": "Notebook 本月配額已用盡，請聯繫平台管理員。",
+            "systemBusy": "系統繁忙，請稍後重試。",
             "capabilityLoadFailed": "Notebook 能力讀取失敗，請稍後重試。",
+            "platformNotebookPolicy": "Notebook AI（平台托管）",
+            "platformTranslationPolicy": "翻譯（平台托管）",
+            "managedByPlatform": "平台統一管理",
+            "managedByPlatformHint": "此設定由平台管理員統一維護，company 端僅可查看。",
+            "statusLabel": "狀態",
+            "enabled": "啟用",
+            "disabled": "停用",
+            "expireAtLabel": "截止時間",
+            "quotaMonthlyLabel": "本月配額",
+            "quotaUsedLabel": "本月用量",
             "retry": "重試",
             "relogin": "重新登入"
         },
@@ -400,12 +414,17 @@
             "errors": {
                 "emptyQuery": "請先輸入問題再調用知識庫。",
                 "requestFailed": "Notebook 輔助請求失敗。",
+                "timeout": "Notebook 請求超時，請稍後重試。",
+                "systemBusy": "系統繁忙，請稍後重試。",
                 "invalidMxc": "此附件沒有有效的 Matrix 媒體參照（mxc://）。",
                 "noKnowledgeBaseItems": "目前沒有可檢索的知識庫條目，請先建立「知識庫（參與檢索）」內容。",
                 "noValidHubToken": "NO_VALID_HUB_TOKEN：Notebook API 需要有效的 Hub/Supabase JWT。",
                 "invalidAuth": "INVALID_AUTH_TOKEN：Notebook 驗證 token 無效或過期，請重新登入。",
-                "forbiddenRole": "403 FORBIDDEN_ROLE：client 角色不可使用 Notebook AI。",
+                "forbiddenRole": "403 FORBIDDEN_ROLE：目前角色不可使用此功能。",
                 "capabilityDisabled": "403 CAPABILITY_DISABLED：公司設定已停用 Notebook AI。",
+                "capabilityExpired": "403 CAPABILITY_EXPIRED：功能已到期。",
+                "quotaExceeded": "429 QUOTA_EXCEEDED：本月配額已達上限。",
+                "managedByPlatform": "403 MANAGED_BY_PLATFORM：此設定由平台統一管理。",
                 "invalidContext": "422 INVALID_CONTEXT：錨點事件或上下文範圍無效。"
             }
         }

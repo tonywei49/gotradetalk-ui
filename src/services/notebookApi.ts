@@ -1,12 +1,17 @@
 import { notebookApiBaseUrl } from "../config";
 
 export type NotebookApiErrorCode =
+    | "MANAGED_BY_PLATFORM"
     | "CAPABILITY_DISABLED"
+    | "CAPABILITY_EXPIRED"
+    | "QUOTA_EXCEEDED"
     | "INVALID_CONTEXT"
     | "FORBIDDEN_ROLE"
     | "VALIDATION_ERROR"
     | "UNAUTHORIZED"
     | "INVALID_AUTH_TOKEN"
+    | "INVALID_TOKEN_TYPE"
+    | "TIMEOUT"
     | "NOT_FOUND"
     | "NO_VALID_HUB_TOKEN"
     | "UNKNOWN";
@@ -40,6 +45,9 @@ export type NotebookItemDto = {
     item_type: "text" | "file";
     index_status: "pending" | "running" | "success" | "failed" | "skipped";
     index_error?: string | null;
+    latest_index_job_id?: string | null;
+    last_index_job_id?: string | null;
+    index_job_id?: string | null;
     updated_at: string;
     created_at: string;
     matrix_media_name?: string | null;
@@ -78,6 +86,22 @@ export type NotebookCapabilitiesResponse = {
     company_id: string;
     role: "staff" | "client" | "admin";
     capabilities: string[];
+};
+
+export type CompanyNotebookAiSettingsResponse = {
+    managed_by_platform: boolean;
+    notebook_ai_enabled: boolean;
+    notebook_ai_expire_at: string | null;
+    notebook_ai_quota_monthly_requests: number | null;
+    notebook_ai_quota_used_monthly_requests: number | null;
+};
+
+export type CompanyTranslationSettingsResponse = {
+    managed_by_platform: boolean;
+    translation_enabled: boolean;
+    translation_expire_at: string | null;
+    translation_quota_monthly_requests: number | null;
+    translation_quota_used_monthly_requests: number | null;
 };
 
 export type AssistFromContextRequest = {
@@ -163,15 +187,22 @@ function buildUrl(path: string, auth: NotebookApiAuth, query?: Record<string, st
 
 function toErrorCode(input: string | undefined, status: number): NotebookApiErrorCode {
     const code = (input || "").toUpperCase();
-    if (code === "CAPABILITY_DISABLED") return "CAPABILITY_DISABLED";
-    if (code === "INVALID_CONTEXT") return "INVALID_CONTEXT";
-    if (code === "FORBIDDEN_ROLE") return "FORBIDDEN_ROLE";
-    if (code === "VALIDATION_ERROR") return "VALIDATION_ERROR";
-    if (code === "UNAUTHORIZED") return "UNAUTHORIZED";
-    if (code === "INVALID_AUTH_TOKEN") return "INVALID_AUTH_TOKEN";
-    if (code === "NOT_FOUND") return "NOT_FOUND";
-    if (code === "NO_VALID_HUB_TOKEN") return "NO_VALID_HUB_TOKEN";
+    if (code.includes("MANAGED_BY_PLATFORM")) return "MANAGED_BY_PLATFORM";
+    if (code.includes("CAPABILITY_DISABLED")) return "CAPABILITY_DISABLED";
+    if (code.includes("CAPABILITY_EXPIRED")) return "CAPABILITY_EXPIRED";
+    if (code.includes("QUOTA_EXCEEDED")) return "QUOTA_EXCEEDED";
+    if (code.includes("INVALID_CONTEXT")) return "INVALID_CONTEXT";
+    if (code.includes("FORBIDDEN_ROLE")) return "FORBIDDEN_ROLE";
+    if (code.includes("VALIDATION_ERROR")) return "VALIDATION_ERROR";
+    if (code.includes("UNAUTHORIZED")) return "UNAUTHORIZED";
+    if (code.includes("INVALID_AUTH_TOKEN")) return "INVALID_AUTH_TOKEN";
+    if (code.includes("INVALID_TOKEN_TYPE")) return "INVALID_TOKEN_TYPE";
+    if (code.includes("NOT_FOUND")) return "NOT_FOUND";
+    if (code.includes("NO_VALID_HUB_TOKEN")) return "NO_VALID_HUB_TOKEN";
+    if (status === 408 || status === 504) return "TIMEOUT";
+    if (status === 429) return "QUOTA_EXCEEDED";
     if (status === 401) return "INVALID_AUTH_TOKEN";
+    if (status === 422) return "INVALID_CONTEXT";
     if (status === 403) return "FORBIDDEN_ROLE";
     return "UNKNOWN";
 }
@@ -202,7 +233,7 @@ async function readError(response: Response): Promise<NotebookServiceError> {
         payload = null;
     }
     const message = payload?.message || payload?.error || response.statusText || "Request failed";
-    const code = toErrorCode(payload?.code, response.status);
+    const code = toErrorCode(payload?.code || payload?.message || payload?.error, response.status);
     return new NotebookServiceError(message, response.status, code);
 }
 
@@ -261,10 +292,19 @@ async function deleteRequest<T>(auth: NotebookApiAuth, path: string): Promise<T>
 
 export async function getNotebookItems(
     auth: NotebookApiAuth,
-    input?: { q?: string; is_indexable?: boolean; item_type?: "text" | "file"; status?: "active" | "deleted"; cursor?: string; limit?: number },
+    input?: {
+        q?: string;
+        filter?: "all" | "knowledge" | "note";
+        is_indexable?: boolean;
+        item_type?: "text" | "file";
+        status?: "active" | "deleted";
+        cursor?: string;
+        limit?: number;
+    },
 ): Promise<GetNotebookItemsResponse> {
     const query: Record<string, string> = {};
     if (input?.q) query.q = input.q;
+    if (input?.filter) query.filter = input.filter;
     if (typeof input?.is_indexable === "boolean") query.is_indexable = String(input.is_indexable);
     if (input?.item_type) query.item_type = input.item_type;
     if (input?.status) query.status = input.status;
@@ -275,6 +315,14 @@ export async function getNotebookItems(
 
 export async function getNotebookCapabilities(auth: NotebookApiAuth): Promise<NotebookCapabilitiesResponse> {
     return getJson<NotebookCapabilitiesResponse>(auth, "/me/capabilities");
+}
+
+export async function getCompanyNotebookAiSettings(auth: NotebookApiAuth): Promise<CompanyNotebookAiSettingsResponse> {
+    return getJson<CompanyNotebookAiSettingsResponse>(auth, "/company/settings/notebook-ai");
+}
+
+export async function getCompanyTranslationSettings(auth: NotebookApiAuth): Promise<CompanyTranslationSettingsResponse> {
+    return getJson<CompanyTranslationSettingsResponse>(auth, "/company/settings/translation");
 }
 
 export async function createNotebookItem(
@@ -331,6 +379,34 @@ export async function getNotebookItemIndexStatus(
     return getJson<{ item_id: string; index_status: NotebookItemDto["index_status"]; index_error?: string | null }>(
         auth,
         `/notebook/items/${encodeURIComponent(itemId)}/index-status`,
+    );
+}
+
+export async function reindexNotebookItem(
+    auth: NotebookApiAuth,
+    itemId: string,
+): Promise<{ item: NotebookItemDto; index_job?: { id: string } | null }> {
+    return postJson<{ item: NotebookItemDto; index_job?: { id: string } | null }>(
+        auth,
+        `/notebook/items/${encodeURIComponent(itemId)}/reindex`,
+        {},
+    );
+}
+
+export async function retryNotebookIndexJob(
+    auth: NotebookApiAuth,
+    jobId: string,
+): Promise<{
+    job: { id: string; status?: string };
+    item?: NotebookItemDto;
+    item_id?: string;
+    index_status?: NotebookItemDto["index_status"];
+    index_error?: string | null;
+}> {
+    return postJson(
+        auth,
+        `/notebook/index/jobs/${encodeURIComponent(jobId)}/retry`,
+        {},
     );
 }
 

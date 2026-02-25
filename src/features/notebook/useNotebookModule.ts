@@ -16,6 +16,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [search, setSearch] = useState("");
     const [items, setItems] = useState<NotebookItem[]>([]);
     const [viewFilter, setViewFilter] = useState<NotebookViewFilter>("all");
+    const [counts, setCounts] = useState({ all: 0, knowledge: 0, note: 0 });
     const [listState, setListState] = useState<NotebookListState>("loading");
     const [listError, setListError] = useState<string | null>(null);
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -24,18 +25,6 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [isEditing, setIsEditing] = useState(false);
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
-
-    const visibleItems = useMemo(() => items.filter((item) => {
-        if (viewFilter === "knowledge") return item.isIndexable;
-        if (viewFilter === "note") return !item.isIndexable;
-        return true;
-    }), [items, viewFilter]);
-
-    const counts = useMemo(() => ({
-        all: items.length,
-        knowledge: items.filter((item) => item.isIndexable).length,
-        note: items.filter((item) => !item.isIndexable).length,
-    }), [items]);
 
     const selectedItem = useMemo(
         () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -53,17 +42,12 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const applySelection = useCallback((nextItems: NotebookItem[], preferredId?: string | null) => {
         const nextSelected = preferredId ?? selectedItemId;
         const foundInAll = nextItems.find((item) => item.id === nextSelected);
-        const filtered = nextItems.filter((item) => {
-            if (viewFilter === "knowledge") return item.isIndexable;
-            if (viewFilter === "note") return !item.isIndexable;
-            return true;
-        });
-        const fallback = foundInAll ?? filtered[0] ?? nextItems[0] ?? null;
+        const fallback = foundInAll ?? nextItems[0] ?? null;
         setSelectedItemId(fallback?.id ?? null);
         setEditorTitle(fallback?.title ?? "");
         setEditorContent(fallback?.contentMarkdown ?? "");
         setIsEditing(false);
-    }, [selectedItemId, viewFilter]);
+    }, [selectedItemId]);
 
     const loadItems = useCallback(async () => {
         if (!enabled || !auth) {
@@ -79,7 +63,17 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setListError(null);
         setListState("loading");
         try {
-            const rows = await adapter.listItems(auth, { keyword: search });
+            const [rows, allRows, knowledgeRows, noteRows] = await Promise.all([
+                adapter.listItems(auth, { keyword: search, filter: viewFilter }),
+                adapter.listItems(auth, { keyword: search, filter: "all" }),
+                adapter.listItems(auth, { keyword: search, filter: "knowledge" }),
+                adapter.listItems(auth, { keyword: search, filter: "note" }),
+            ]);
+            setCounts({
+                all: allRows.length,
+                knowledge: knowledgeRows.length,
+                note: noteRows.length,
+            });
             setItems(rows);
             if (rows.length === 0) {
                 setListState("empty");
@@ -93,10 +87,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             applySelection(rows);
         } catch (error) {
             setItems([]);
+            setCounts({ all: 0, knowledge: 0, note: 0 });
             setListState("error");
             setListError(error instanceof Error ? error.message : "Failed to load notebook items");
         }
-    }, [adapter, applySelection, auth, enabled, search]);
+    }, [adapter, applySelection, auth, enabled, search, viewFilter]);
 
     useEffect(() => {
         void loadItems();
@@ -266,7 +261,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         viewFilter,
         setViewFilter,
         counts,
-        items: visibleItems,
+        items,
         allItems: items,
         listState,
         listError,
