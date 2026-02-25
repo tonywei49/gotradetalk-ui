@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NotebookAdapter } from "./adapters/types";
 import type { NotebookAuthContext, NotebookItem, NotebookListState } from "./types";
 import { useNotebookParsedView } from "./hooks/useNotebookParsedView";
@@ -14,6 +14,7 @@ export type NotebookViewFilter = "all" | "knowledge" | "note";
 
 export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleParams) {
     const [search, setSearch] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
     const [items, setItems] = useState<NotebookItem[]>([]);
     const [viewFilter, setViewFilter] = useState<NotebookViewFilter>("all");
     const [counts, setCounts] = useState({ all: 0, knowledge: 0, note: 0 });
@@ -25,6 +26,20 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [isEditing, setIsEditing] = useState(false);
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
+    const loadSeqRef = useRef(0);
+    const countsSeqRef = useRef(0);
+    const listCacheRef = useRef<Map<string, NotebookItem[]>>(new Map());
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedSearch(search.trim());
+        }, 250);
+        return () => window.clearTimeout(timer);
+    }, [search]);
+
+    useEffect(() => {
+        listCacheRef.current.clear();
+    }, [auth?.matrixUserId, auth?.apiBaseUrl, enabled]);
 
     const selectedItem = useMemo(
         () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -49,6 +64,29 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setIsEditing(false);
     }, [selectedItemId]);
 
+    const refreshCounts = useCallback(async (keyword: string) => {
+        if (!enabled || !auth) {
+            setCounts({ all: 0, knowledge: 0, note: 0 });
+            return;
+        }
+        const seq = ++countsSeqRef.current;
+        try {
+            const [allRows, knowledgeRows, noteRows] = await Promise.all([
+                adapter.listItems(auth, { keyword, filter: "all" }),
+                adapter.listItems(auth, { keyword, filter: "knowledge" }),
+                adapter.listItems(auth, { keyword, filter: "note" }),
+            ]);
+            if (seq !== countsSeqRef.current) return;
+            setCounts({
+                all: allRows.length,
+                knowledge: knowledgeRows.length,
+                note: noteRows.length,
+            });
+        } catch {
+            // keep existing counts on background refresh failure
+        }
+    }, [adapter, auth, enabled]);
+
     const loadItems = useCallback(async () => {
         if (!enabled || !auth) {
             setItems([]);
@@ -60,20 +98,30 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setIsEditing(false);
             return;
         }
+        const cacheKey = `${viewFilter}:${debouncedSearch}`;
+        const cachedRows = listCacheRef.current.get(cacheKey) ?? null;
+        if (cachedRows) {
+            setItems(cachedRows);
+            if (cachedRows.length === 0) {
+                setListState("empty");
+                setSelectedItemId(null);
+                setEditorTitle("");
+                setEditorContent("");
+                setIsEditing(false);
+            } else {
+                setListState("ready");
+                applySelection(cachedRows);
+            }
+        }
+        const seq = ++loadSeqRef.current;
         setListError(null);
-        setListState("loading");
+        if (!cachedRows) {
+            setListState("loading");
+        }
         try {
-            const [rows, allRows, knowledgeRows, noteRows] = await Promise.all([
-                adapter.listItems(auth, { keyword: search, filter: viewFilter }),
-                adapter.listItems(auth, { keyword: search, filter: "all" }),
-                adapter.listItems(auth, { keyword: search, filter: "knowledge" }),
-                adapter.listItems(auth, { keyword: search, filter: "note" }),
-            ]);
-            setCounts({
-                all: allRows.length,
-                knowledge: knowledgeRows.length,
-                note: noteRows.length,
-            });
+            const rows = await adapter.listItems(auth, { keyword: debouncedSearch, filter: viewFilter });
+            if (seq !== loadSeqRef.current) return;
+            listCacheRef.current.set(cacheKey, rows);
             setItems(rows);
             if (rows.length === 0) {
                 setListState("empty");
@@ -86,16 +134,24 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setListState("ready");
             applySelection(rows);
         } catch (error) {
-            setItems([]);
-            setCounts({ all: 0, knowledge: 0, note: 0 });
-            setListState("error");
+            if (seq !== loadSeqRef.current) return;
+            if (!cachedRows) {
+                setItems([]);
+                setCounts({ all: 0, knowledge: 0, note: 0 });
+                setListState("error");
+            }
             setListError(error instanceof Error ? error.message : "Failed to load notebook items");
         }
-    }, [adapter, applySelection, auth, enabled, search, viewFilter]);
+    }, [adapter, applySelection, auth, debouncedSearch, enabled, viewFilter]);
 
     useEffect(() => {
         void loadItems();
     }, [loadItems]);
+
+    useEffect(() => {
+        if (!enabled || !auth) return;
+        void refreshCounts(debouncedSearch);
+    }, [auth, debouncedSearch, enabled, refreshCounts]);
 
     useEffect(() => {
         applySelection(items);
