@@ -193,7 +193,9 @@ export function useMessageTranslation(params: Params) {
                 if (
                     message.includes("NOT_SUBSCRIBED") ||
                     message.includes("QUOTA_EXCEEDED") ||
-                    message.includes("CLIENT_TRANSLATION_DISABLED")
+                    message.includes("CLIENT_TRANSLATION_DISABLED") ||
+                    message.includes("TRANSLATION_NOT_ALLOWED") ||
+                    message.includes("403")
                 ) {
                     setTranslationBlocked(true);
                 }

@@ -31,6 +31,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [loadingMore, setLoadingMore] = useState(false);
     const loadSeqRef = useRef(0);
     const countsSeqRef = useRef(0);
+    const draftLockRef = useRef(false);
     const listCacheRef = useRef<Map<string, { items: NotebookItem[]; nextCursor: string | null }>>(new Map());
 
     useEffect(() => {
@@ -39,6 +40,10 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         }, 250);
         return () => window.clearTimeout(timer);
     }, [search]);
+
+    useEffect(() => {
+        draftLockRef.current = isCreatingDraft;
+    }, [isCreatingDraft]);
 
     useEffect(() => {
         listCacheRef.current.clear();
@@ -62,6 +67,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     }, [items]);
 
     const applySelection = useCallback((nextItems: NotebookItem[], preferredId?: string | null) => {
+        if (draftLockRef.current) return;
         const nextSelected = preferredId ?? selectedItemId;
         const foundInAll = nextItems.find((item) => item.id === nextSelected);
         const fallback = foundInAll ?? nextItems[0] ?? null;
@@ -117,6 +123,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         if (cached) {
             setItems(cached.items);
             setNextCursor(cached.nextCursor);
+            if (draftLockRef.current) return;
             if (cached.items.length === 0) {
                 setListState("empty");
                 setSelectedItemId(null);
@@ -144,6 +151,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             listCacheRef.current.set(cacheKey, { items: rows, nextCursor: page.nextCursor });
             setItems(rows);
             setNextCursor(page.nextCursor);
+            if (draftLockRef.current) return;
             if (rows.length === 0) {
                 setListState("empty");
                 setSelectedItemId(null);
@@ -238,6 +246,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
 
     const createItem = useCallback(async () => {
         setActionError(null);
+        loadSeqRef.current += 1;
         setIsCreatingDraft(true);
         setSelectedItemId(null);
         setEditorTitle("");
