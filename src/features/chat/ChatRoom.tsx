@@ -800,7 +800,7 @@ export const ChatRoom: React.FC = () => {
         capabilities: notebookCapabilities,
         apiBaseUrl: notebookApiBaseUrl,
     }), [hubSession, matrixCredentials, userType, notebookCapabilities, notebookApiBaseUrl]);
-    const canUseNotebookAssist = Boolean(notebookAssistEnabled && userType !== "client" && notebookAuth);
+    const canUseNotebookAssist = Boolean(notebookAssistEnabled && notebookAuth);
     const canUseNotebookBasic = Boolean(notebookAuth && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
     const {
         assistState,

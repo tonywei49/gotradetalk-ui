@@ -67,9 +67,6 @@ function cloneList(items: NotebookItem[]): NotebookItem[] {
 }
 
 function ensureAssistAllowed(params: { userType?: string | null; capabilities?: string[] }): void {
-    if (params.userType === "client") {
-        throw new NotebookApiError("Client role cannot use notebook assist", 403, "FORBIDDEN_ROLE");
-    }
     const caps = params.capabilities ?? [];
     if (!caps.includes("NOTEBOOK_LLM_ASSIST")) {
         throw new NotebookApiError("Notebook assist capability disabled", 403, "CAPABILITY_DISABLED");
