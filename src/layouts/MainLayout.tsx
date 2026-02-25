@@ -2065,6 +2065,7 @@ export const MainLayout: React.FC = () => {
                     <NotebookPanel
                         enabled={notebookCapabilityState.canUseNotebookBasic}
                         selectedItem={notebookModule.selectedItem}
+                        isCreatingDraft={notebookModule.isCreatingDraft}
                         editorTitle={notebookModule.editorTitle}
                         editorContent={notebookModule.editorContent}
                         isEditing={notebookModule.isEditing}

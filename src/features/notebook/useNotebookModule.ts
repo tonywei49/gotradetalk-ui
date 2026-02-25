@@ -24,6 +24,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [editorTitle, setEditorTitle] = useState("");
     const [editorContent, setEditorContent] = useState("");
     const [isEditing, setIsEditing] = useState(false);
+    const [isCreatingDraft, setIsCreatingDraft] = useState(false);
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         listCacheRef.current.clear();
         setNextCursor(null);
         setLoadingMore(false);
+        setIsCreatingDraft(false);
     }, [auth?.matrixUserId, auth?.apiBaseUrl, enabled]);
 
     const selectedItem = useMemo(
@@ -52,6 +54,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
 
     const selectItem = useCallback((itemId: string) => {
         const next = items.find((item) => item.id === itemId) ?? null;
+        setIsCreatingDraft(false);
         setSelectedItemId(next?.id ?? null);
         setEditorTitle(next?.title ?? "");
         setEditorContent(next?.contentMarkdown ?? "");
@@ -102,6 +105,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setListError(null);
             setNextCursor(null);
             setLoadingMore(false);
+            setIsCreatingDraft(false);
             setSelectedItemId(null);
             setEditorTitle("");
             setEditorContent("");
@@ -233,41 +237,43 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     }, [adapter, auth, enabled, items]);
 
     const createItem = useCallback(async () => {
+        setActionError(null);
+        setIsCreatingDraft(true);
+        setSelectedItemId(null);
+        setEditorTitle("");
+        setEditorContent("");
+        setIsEditing(true);
+        setListState((prev) => (prev === "loading" ? "ready" : prev));
+    }, []);
+
+    const saveItemAs = useCallback(async (isIndexable: boolean) => {
         if (!auth) return;
         setActionBusy(true);
         setActionError(null);
         try {
-            const created = await adapter.createItem(auth, {
-                title: "Untitled note",
-                contentMarkdown: "",
-                isIndexable: false,
-                itemType: "text",
-            });
-            invalidateListCache();
-            const next = [created, ...items];
-            setItems(next);
-            setCounts((prev) => ({
-                all: prev.all + 1,
-                knowledge: prev.knowledge + (created.isIndexable ? 1 : 0),
-                note: prev.note + (created.isIndexable ? 0 : 1),
-            }));
-            setListState("ready");
-            setSelectedItemId(created.id);
-            setEditorTitle(created.title);
-            setEditorContent(created.contentMarkdown);
-            setIsEditing(true);
-        } catch (error) {
-            setActionError(error instanceof Error ? error.message : "Failed to create note");
-        } finally {
-            setActionBusy(false);
-        }
-    }, [adapter, auth, invalidateListCache, items]);
-
-    const saveItemAs = useCallback(async (isIndexable: boolean) => {
-        if (!auth || !selectedItemId) return;
-        setActionBusy(true);
-        setActionError(null);
-        try {
+            if (isCreatingDraft || !selectedItemId) {
+                const created = await adapter.createItem(auth, {
+                    title: editorTitle.trim() || "Untitled note",
+                    contentMarkdown: editorContent,
+                    isIndexable,
+                    itemType: "text",
+                });
+                invalidateListCache();
+                const next = [created, ...items];
+                setItems(next);
+                setCounts((prev) => ({
+                    all: prev.all + 1,
+                    knowledge: prev.knowledge + (created.isIndexable ? 1 : 0),
+                    note: prev.note + (created.isIndexable ? 0 : 1),
+                }));
+                setSelectedItemId(created.id);
+                setEditorTitle(created.title);
+                setEditorContent(created.contentMarkdown);
+                setIsCreatingDraft(false);
+                setIsEditing(false);
+                setListState("ready");
+                return;
+            }
             const updated = await adapter.updateItem(auth, selectedItemId, {
                 title: editorTitle,
                 contentMarkdown: editorContent,
@@ -285,13 +291,14 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
             setEditorTitle(updated.title);
             setEditorContent(updated.contentMarkdown);
+            setIsCreatingDraft(false);
             setIsEditing(false);
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to save note");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, editorContent, editorTitle, invalidateListCache, items, selectedItemId]);
+    }, [adapter, auth, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -380,12 +387,22 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     }, [selectedItem]);
 
     const cancelEdit = useCallback(() => {
+        if (isCreatingDraft) {
+            setActionError(null);
+            setIsCreatingDraft(false);
+            setIsEditing(false);
+            const fallback = items[0] ?? null;
+            setSelectedItemId(fallback?.id ?? null);
+            setEditorTitle(fallback?.title ?? "");
+            setEditorContent(fallback?.contentMarkdown ?? "");
+            return;
+        }
         if (!selectedItem) return;
         setEditorTitle(selectedItem.title);
         setEditorContent(selectedItem.contentMarkdown);
         setActionError(null);
         setIsEditing(false);
-    }, [selectedItem]);
+    }, [isCreatingDraft, items, selectedItem]);
 
     return {
         search,
@@ -405,6 +422,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         editorContent,
         setEditorContent,
         isEditing,
+        isCreatingDraft,
         actionBusy,
         actionError,
         hasMore: Boolean(nextCursor),

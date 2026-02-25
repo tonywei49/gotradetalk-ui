@@ -6,6 +6,7 @@ import { NotebookParsedSection } from "./NotebookParsedSection";
 type NotebookPanelProps = {
     enabled: boolean;
     selectedItem: NotebookItem | null;
+    isCreatingDraft: boolean;
     editorTitle: string;
     editorContent: string;
     isEditing: boolean;
@@ -67,6 +68,7 @@ function indexHint(item: NotebookItem): { tone: string; text: string } {
 export function NotebookPanel({
     enabled,
     selectedItem,
+    isCreatingDraft,
     editorTitle,
     editorContent,
     isEditing,
@@ -103,7 +105,7 @@ export function NotebookPanel({
         );
     }
 
-    if (!selectedItem) {
+    if (!selectedItem && !isCreatingDraft) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
                 Select or create a notebook item.
@@ -111,7 +113,12 @@ export function NotebookPanel({
         );
     }
 
-    const hint = indexHint(selectedItem);
+    const hint = isCreatingDraft
+        ? {
+            tone: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
+            text: "草稿尚未保存，完成內容後請選擇保存為知識庫或記事本。",
+        }
+        : indexHint(selectedItem as NotebookItem);
 
     return (
         <div className="flex h-full flex-col bg-white dark:bg-slate-900">
@@ -153,12 +160,16 @@ export function NotebookPanel({
                     />
                 </label>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    <div className="mb-2 font-semibold">Attached files ({selectedItem.files.length})</div>
-                    {selectedItem.files.length === 0 ? (
+                    <div className="mb-2 font-semibold">
+                        Attached files ({isCreatingDraft ? 0 : (selectedItem?.files.length || 0)})
+                    </div>
+                    {isCreatingDraft ? (
+                        <div className="text-slate-500 dark:text-slate-400">保存後即可上傳或連結檔案。</div>
+                    ) : (selectedItem?.files.length || 0) === 0 ? (
                         <div className="text-slate-500 dark:text-slate-400">No files yet.</div>
                     ) : (
                         <div className="space-y-2">
-                            {selectedItem.files.map((file) => (
+                            {(selectedItem?.files || []).map((file) => (
                                 <div key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
                                     <div className="min-w-0 flex-1 truncate">
                                         {file.matrixMediaName || file.matrixMediaMxc}
@@ -187,20 +198,22 @@ export function NotebookPanel({
                         </div>
                     )}
                 </div>
-                <NotebookParsedSection
-                    key={selectedItem.id}
-                    previewBusy={previewBusy}
-                    previewError={previewError}
-                    parsedPreview={parsedPreview}
-                    chunks={chunks}
-                    chunksTotal={chunksTotal}
-                />
+                {!isCreatingDraft && selectedItem && (
+                    <NotebookParsedSection
+                        key={selectedItem.id}
+                        previewBusy={previewBusy}
+                        previewError={previewError}
+                        parsedPreview={parsedPreview}
+                        chunks={chunks}
+                        chunksTotal={chunksTotal}
+                    />
+                )}
                 {actionError && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         {actionError}
                     </div>
                 )}
-                {selectedItem.indexStatus === "failed" && (
+                {!isCreatingDraft && selectedItem?.indexStatus === "failed" && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         <div>{selectedItem.indexError ? `索引失敗：${selectedItem.indexError}` : "索引失敗"}</div>
                         <button
@@ -245,30 +258,34 @@ export function NotebookPanel({
                             >
                                 保存為記事本
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => notebookUploadInputRef.current?.click()}
-                                disabled={busy}
-                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                            >
-                                Upload file
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onAttachFile}
-                                disabled={busy}
-                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                            >
-                                Link file
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onDelete}
-                                disabled={busy}
-                                className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
-                            >
-                                Delete
-                            </button>
+                            {!isCreatingDraft && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => notebookUploadInputRef.current?.click()}
+                                        disabled={busy}
+                                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                                    >
+                                        Upload file
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onAttachFile}
+                                        disabled={busy}
+                                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                                    >
+                                        Link file
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onDelete}
+                                        disabled={busy}
+                                        className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                                    >
+                                        Delete
+                                    </button>
+                                </>
+                            )}
                             <button
                                 type="button"
                                 onClick={onCancelEdit}
@@ -288,7 +305,7 @@ export function NotebookPanel({
                             >
                                 編輯
                             </button>
-                            {!selectedItem.isIndexable ? (
+                            {!selectedItem?.isIndexable ? (
                                 <button
                                     type="button"
                                     onClick={onSwitchToKnowledge}
