@@ -11,6 +11,13 @@ export type NotebookListQuery = {
     keyword?: string;
     filter?: "all" | "knowledge" | "note";
     isIndexable?: boolean;
+    cursor?: string;
+    limit?: number;
+};
+
+export type NotebookListPageResult = {
+    items: NotebookItem[];
+    nextCursor: string | null;
 };
 
 export type CreateNotebookItemInput = {
@@ -59,6 +66,7 @@ export type NotebookSyncPushInput = {
 
 export type NotebookAdapter = {
     listItems: (auth: NotebookAuthContext, query?: NotebookListQuery) => Promise<NotebookItem[]>;
+    listItemsPage: (auth: NotebookAuthContext, query?: NotebookListQuery) => Promise<NotebookListPageResult>;
     createItem: (auth: NotebookAuthContext, input: CreateNotebookItemInput) => Promise<NotebookItem>;
     updateItem: (auth: NotebookAuthContext, itemId: string, input: UpdateNotebookItemInput) => Promise<NotebookItem>;
     deleteItem: (auth: NotebookAuthContext, itemId: string) => Promise<void>;

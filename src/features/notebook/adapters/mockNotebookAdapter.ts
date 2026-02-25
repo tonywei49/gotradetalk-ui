@@ -121,7 +121,7 @@ function buildAssistResponse(query: string): NotebookAssistResponse {
 }
 
 export const mockNotebookAdapter: NotebookAdapter = {
-    async listItems(_auth, query) {
+    async listItemsPage(_auth, query) {
         await wait();
         refreshIndexStatuses();
         const keyword = (query?.keyword || "").trim().toLowerCase();
@@ -133,8 +133,22 @@ export const mockNotebookAdapter: NotebookAdapter = {
             }
             if (!keyword) return true;
             return item.title.toLowerCase().includes(keyword) || item.contentMarkdown.toLowerCase().includes(keyword);
-        });
-        return cloneList(rows).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+        }).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+        const offset = Number(query?.cursor || "0");
+        const safeOffset = Number.isFinite(offset) && offset >= 0 ? offset : 0;
+        const limit = Number.isFinite(Number(query?.limit)) && Number(query?.limit) > 0
+            ? Number(query?.limit)
+            : 30;
+        const paged = rows.slice(safeOffset, safeOffset + limit);
+        const nextOffset = safeOffset + limit;
+        return {
+            items: cloneList(paged),
+            nextCursor: nextOffset < rows.length ? String(nextOffset) : null,
+        };
+    },
+    async listItems(auth, query) {
+        const page = await mockNotebookAdapter.listItemsPage(auth, query);
+        return page.items;
     },
     async createItem(_auth, input) {
         await wait();

@@ -1486,6 +1486,11 @@ export const MainLayout: React.FC = () => {
                             setMobileView("detail");
                         }}
                         busy={notebookModule.actionBusy}
+                        hasMore={notebookModule.hasMore}
+                        loadingMore={notebookModule.loadingMore}
+                        onLoadMore={() => {
+                            void notebookModule.loadMore();
+                        }}
                     />
                 ) : activeTab === "files" ? (
                     <>

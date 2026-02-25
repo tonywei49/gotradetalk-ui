@@ -19,7 +19,7 @@ import {
     updateNotebookItem,
 } from "../../../services/notebookApi";
 import type { NotebookAssistResponse, NotebookIndexStatus, NotebookItem } from "../types";
-import type { NotebookAdapter } from "./types";
+import type { NotebookAdapter, NotebookListQuery } from "./types";
 import { NotebookApiError } from "./types";
 import { NOTEBOOK_CHUNKS_FETCH_LIMIT, NOTEBOOK_PARSED_PREVIEW_CHARS, NOTEBOOK_PARSED_PREVIEW_LIMIT } from "../constants";
 
@@ -94,15 +94,32 @@ function mapError(error: unknown): NotebookApiError {
     return new NotebookApiError("Unknown notebook API error", 500, "UNKNOWN");
 }
 
+async function fetchListPage(auth: Parameters<NotebookAdapter["listItemsPage"]>[0], query?: NotebookListQuery) {
+    const data = await getNotebookItems(auth, {
+        q: query?.keyword || "",
+        filter: query?.filter,
+        is_indexable: query?.isIndexable,
+        cursor: query?.cursor,
+        limit: query?.limit,
+    });
+    return {
+        items: (data.items ?? []).map(mapItem),
+        nextCursor: data.next_cursor ?? null,
+    };
+}
+
 export const httpNotebookAdapter: NotebookAdapter = {
+    async listItemsPage(auth, query) {
+        try {
+            return await fetchListPage(auth, query);
+        } catch (error) {
+            throw mapError(error);
+        }
+    },
     async listItems(auth, query) {
         try {
-            const data = await getNotebookItems(auth, {
-                q: query?.keyword || "",
-                filter: query?.filter,
-                is_indexable: query?.isIndexable,
-            });
-            return (data.items ?? []).map(mapItem);
+            const page = await fetchListPage(auth, query);
+            return page.items;
         } catch (error) {
             throw mapError(error);
         }

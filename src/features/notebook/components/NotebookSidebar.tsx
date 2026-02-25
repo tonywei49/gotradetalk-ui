@@ -14,6 +14,9 @@ type NotebookSidebarProps = {
     onFilterChange: (value: NotebookViewFilter) => void;
     counts: { all: number; knowledge: number; note: number };
     busy: boolean;
+    hasMore: boolean;
+    loadingMore: boolean;
+    onLoadMore: () => void;
 };
 
 function indexStateChip(status: NotebookItem["indexStatus"]): string {
@@ -41,6 +44,9 @@ export function NotebookSidebar({
     onFilterChange,
     counts,
     busy,
+    hasMore,
+    loadingMore,
+    onLoadMore,
 }: NotebookSidebarProps) {
     return (
         <>
@@ -141,6 +147,16 @@ export function NotebookSidebar({
                         </button>
                     );
                 })}
+                {listState === "ready" && hasMore && (
+                    <button
+                        type="button"
+                        onClick={onLoadMore}
+                        disabled={loadingMore}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    >
+                        {loadingMore ? "Loading..." : "Load more"}
+                    </button>
+                )}
             </div>
         </>
     );

@@ -26,9 +26,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [isEditing, setIsEditing] = useState(false);
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const [loadingMore, setLoadingMore] = useState(false);
     const loadSeqRef = useRef(0);
     const countsSeqRef = useRef(0);
-    const listCacheRef = useRef<Map<string, NotebookItem[]>>(new Map());
+    const listCacheRef = useRef<Map<string, { items: NotebookItem[]; nextCursor: string | null }>>(new Map());
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -39,6 +41,8 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
 
     useEffect(() => {
         listCacheRef.current.clear();
+        setNextCursor(null);
+        setLoadingMore(false);
     }, [auth?.matrixUserId, auth?.apiBaseUrl, enabled]);
 
     const selectedItem = useMemo(
@@ -63,6 +67,10 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setEditorContent(fallback?.contentMarkdown ?? "");
         setIsEditing(false);
     }, [selectedItemId]);
+
+    const invalidateListCache = useCallback(() => {
+        listCacheRef.current.clear();
+    }, []);
 
     const refreshCounts = useCallback(async (keyword: string) => {
         if (!enabled || !auth) {
@@ -92,6 +100,8 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setItems([]);
             setListState("empty");
             setListError(null);
+            setNextCursor(null);
+            setLoadingMore(false);
             setSelectedItemId(null);
             setEditorTitle("");
             setEditorContent("");
@@ -99,10 +109,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             return;
         }
         const cacheKey = `${viewFilter}:${debouncedSearch}`;
-        const cachedRows = listCacheRef.current.get(cacheKey) ?? null;
-        if (cachedRows) {
-            setItems(cachedRows);
-            if (cachedRows.length === 0) {
+        const cached = listCacheRef.current.get(cacheKey) ?? null;
+        if (cached) {
+            setItems(cached.items);
+            setNextCursor(cached.nextCursor);
+            if (cached.items.length === 0) {
                 setListState("empty");
                 setSelectedItemId(null);
                 setEditorTitle("");
@@ -110,19 +121,25 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 setIsEditing(false);
             } else {
                 setListState("ready");
-                applySelection(cachedRows);
+                applySelection(cached.items);
             }
         }
         const seq = ++loadSeqRef.current;
         setListError(null);
-        if (!cachedRows) {
+        if (!cached) {
             setListState("loading");
         }
         try {
-            const rows = await adapter.listItems(auth, { keyword: debouncedSearch, filter: viewFilter });
+            const page = await adapter.listItemsPage(auth, {
+                keyword: debouncedSearch,
+                filter: viewFilter,
+                limit: 30,
+            });
+            const rows = page.items;
             if (seq !== loadSeqRef.current) return;
-            listCacheRef.current.set(cacheKey, rows);
+            listCacheRef.current.set(cacheKey, { items: rows, nextCursor: page.nextCursor });
             setItems(rows);
+            setNextCursor(page.nextCursor);
             if (rows.length === 0) {
                 setListState("empty");
                 setSelectedItemId(null);
@@ -135,7 +152,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             applySelection(rows);
         } catch (error) {
             if (seq !== loadSeqRef.current) return;
-            if (!cachedRows) {
+            if (!cached) {
                 setItems([]);
                 setCounts({ all: 0, knowledge: 0, note: 0 });
                 setListState("error");
@@ -152,6 +169,33 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         if (!enabled || !auth) return;
         void refreshCounts(debouncedSearch);
     }, [auth, debouncedSearch, enabled, refreshCounts]);
+
+    const loadMore = useCallback(async () => {
+        if (!enabled || !auth || !nextCursor || loadingMore) return;
+        setLoadingMore(true);
+        setActionError(null);
+        try {
+            const page = await adapter.listItemsPage(auth, {
+                keyword: debouncedSearch,
+                filter: viewFilter,
+                cursor: nextCursor,
+                limit: 30,
+            });
+            const cacheKey = `${viewFilter}:${debouncedSearch}`;
+            setItems((prev) => {
+                const map = new Map(prev.map((item) => [item.id, item]));
+                page.items.forEach((item) => map.set(item.id, item));
+                const merged = Array.from(map.values());
+                listCacheRef.current.set(cacheKey, { items: merged, nextCursor: page.nextCursor });
+                return merged;
+            });
+            setNextCursor(page.nextCursor);
+        } catch (error) {
+            setActionError(error instanceof Error ? error.message : "Failed to load more notebook items");
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [adapter, auth, debouncedSearch, enabled, loadingMore, nextCursor, viewFilter]);
 
     useEffect(() => {
         applySelection(items);
@@ -199,8 +243,14 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 isIndexable: false,
                 itemType: "text",
             });
+            invalidateListCache();
             const next = [created, ...items];
             setItems(next);
+            setCounts((prev) => ({
+                all: prev.all + 1,
+                knowledge: prev.knowledge + (created.isIndexable ? 1 : 0),
+                note: prev.note + (created.isIndexable ? 0 : 1),
+            }));
             setListState("ready");
             setSelectedItemId(created.id);
             setEditorTitle(created.title);
@@ -211,7 +261,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, items]);
+    }, [adapter, auth, invalidateListCache, items]);
 
     const saveItemAs = useCallback(async (isIndexable: boolean) => {
         if (!auth || !selectedItemId) return;
@@ -223,6 +273,15 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 contentMarkdown: editorContent,
                 isIndexable,
             });
+            invalidateListCache();
+            const prev = items.find((item) => item.id === selectedItemId);
+            if (prev && prev.isIndexable !== updated.isIndexable) {
+                setCounts((state) => ({
+                    ...state,
+                    knowledge: Math.max(0, state.knowledge + (updated.isIndexable ? 1 : -1)),
+                    note: Math.max(0, state.note + (updated.isIndexable ? -1 : 1)),
+                }));
+            }
             setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
             setEditorTitle(updated.title);
             setEditorContent(updated.contentMarkdown);
@@ -232,7 +291,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, editorContent, editorTitle, selectedItemId]);
+    }, [adapter, auth, editorContent, editorTitle, invalidateListCache, items, selectedItemId]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -240,8 +299,17 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setActionError(null);
         try {
             await adapter.deleteItem(auth, selectedItemId);
+            invalidateListCache();
+            const deleted = items.find((item) => item.id === selectedItemId) ?? null;
             const next = items.filter((item) => item.id !== selectedItemId);
             setItems(next);
+            if (deleted) {
+                setCounts((prev) => ({
+                    all: Math.max(0, prev.all - 1),
+                    knowledge: Math.max(0, prev.knowledge - (deleted.isIndexable ? 1 : 0)),
+                    note: Math.max(0, prev.note - (deleted.isIndexable ? 0 : 1)),
+                }));
+            }
             if (next.length === 0) {
                 setListState("empty");
             }
@@ -251,7 +319,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, items, selectedItemId]);
+    }, [adapter, applySelection, auth, invalidateListCache, items, selectedItemId]);
 
     const switchItemMode = useCallback(async (isIndexable: boolean) => {
         if (!auth || !selectedItem) return;
@@ -261,6 +329,14 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const updated = await adapter.updateItem(auth, selectedItem.id, {
                 isIndexable,
             });
+            invalidateListCache();
+            if (selectedItem.isIndexable !== updated.isIndexable) {
+                setCounts((prev) => ({
+                    ...prev,
+                    knowledge: Math.max(0, prev.knowledge + (updated.isIndexable ? 1 : -1)),
+                    note: Math.max(0, prev.note + (updated.isIndexable ? -1 : 1)),
+                }));
+            }
             setItems((prev) => prev.map((item) => (item.id === selectedItem.id ? updated : item)));
             setEditorTitle(updated.title);
             setEditorContent(updated.contentMarkdown);
@@ -270,7 +346,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, selectedItem]);
+    }, [adapter, auth, invalidateListCache, selectedItem]);
 
     const retryIndex = useCallback(async () => {
         if (!auth || !selectedItem) return;
@@ -331,7 +407,10 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         isEditing,
         actionBusy,
         actionError,
+        hasMore: Boolean(nextCursor),
+        loadingMore,
         loadItems,
+        loadMore,
         createItem,
         saveItemAs,
         deleteItem,
