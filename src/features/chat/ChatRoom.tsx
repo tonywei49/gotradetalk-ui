@@ -767,7 +767,6 @@ export const ChatRoom: React.FC = () => {
     const [assistSending, setAssistSending] = useState(false);
     const [assistEditorRows, setAssistEditorRows] = useState(5);
     const [assistEditorFullscreen, setAssistEditorFullscreen] = useState(false);
-    const [assistKnowledgeScope, setAssistKnowledgeScope] = useState<"personal" | "company" | "both">("both");
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -810,7 +809,7 @@ export const ChatRoom: React.FC = () => {
         activeRoomId,
         canUseNotebookAssist,
         responseLang: chatReceiveLanguage,
-        knowledgeScope: assistKnowledgeScope,
+        knowledgeScope: "both",
         t,
     });
     const assistSourceMap = useMemo(() => {
@@ -2250,19 +2249,8 @@ export const ChatRoom: React.FC = () => {
                         : "mb-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-900/20"
                         }`}>
                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
-                                    {t("chat.notebook.panelTitle")}
-                                </div>
-                                <select
-                                    value={assistKnowledgeScope}
-                                    onChange={(event) => setAssistKnowledgeScope(event.target.value as "personal" | "company" | "both")}
-                                    className="rounded border border-emerald-300 bg-white px-2 py-1 text-[11px] text-emerald-700 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300"
-                                >
-                                    <option value="both">全部來源</option>
-                                    <option value="personal">我的知識</option>
-                                    <option value="company">公司知識</option>
-                                </select>
+                            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
+                                {t("chat.notebook.panelTitle")}
                             </div>
                             <div className="flex items-center gap-2">
                                 <button

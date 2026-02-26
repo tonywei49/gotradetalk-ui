@@ -1478,7 +1478,6 @@ export const MainLayout: React.FC = () => {
                         onFilterChange={notebookModule.setViewFilter}
                         sourceScope={notebookModule.sourceScope}
                         onSourceScopeChange={notebookModule.setSourceScope}
-                        counts={notebookModule.counts}
                         onSelect={(itemId) => {
                             notebookModule.setSelectedItemId(itemId);
                             setMobileView("detail");

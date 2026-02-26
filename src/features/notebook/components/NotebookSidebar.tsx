@@ -1,6 +1,8 @@
 import type { NotebookItem, NotebookListState } from "../types";
 import type { NotebookSourceScope, NotebookViewFilter } from "../useNotebookModule";
 
+type NotebookQuickFilter = "allSources" | "knowledge" | "note" | "company";
+
 type NotebookSidebarProps = {
     listState: NotebookListState;
     listError: string | null;
@@ -14,7 +16,6 @@ type NotebookSidebarProps = {
     onFilterChange: (value: NotebookViewFilter) => void;
     sourceScope: NotebookSourceScope;
     onSourceScopeChange: (value: NotebookSourceScope) => void;
-    counts: { all: number; knowledge: number; note: number };
     busy: boolean;
     hasMore: boolean;
     loadingMore: boolean;
@@ -46,12 +47,39 @@ export function NotebookSidebar({
     onFilterChange,
     sourceScope,
     onSourceScopeChange,
-    counts,
     busy,
     hasMore,
     loadingMore,
     onLoadMore,
 }: NotebookSidebarProps) {
+    const quickFilter: NotebookQuickFilter = sourceScope === "company"
+        ? "company"
+        : filter === "knowledge"
+            ? "knowledge"
+            : filter === "note"
+                ? "note"
+                : "allSources";
+
+    const applyQuickFilter = (next: NotebookQuickFilter): void => {
+        if (next === "allSources") {
+            onSourceScopeChange("both");
+            onFilterChange("all");
+            return;
+        }
+        if (next === "knowledge") {
+            onSourceScopeChange("personal");
+            onFilterChange("knowledge");
+            return;
+        }
+        if (next === "note") {
+            onSourceScopeChange("personal");
+            onFilterChange("note");
+            return;
+        }
+        onSourceScopeChange("company");
+        onFilterChange("all");
+    };
+
     return (
         <>
             <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
@@ -69,47 +97,31 @@ export function NotebookSidebar({
                 <div className="mb-2 flex items-center gap-2 text-[11px]">
                     <button
                         type="button"
-                        onClick={() => onSourceScopeChange("both")}
-                        className={`rounded-full px-2 py-1 ${sourceScope === "both" ? "bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}
+                        onClick={() => applyQuickFilter("allSources")}
+                        className={`rounded-full px-2 py-1 ${quickFilter === "allSources" ? "bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}
                     >
                         全部來源
                     </button>
                     <button
                         type="button"
-                        onClick={() => onSourceScopeChange("personal")}
-                        className={`rounded-full px-2 py-1 ${sourceScope === "personal" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"}`}
+                        onClick={() => applyQuickFilter("knowledge")}
+                        className={`rounded-full px-2 py-1 ${quickFilter === "knowledge" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"}`}
                     >
-                        我的知識
+                        知識庫
                     </button>
                     <button
                         type="button"
-                        onClick={() => onSourceScopeChange("company")}
-                        className={`rounded-full px-2 py-1 ${sourceScope === "company" ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"}`}
+                        onClick={() => applyQuickFilter("note")}
+                        className={`rounded-full px-2 py-1 ${quickFilter === "note" ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}
                     >
-                        公司知識
-                    </button>
-                </div>
-                <div className="mb-2 flex items-center gap-2 text-[11px]">
-                    <button
-                        type="button"
-                        onClick={() => onFilterChange("all")}
-                        className={`rounded-full px-2 py-1 ${filter === "all" ? "bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}
-                    >
-                        全部 ({counts.all})
+                        記事本
                     </button>
                     <button
                         type="button"
-                        onClick={() => onFilterChange("knowledge")}
-                        className={`rounded-full px-2 py-1 ${filter === "knowledge" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"}`}
+                        onClick={() => applyQuickFilter("company")}
+                        className={`rounded-full px-2 py-1 ${quickFilter === "company" ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"}`}
                     >
-                        知識庫 ({counts.knowledge})
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onFilterChange("note")}
-                        className={`rounded-full px-2 py-1 ${filter === "note" ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}
-                    >
-                        記事本 ({counts.note})
+                        公司資料
                     </button>
                 </div>
                 <input
@@ -161,7 +173,7 @@ export function NotebookSidebar({
                             <div className="mt-2 flex items-center justify-between">
                                 <div className="flex items-center gap-1">
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${item.sourceScope === "company" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
-                                        {item.sourceScope === "company" ? "公司知識庫" : "個人"}
+                                        {item.sourceScope === "company" ? "公司資料" : "個人"}
                                     </span>
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${typeChip(item.isIndexable)}`}>
                                         {item.isIndexable ? "知識庫" : "記事本"}
