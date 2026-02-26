@@ -24,6 +24,9 @@ export type NotebookItem = {
     createdAt: string;
     matrixMediaName?: string | null;
     files: NotebookItemFile[];
+    sourceScope?: "personal" | "company";
+    sourceFileName?: string | null;
+    readOnly?: boolean;
 };
 
 export type NotebookChunk = {
@@ -55,12 +58,17 @@ export type NotebookSource = {
     snippet: string;
     locator?: string | null;
     score?: number;
+    sourceScope?: "personal" | "company";
+    sourceFileName?: string | null;
+    updatedAt?: string | null;
 };
 
 export type NotebookCitation = {
     sourceId: string;
     title?: string;
     locator?: string | null;
+    sourceScope?: "personal" | "company";
+    sourceFileName?: string | null;
 };
 
 export type NotebookAssistResponse = {

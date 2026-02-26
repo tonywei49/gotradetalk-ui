@@ -119,6 +119,7 @@ export function NotebookPanel({
             text: "草稿尚未保存，完成內容後請選擇保存為知識庫或記事本。",
         }
         : indexHint(selectedItem as NotebookItem);
+    const isCompanyReadOnly = Boolean(!isCreatingDraft && (selectedItem?.sourceScope === "company" || selectedItem?.readOnly));
 
     return (
         <div className="flex h-full flex-col bg-white dark:bg-slate-900">
@@ -144,7 +145,7 @@ export function NotebookPanel({
                     <input
                         type="text"
                         value={editorTitle}
-                        readOnly={!isEditing}
+                        readOnly={!isEditing || isCompanyReadOnly}
                         onChange={(event) => setEditorTitle(event.target.value)}
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
                     />
@@ -153,7 +154,7 @@ export function NotebookPanel({
                     <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Content</div>
                     <textarea
                         value={editorContent}
-                        readOnly={!isEditing}
+                        readOnly={!isEditing || isCompanyReadOnly}
                         onChange={(event) => setEditorContent(event.target.value)}
                         rows={12}
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
@@ -182,7 +183,7 @@ export function NotebookPanel({
                                         >
                                             Download
                                         </button>
-                                        {isEditing && (
+                                        {isEditing && !isCompanyReadOnly && (
                                             <button
                                                 type="button"
                                                 onClick={() => onDeleteFile(file.id)}
@@ -240,7 +241,7 @@ export function NotebookPanel({
                     }}
                 />
                 <div className="flex flex-wrap gap-2">
-                    {isEditing ? (
+                    {isEditing && !isCompanyReadOnly ? (
                         <>
                             <button
                                 type="button"
@@ -297,15 +298,17 @@ export function NotebookPanel({
                         </>
                     ) : (
                         <>
-                            <button
-                                type="button"
-                                onClick={onStartEdit}
-                                disabled={busy}
-                                className="rounded-lg bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                                編輯
-                            </button>
-                            {!selectedItem?.isIndexable ? (
+                            {!isCompanyReadOnly && (
+                                <button
+                                    type="button"
+                                    onClick={onStartEdit}
+                                    disabled={busy}
+                                    className="rounded-lg bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    編輯
+                                </button>
+                            )}
+                            {!isCompanyReadOnly && !selectedItem?.isIndexable ? (
                                 <button
                                     type="button"
                                     onClick={onSwitchToKnowledge}
@@ -314,7 +317,7 @@ export function NotebookPanel({
                                 >
                                     轉為知識庫
                                 </button>
-                            ) : (
+                            ) : !isCompanyReadOnly ? (
                                 <button
                                     type="button"
                                     onClick={onSwitchToNote}
@@ -323,6 +326,10 @@ export function NotebookPanel({
                                 >
                                     轉為記事本
                                 </button>
+                            ) : (
+                                <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-200">
+                                    公司知識條目為只讀，不可編輯或刪除。
+                                </div>
                             )}
                         </>
                     )}

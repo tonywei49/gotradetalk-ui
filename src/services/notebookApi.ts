@@ -52,6 +52,9 @@ export type NotebookItemDto = {
     created_at: string;
     matrix_media_name?: string | null;
     files?: NotebookItemFileDto[];
+    source_scope?: "personal" | "company" | null;
+    source_file_name?: string | null;
+    read_only?: boolean | null;
 };
 
 export type NotebookItemFileDto = {
@@ -109,6 +112,7 @@ export type AssistFromContextRequest = {
     anchor_event_id: string;
     window_size?: number;
     response_lang?: string;
+    knowledge_scope?: "personal" | "company" | "both";
 };
 
 export type NotebookAssistSourceDto = {
@@ -117,11 +121,16 @@ export type NotebookAssistSourceDto = {
     snippet: string;
     source_locator?: string | null;
     score?: number;
+    source_scope?: "personal" | "company" | null;
+    source_file_name?: string | null;
+    updated_at?: string | null;
 };
 
 export type NotebookAssistCitationDto = {
     source_id: string;
     locator?: string | null;
+    source_scope?: "personal" | "company" | null;
+    source_file_name?: string | null;
 };
 
 export type NotebookAssistResponseDto = {
@@ -295,6 +304,7 @@ export async function getNotebookItems(
     input?: {
         q?: string;
         filter?: "all" | "knowledge" | "note";
+        scope?: "personal" | "company" | "both";
         is_indexable?: boolean;
         item_type?: "text" | "file";
         status?: "active" | "deleted";
@@ -305,6 +315,7 @@ export async function getNotebookItems(
     const query: Record<string, string> = {};
     if (input?.q) query.q = input.q;
     if (input?.filter) query.filter = input.filter;
+    if (input?.scope) query.scope = input.scope;
     if (typeof input?.is_indexable === "boolean") query.is_indexable = String(input.is_indexable);
     if (input?.item_type) query.item_type = input.item_type;
     if (input?.status) query.status = input.status;
@@ -469,9 +480,15 @@ export async function assistFromContext(
 
 export async function assistQuery(
     auth: NotebookApiAuth,
-    input: { room_id: string; query: string; top_k?: number; response_lang?: string },
+    input: { room_id: string; query: string; top_k?: number; response_lang?: string; knowledge_scope?: "personal" | "company" | "both" },
 ): Promise<NotebookAssistResponseDto> {
     return postJson<NotebookAssistResponseDto>(auth, "/chat/assist/query", input);
+}
+
+export async function getCompanyKnowledgeItems(
+    auth: NotebookApiAuth,
+): Promise<GetNotebookItemsResponse> {
+    return getJson<GetNotebookItemsResponse>(auth, "/company/knowledge/items");
 }
 
 export async function pushNotebookSync(

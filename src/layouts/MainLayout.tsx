@@ -1476,6 +1476,8 @@ export const MainLayout: React.FC = () => {
                         selectedItemId={notebookModule.selectedItemId}
                         filter={notebookModule.viewFilter}
                         onFilterChange={notebookModule.setViewFilter}
+                        sourceScope={notebookModule.sourceScope}
+                        onSourceScopeChange={notebookModule.setSourceScope}
                         counts={notebookModule.counts}
                         onSelect={(itemId) => {
                             notebookModule.setSelectedItemId(itemId);

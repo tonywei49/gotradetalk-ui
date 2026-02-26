@@ -10,6 +10,7 @@ import type {
 export type NotebookListQuery = {
     keyword?: string;
     filter?: "all" | "knowledge" | "note";
+    scope?: "personal" | "company" | "both";
     isIndexable?: boolean;
     cursor?: string;
     limit?: number;
@@ -44,6 +45,7 @@ export type AttachNotebookFileInput = {
 export type NotebookAssistQueryInput = {
     roomId: string;
     query: string;
+    knowledgeScope?: "personal" | "company" | "both";
     responseLang?: string;
 };
 
@@ -51,6 +53,7 @@ export type NotebookAssistFromContextInput = {
     roomId: string;
     anchorEventId: string;
     windowSize?: number;
+    knowledgeScope?: "personal" | "company" | "both";
     responseLang?: string;
 };
 

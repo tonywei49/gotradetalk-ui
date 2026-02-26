@@ -18,6 +18,9 @@ const initialItems: NotebookItem[] = [
         createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
         updatedAt: new Date(Date.now() - 1000 * 60 * 50).toISOString(),
         files: [],
+        sourceScope: "personal",
+        sourceFileName: null,
+        readOnly: false,
     },
     {
         id: "nb-2",
@@ -40,6 +43,24 @@ const initialItems: NotebookItem[] = [
                 createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
             },
         ],
+        sourceScope: "personal",
+        sourceFileName: "Q4-catalog.pdf",
+        readOnly: false,
+    },
+    {
+        id: "nb-c1",
+        title: "公司知識庫：採購規範",
+        contentMarkdown: "此為公司層級知識內容，僅可檢索引用。",
+        isIndexable: true,
+        itemType: "text",
+        indexStatus: "success",
+        indexError: null,
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
+        updatedAt: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+        files: [],
+        sourceScope: "company",
+        sourceFileName: "company-procurement.md",
+        readOnly: true,
     },
 ];
 
@@ -87,7 +108,7 @@ function refreshIndexStatuses(): void {
     });
 }
 
-function buildAssistResponse(query: string): NotebookAssistResponse {
+function buildAssistResponse(query: string, scope: "personal" | "company" | "both" = "both"): NotebookAssistResponse {
     const normalized = query.toLowerCase();
     if (normalized.includes("不存在") || normalized.includes("unknown") || normalized.includes("hallucination")) {
         return {
@@ -98,23 +119,31 @@ function buildAssistResponse(query: string): NotebookAssistResponse {
             citations: [],
         };
     }
+    const useCompany = scope === "company";
     return {
         answer: "根據現有知識庫，該功能支援標準版本。若需企業版差異，請附上客戶方案等級再確認。",
         confidence: 0.78,
         traceId: `mock-trace-${Date.now()}`,
         sources: [
             {
-                itemId: "nb-1",
-                title: "產品 FAQ",
-                snippet: "標準版本支援核心功能，企業版有額外權限與稽核。",
-                locator: "section:2",
+                itemId: useCompany ? "nb-c1" : "nb-1",
+                title: useCompany ? "公司知識庫：採購規範" : "產品 FAQ",
+                snippet: useCompany
+                    ? "公司採購規範要求供應商需提供完整驗證文件。"
+                    : "標準版本支援核心功能，企業版有額外權限與稽核。",
+                locator: useCompany ? "company:section-1" : "section:2",
+                sourceScope: useCompany ? "company" : "personal",
+                sourceFileName: useCompany ? "company-procurement.md" : "faq.md",
+                updatedAt: new Date().toISOString(),
             },
         ],
         citations: [
             {
-                sourceId: "nb-1:1",
-                title: "產品 FAQ",
-                locator: "section:2",
+                sourceId: useCompany ? "nb-c1:1" : "nb-1:1",
+                title: useCompany ? "公司知識庫：採購規範" : "產品 FAQ",
+                locator: useCompany ? "company:section-1" : "section:2",
+                sourceScope: useCompany ? "company" : "personal",
+                sourceFileName: useCompany ? "company-procurement.md" : "faq.md",
             },
         ],
     };
@@ -126,6 +155,8 @@ export const mockNotebookAdapter: NotebookAdapter = {
         refreshIndexStatuses();
         const keyword = (query?.keyword || "").trim().toLowerCase();
         const rows = db.filter((item) => {
+            if (query?.scope === "personal" && item.sourceScope === "company") return false;
+            if (query?.scope === "company" && item.sourceScope !== "company") return false;
             if (query?.filter === "knowledge" && !item.isIndexable) return false;
             if (query?.filter === "note" && item.isIndexable) return false;
             if (typeof query?.isIndexable === "boolean" && item.isIndexable !== query.isIndexable) {
@@ -167,6 +198,9 @@ export const mockNotebookAdapter: NotebookAdapter = {
             updatedAt: now,
             matrixMediaName: null,
             files: [],
+            sourceScope: "personal",
+            sourceFileName: null,
+            readOnly: false,
         };
         db = [created, ...db];
         return cloneItem(created);
@@ -176,6 +210,9 @@ export const mockNotebookAdapter: NotebookAdapter = {
         const target = db.find((item) => item.id === itemId);
         if (!target) {
             throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
+        }
+        if (target.sourceScope === "company" || target.readOnly) {
+            throw new NotebookApiError("Managed by platform", 403, "MANAGED_BY_PLATFORM");
         }
         const next: NotebookItem = {
             ...target,
@@ -195,6 +232,10 @@ export const mockNotebookAdapter: NotebookAdapter = {
     },
     async deleteItem(_auth, itemId) {
         await wait();
+        const target = db.find((item) => item.id === itemId);
+        if (target?.sourceScope === "company" || target?.readOnly) {
+            throw new NotebookApiError("Managed by platform", 403, "MANAGED_BY_PLATFORM");
+        }
         db = db.filter((item) => item.id !== itemId);
     },
     async attachFile(_auth, itemId, input) {
@@ -202,6 +243,9 @@ export const mockNotebookAdapter: NotebookAdapter = {
         const target = db.find((item) => item.id === itemId);
         if (!target) {
             throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
+        }
+        if (target.sourceScope === "company" || target.readOnly) {
+            throw new NotebookApiError("Managed by platform", 403, "MANAGED_BY_PLATFORM");
         }
         const next: NotebookItem = {
             ...target,
@@ -231,6 +275,9 @@ export const mockNotebookAdapter: NotebookAdapter = {
         if (!target) {
             throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
         }
+        if (target.sourceScope === "company" || target.readOnly) {
+            throw new NotebookApiError("Managed by platform", 403, "MANAGED_BY_PLATFORM");
+        }
         const files = target.files.filter((file) => file.id !== fileId);
         const next: NotebookItem = {
             ...target,
@@ -248,6 +295,9 @@ export const mockNotebookAdapter: NotebookAdapter = {
         const target = db.find((item) => item.id === itemId);
         if (!target) {
             throw new NotebookApiError("Notebook item not found", 404, "ITEM_NOT_FOUND");
+        }
+        if (target.sourceScope === "company" || target.readOnly) {
+            throw new NotebookApiError("Managed by platform", 403, "MANAGED_BY_PLATFORM");
         }
         const next: NotebookItem = {
             ...target,
@@ -310,10 +360,11 @@ export const mockNotebookAdapter: NotebookAdapter = {
     async assistQuery(auth, input) {
         await wait(450);
         ensureAssistAllowed({ userType: auth.userType, capabilities: auth.capabilities });
-        if (!db.some((item) => item.isIndexable)) {
+        const scope = input.knowledgeScope || "both";
+        if (!db.some((item) => item.isIndexable && (scope === "both" || item.sourceScope === scope))) {
             throw new NotebookApiError("No knowledge base items available", 422, "INVALID_CONTEXT");
         }
-        return buildAssistResponse(input.query);
+        return buildAssistResponse(input.query, scope);
     },
     async assistFromContext(auth, input) {
         await wait(500);
@@ -322,7 +373,7 @@ export const mockNotebookAdapter: NotebookAdapter = {
             throw new NotebookApiError("Invalid context anchor", 422, "INVALID_CONTEXT");
         }
         const contextualQuery = `context:${input.anchorEventId}:${input.windowSize ?? 5}`;
-        return buildAssistResponse(contextualQuery);
+        return buildAssistResponse(contextualQuery, input.knowledgeScope || "both");
     },
     async syncPush(_auth, input) {
         await wait(180);

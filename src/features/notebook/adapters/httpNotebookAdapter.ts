@@ -18,7 +18,7 @@ import {
     pushNotebookSync,
     updateNotebookItem,
 } from "../../../services/notebookApi";
-import type { NotebookAssistResponse, NotebookIndexStatus, NotebookItem } from "../types";
+import type { NotebookAssistResponse, NotebookIndexStatus, NotebookItem, NotebookSource } from "../types";
 import type { NotebookAdapter, NotebookListQuery } from "./types";
 import { NotebookApiError } from "./types";
 import { NOTEBOOK_CHUNKS_FETCH_LIMIT, NOTEBOOK_PARSED_PREVIEW_CHARS, NOTEBOOK_PARSED_PREVIEW_LIMIT } from "../constants";
@@ -45,16 +45,22 @@ function mapItem(dto: NotebookItemDto): NotebookItem {
         createdAt: dto.created_at,
         matrixMediaName: dto.matrix_media_name,
         files,
+        sourceScope: dto.source_scope === "company" ? "company" : "personal",
+        sourceFileName: dto.source_file_name || null,
+        readOnly: Boolean(dto.read_only) || dto.source_scope === "company",
     };
 }
 
-function mapSource(source: NotebookAssistSourceDto) {
+function mapSource(source: NotebookAssistSourceDto): NotebookSource {
     return {
         itemId: source.item_id,
         title: source.title || source.item_id,
         snippet: source.snippet,
         locator: source.source_locator,
         score: source.score,
+        sourceScope: source.source_scope === "company" ? "company" : "personal",
+        sourceFileName: source.source_file_name || null,
+        updatedAt: source.updated_at || null,
     };
 }
 
@@ -69,6 +75,8 @@ function mapAssist(dto: Awaited<ReturnType<typeof assistQuery>>): NotebookAssist
                 sourceId: citation.source_id,
                 title: linkedSource?.title || linkedSource?.item_id,
                 locator: citation.locator,
+                sourceScope: citation.source_scope === "company" ? "company" : "personal",
+                sourceFileName: citation.source_file_name || null,
             };
         }),
         confidence: dto.confidence,
@@ -98,6 +106,7 @@ async function fetchListPage(auth: Parameters<NotebookAdapter["listItemsPage"]>[
     const data = await getNotebookItems(auth, {
         q: query?.keyword || "",
         filter: query?.filter,
+        scope: query?.scope,
         is_indexable: query?.isIndexable,
         cursor: query?.cursor,
         limit: query?.limit,
@@ -247,6 +256,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
             return mapAssist(await assistQuery(auth, {
                 room_id: input.roomId,
                 query: input.query,
+                knowledge_scope: input.knowledgeScope,
                 response_lang: input.responseLang,
             }));
         } catch (error) {
@@ -259,6 +269,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
                 room_id: input.roomId,
                 anchor_event_id: input.anchorEventId,
                 window_size: input.windowSize ?? 5,
+                knowledge_scope: input.knowledgeScope,
                 response_lang: input.responseLang,
             }));
         } catch (error) {

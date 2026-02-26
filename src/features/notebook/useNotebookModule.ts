@@ -11,12 +11,14 @@ type UseNotebookModuleParams = {
 };
 
 export type NotebookViewFilter = "all" | "knowledge" | "note";
+export type NotebookSourceScope = "personal" | "company" | "both";
 
 export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleParams) {
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [items, setItems] = useState<NotebookItem[]>([]);
     const [viewFilter, setViewFilter] = useState<NotebookViewFilter>("all");
+    const [sourceScope, setSourceScope] = useState<NotebookSourceScope>("both");
     const [counts, setCounts] = useState({ all: 0, knowledge: 0, note: 0 });
     const [listState, setListState] = useState<NotebookListState>("loading");
     const [listError, setListError] = useState<string | null>(null);
@@ -89,9 +91,9 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         const seq = ++countsSeqRef.current;
         try {
             const [allRows, knowledgeRows, noteRows] = await Promise.all([
-                adapter.listItems(auth, { keyword, filter: "all" }),
-                adapter.listItems(auth, { keyword, filter: "knowledge" }),
-                adapter.listItems(auth, { keyword, filter: "note" }),
+                adapter.listItems(auth, { keyword, filter: "all", scope: sourceScope }),
+                adapter.listItems(auth, { keyword, filter: "knowledge", scope: sourceScope }),
+                adapter.listItems(auth, { keyword, filter: "note", scope: sourceScope }),
             ]);
             if (seq !== countsSeqRef.current) return;
             setCounts({
@@ -102,7 +104,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } catch {
             // keep existing counts on background refresh failure
         }
-    }, [adapter, auth, enabled]);
+    }, [adapter, auth, enabled, sourceScope]);
 
     const loadItems = useCallback(async () => {
         if (!enabled || !auth) {
@@ -118,7 +120,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setIsEditing(false);
             return;
         }
-        const cacheKey = `${viewFilter}:${debouncedSearch}`;
+        const cacheKey = `${viewFilter}:${sourceScope}:${debouncedSearch}`;
         const cached = listCacheRef.current.get(cacheKey) ?? null;
         if (cached) {
             setItems(cached.items);
@@ -144,6 +146,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const page = await adapter.listItemsPage(auth, {
                 keyword: debouncedSearch,
                 filter: viewFilter,
+                scope: sourceScope,
                 limit: 30,
             });
             const rows = page.items;
@@ -171,7 +174,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             }
             setListError(error instanceof Error ? error.message : "Failed to load notebook items");
         }
-    }, [adapter, applySelection, auth, debouncedSearch, enabled, viewFilter]);
+    }, [adapter, applySelection, auth, debouncedSearch, enabled, sourceScope, viewFilter]);
 
     useEffect(() => {
         void loadItems();
@@ -190,10 +193,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             const page = await adapter.listItemsPage(auth, {
                 keyword: debouncedSearch,
                 filter: viewFilter,
+                scope: sourceScope,
                 cursor: nextCursor,
                 limit: 30,
             });
-            const cacheKey = `${viewFilter}:${debouncedSearch}`;
+            const cacheKey = `${viewFilter}:${sourceScope}:${debouncedSearch}`;
             setItems((prev) => {
                 const map = new Map(prev.map((item) => [item.id, item]));
                 page.items.forEach((item) => map.set(item.id, item));
@@ -207,7 +211,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setLoadingMore(false);
         }
-    }, [adapter, auth, debouncedSearch, enabled, loadingMore, nextCursor, viewFilter]);
+    }, [adapter, auth, debouncedSearch, enabled, loadingMore, nextCursor, sourceScope, viewFilter]);
 
     useEffect(() => {
         applySelection(items);
@@ -245,6 +249,10 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     }, [adapter, auth, enabled, items]);
 
     const createItem = useCallback(async () => {
+        if (sourceScope === "company") {
+            setActionError("MANAGED_BY_PLATFORM：由平台統一管理，不可修改");
+            return;
+        }
         setActionError(null);
         loadSeqRef.current += 1;
         setIsCreatingDraft(true);
@@ -253,7 +261,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setEditorContent("");
         setIsEditing(true);
         setListState((prev) => (prev === "loading" ? "ready" : prev));
-    }, []);
+    }, [sourceScope]);
 
     const saveItemAs = useCallback(async (isIndexable: boolean) => {
         if (!auth) return;
@@ -261,6 +269,9 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setActionError(null);
         try {
             if (isCreatingDraft || !selectedItemId) {
+                if (sourceScope === "company") {
+                    throw new Error("MANAGED_BY_PLATFORM");
+                }
                 const created = await adapter.createItem(auth, {
                     title: editorTitle.trim() || "Untitled note",
                     contentMarkdown: editorContent,
@@ -307,10 +318,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId]);
+    }, [adapter, auth, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId, sourceScope]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
+        if (selectedItem?.sourceScope === "company" || selectedItem?.readOnly) return;
         setActionBusy(true);
         setActionError(null);
         try {
@@ -335,10 +347,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, invalidateListCache, items, selectedItemId]);
+    }, [adapter, applySelection, auth, invalidateListCache, items, selectedItem, selectedItemId]);
 
     const switchItemMode = useCallback(async (isIndexable: boolean) => {
         if (!auth || !selectedItem) return;
+        if (selectedItem.sourceScope === "company" || selectedItem.readOnly) return;
         setActionBusy(true);
         setActionError(null);
         try {
@@ -389,6 +402,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
 
     const startEdit = useCallback(() => {
         if (!selectedItem) return;
+        if (selectedItem.sourceScope === "company" || selectedItem.readOnly) return;
         setEditorTitle(selectedItem.title);
         setEditorContent(selectedItem.contentMarkdown);
         setActionError(null);
@@ -418,6 +432,8 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setSearch,
         viewFilter,
         setViewFilter,
+        sourceScope,
+        setSourceScope,
         counts,
         items,
         allItems: items,

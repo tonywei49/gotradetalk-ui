@@ -11,6 +11,7 @@ type UseNotebookAssistParams = {
     activeRoomId: string | null;
     canUseNotebookAssist: boolean;
     responseLang?: string | null;
+    knowledgeScope?: "personal" | "company" | "both";
     t: TFunction;
 };
 
@@ -35,9 +36,12 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
 
     const ensureKnowledgeBaseAvailable = useCallback(async (): Promise<boolean> => {
         if (!params.notebookAuth) return false;
-        const list = await params.adapter.listItems(params.notebookAuth, { filter: "knowledge" });
+        const list = await params.adapter.listItems(params.notebookAuth, {
+            filter: "knowledge",
+            scope: params.knowledgeScope || "both",
+        });
         return list.length > 0;
-    }, [params.adapter, params.notebookAuth]);
+    }, [params.adapter, params.notebookAuth, params.knowledgeScope]);
 
     const runAssistQuery = useCallback(async (query: string): Promise<void> => {
         if (!params.canUseNotebookAssist || !params.notebookAuth || !params.activeRoomId) return;
@@ -59,6 +63,7 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
             const result = await params.adapter.assistQuery(params.notebookAuth, {
                 roomId: params.activeRoomId,
                 query: trimmed,
+                knowledgeScope: params.knowledgeScope || "both",
                 responseLang: (params.responseLang || "").trim() || "zh-TW",
             });
             applyAssistOutput(result);
@@ -84,6 +89,7 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
                 roomId: params.activeRoomId,
                 anchorEventId,
                 windowSize: NOTEBOOK_ASSIST_CONTEXT_WINDOW_SIZE,
+                knowledgeScope: params.knowledgeScope || "both",
                 responseLang: (params.responseLang || "").trim() || "zh-TW",
             });
             applyAssistOutput(result);

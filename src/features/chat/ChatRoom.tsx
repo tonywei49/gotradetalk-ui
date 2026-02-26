@@ -105,7 +105,7 @@ const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
 
 function extractReferenceAnswer(text: string): string {
     const cleanup = (line: string): string => line
-        .replace(/^\s*[>\-\*\d\.\)\(]+\s*/, "")
+        .replace(/^\s*[>*\d.()-]+\s*/, "")
         .replace(/\*\*/g, "")
         .replace(/`+/g, "")
         .replace(/\[[sS]\d+\]/g, "")
@@ -120,7 +120,7 @@ function extractReferenceAnswer(text: string): string {
         .replace(/\s{2,}/g, " ")
         .replace(/[，,]\s*$/, "")
         .trim();
-    const isSeparator = (line: string): boolean => /^[\-\_=#*~\s]{3,}$/.test(line);
+    const isSeparator = (line: string): boolean => /^[-_=#*~\s]{3,}$/.test(line);
     const isSourceOnly = (line: string): boolean => /^\s*(\[[sS]\d+\]|【[^】]*S\d+[^】]*】)\s*$/.test(line);
     const lines = text
         .split(/\r?\n/)
@@ -142,6 +142,41 @@ function extractReferenceAnswer(text: string): string {
         if (line.length > 2) return normalizeAnswerLine(line);
     }
     return normalizeAnswerLine(lines[lines.length - 1]);
+}
+
+function normalizeSourceTitle(rawTitle: string | null | undefined, fallback: string): string {
+    const title = String(rawTitle || "").trim();
+    if (!title) return fallback;
+    return title.replace(/[\r\n]+/g, " ").trim();
+}
+
+function replaceSourceTagsWithTitles(text: string, sources: Array<{ title?: string; itemId?: string }>): string {
+    if (!text) return "";
+    let next = text;
+    sources.forEach((source, index) => {
+        const title = normalizeSourceTitle(source.title, source.itemId || `source-${index + 1}`);
+        const tokenPattern = new RegExp(`\\[\\s*[sS]\\s*${index + 1}\\s*\\]`, "g");
+        next = next.replace(tokenPattern, `[${title}]`);
+    });
+    return next;
+}
+
+function buildReferenceAnswer(params: {
+    answerText: string;
+    composerText: string;
+    fallbackQuery?: string;
+}): string {
+    const base = extractReferenceAnswer(params.answerText || "").trim();
+    if (!base) return "";
+    const question = (params.composerText || params.fallbackQuery || "").trim();
+    if (!question) return base;
+    const cleanQuestion = question.replace(/\s+/g, " ").replace(/[？?。.!！]+$/, "").trim();
+    if (!cleanQuestion) return base;
+    if (base.includes(cleanQuestion)) return base;
+    if (/^(是|不是|可|不可|建議|不建議|應該|不應該)/.test(base)) {
+        return `就「${cleanQuestion}」而言，${base}`;
+    }
+    return `針對「${cleanQuestion}」，${base}`;
 }
 
 type DraftMediaRegistryEntry = {
@@ -780,6 +815,7 @@ export const ChatRoom: React.FC = () => {
     const [assistSending, setAssistSending] = useState(false);
     const [assistEditorRows, setAssistEditorRows] = useState(5);
     const [assistEditorFullscreen, setAssistEditorFullscreen] = useState(false);
+    const [assistKnowledgeScope, setAssistKnowledgeScope] = useState<"personal" | "company" | "both">("both");
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -822,20 +858,42 @@ export const ChatRoom: React.FC = () => {
         activeRoomId,
         canUseNotebookAssist,
         responseLang: chatReceiveLanguage,
+        knowledgeScope: assistKnowledgeScope,
         t,
     });
     const assistSourceMap = useMemo(() => {
-        const map = new Map<string, { title: string; snippet: string }>();
+        const map = new Map<string, { title: string; snippet: string; sourceScope?: "personal" | "company"; sourceFileName?: string | null }>();
         (assistOutput?.sources || []).forEach((source, index) => {
             const label = source.title || source.itemId;
-            map.set(`${source.itemId}:${index + 1}`, { title: label, snippet: source.snippet || "" });
+            map.set(`${source.itemId}:${index + 1}`, {
+                title: label,
+                snippet: source.snippet || "",
+                sourceScope: source.sourceScope,
+                sourceFileName: source.sourceFileName || null,
+            });
             if (!map.has(source.itemId)) {
-                map.set(source.itemId, { title: label, snippet: source.snippet || "" });
+                map.set(source.itemId, {
+                    title: label,
+                    snippet: source.snippet || "",
+                    sourceScope: source.sourceScope,
+                    sourceFileName: source.sourceFileName || null,
+                });
             }
         });
         return map;
     }, [assistOutput?.sources]);
-    const assistReferenceAnswer = useMemo(() => extractReferenceAnswer(assistDraft || assistOutput?.answer || ""), [assistDraft, assistOutput?.answer]);
+    useEffect(() => {
+        if (!assistOutput) return;
+        const normalized = replaceSourceTagsWithTitles(assistOutput.answer, assistOutput.sources || []);
+        if (normalized && normalized !== assistDraft) {
+            setAssistDraft(normalized);
+        }
+    }, [assistOutput, assistDraft, setAssistDraft]);
+    const assistReferenceAnswer = useMemo(() => buildReferenceAnswer({
+        answerText: assistDraft || assistOutput?.answer || "",
+        composerText,
+        fallbackQuery: lastAssistTrigger?.type === "query" ? lastAssistTrigger.query : undefined,
+    }), [assistDraft, assistOutput?.answer, composerText, lastAssistTrigger]);
     const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);
     const {
         pendingAttachmentsByRoom,
@@ -2246,8 +2304,19 @@ export const ChatRoom: React.FC = () => {
                         : "mb-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/50 dark:bg-emerald-900/20"
                         }`}>
                         <div className="flex items-center justify-between">
-                            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
-                                {t("chat.notebook.panelTitle")}
+                            <div className="flex items-center gap-2">
+                                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
+                                    {t("chat.notebook.panelTitle")}
+                                </div>
+                                <select
+                                    value={assistKnowledgeScope}
+                                    onChange={(event) => setAssistKnowledgeScope(event.target.value as "personal" | "company" | "both")}
+                                    className="rounded border border-emerald-300 bg-white px-2 py-1 text-[11px] text-emerald-700 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300"
+                                >
+                                    <option value="both">全部來源</option>
+                                    <option value="personal">我的知識</option>
+                                    <option value="company">公司知識</option>
+                                </select>
                             </div>
                             <div className="flex items-center gap-2">
                                 <button
@@ -2328,18 +2397,19 @@ export const ChatRoom: React.FC = () => {
                                                     {(() => {
                                                         const linked = assistSourceMap.get(citation.sourceId)
                                                             || assistSourceMap.get(citation.sourceId.split(":")[0] || citation.sourceId);
-                                                        const parsedOrdinal = Number(citation.sourceId.split(":").pop() || "");
-                                                        const sourceOrdinal = Number.isFinite(parsedOrdinal) && parsedOrdinal > 0 ? parsedOrdinal : idx + 1;
                                                         const title = linked?.title || citation.title || citation.sourceId;
                                                         const snippet = (linked?.snippet || "").trim();
+                                                        const scope = citation.sourceScope || linked?.sourceScope || "personal";
+                                                        const fileName = citation.sourceFileName || linked?.sourceFileName || null;
+                                                        const sourceTag = scope === "company" ? "公司知識庫" : "個人知識";
                                                         return (
                                                             <div className="space-y-1">
                                                                 <div className="font-semibold text-slate-700 dark:text-slate-100">
-                                                                    {`【${title}，S${sourceOrdinal}】`}
-                                                                    {snippet ? ` ${snippet}` : ""}
+                                                                    {`來源[${title}]`}
+                                                                    {snippet ? `明確指出：${snippet}` : ""}
                                                                 </div>
                                                                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                                                    {citation.locator ? `${citation.locator} · #${sourceOrdinal}` : `#${sourceOrdinal}`}
+                                                                    {`${sourceTag}${fileName ? ` · ${fileName}` : ""}${citation.locator ? ` · ${citation.locator}` : ""} · #${idx + 1}`}
                                                                 </div>
                                                             </div>
                                                         );
