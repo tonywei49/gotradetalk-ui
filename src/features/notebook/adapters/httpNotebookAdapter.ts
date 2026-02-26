@@ -68,6 +68,8 @@ function mapAssist(dto: Awaited<ReturnType<typeof assistQuery>>): NotebookAssist
     const sourceMap = new Map(dto.sources.map((source, idx) => [`${source.item_id}:${idx + 1}`, source]));
     return {
         answer: dto.answer,
+        summaryText: dto.summary_text || null,
+        referenceAnswer: dto.reference_answer || null,
         sources: dto.sources.map(mapSource),
         citations: dto.citations.map((citation) => {
             const linkedSource = sourceMap.get(citation.source_id);

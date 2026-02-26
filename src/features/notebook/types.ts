@@ -73,6 +73,8 @@ export type NotebookCitation = {
 
 export type NotebookAssistResponse = {
     answer: string;
+    summaryText?: string | null;
+    referenceAnswer?: string | null;
     sources: NotebookSource[];
     citations: NotebookCitation[];
     confidence: number;

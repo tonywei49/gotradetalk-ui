@@ -103,80 +103,32 @@ const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
 const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
 
-function extractReferenceAnswer(text: string): string {
-    const cleanup = (line: string): string => line
-        .replace(/^\s*[>*\d.()-]+\s*/, "")
-        .replace(/\*\*/g, "")
-        .replace(/`+/g, "")
-        .replace(/\[[sS]\d+\]/g, "")
-        .trim();
-    const stripSourcePreface = (line: string): string => line
-        .replace(/^(根據|根据)(提供的)?來源[：:\s]*/i, "")
-        .replace(/^(根據|根据)[^，,。]{0,24}[，,:：]\s*/i, "")
-        .trim();
-    const normalizeAnswerLine = (line: string): string => line
-        .replace(/(，|,)?(?:該|该)?來源[^，。；;]*(提到|指出|顯示|显示)[^，。；;]*/g, "")
-        .replace(/(，|,)?(?:來自|来自)[^，。；;]*(來源|source)[^，。；;]*/gi, "")
-        .replace(/\s{2,}/g, " ")
-        .replace(/[，,]\s*$/, "")
-        .trim();
-    const isSeparator = (line: string): boolean => /^[-_=#*~\s]{3,}$/.test(line);
-    const isSourceOnly = (line: string): boolean => /^\s*(\[[sS]\d+\]|【[^】]*S\d+[^】]*】)\s*$/.test(line);
-    const lines = text
-        .split(/\r?\n/)
-        .map((line) => stripSourcePreface(cleanup(line)))
-        .filter((line) => Boolean(line) && !isSeparator(line) && !isSourceOnly(line));
-    if (lines.length === 0) return "";
-    const tagged = lines.find((line) => /^(參考答案|参考答案|結論|结论|答案)\s*[:：]/i.test(line));
-    if (tagged) {
-        const normalized = normalizeAnswerLine(
-            tagged.replace(/^(參考答案|参考答案|結論|结论|答案)\s*[:：]\s*/i, "").trim(),
-        );
-        if (normalized && !isSeparator(normalized)) return normalized;
-    }
-    const conclusionLine = lines.find((line) => /因此|所以|結論|结论|建議|建议/.test(line));
-    if (conclusionLine) return normalizeAnswerLine(conclusionLine);
-    for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
-        const line = lines[idx];
-        if (line.startsWith("[S") || line.startsWith("【")) continue;
-        if (line.length > 2) return normalizeAnswerLine(line);
-    }
-    return normalizeAnswerLine(lines[lines.length - 1]);
-}
-
 function normalizeSourceTitle(rawTitle: string | null | undefined, fallback: string): string {
     const title = String(rawTitle || "").trim();
     if (!title) return fallback;
     return title.replace(/[\r\n]+/g, " ").trim();
 }
 
-function replaceSourceTagsWithTitles(text: string, sources: Array<{ title?: string; itemId?: string }>): string {
-    if (!text) return "";
-    let next = text;
-    sources.forEach((source, index) => {
-        const title = normalizeSourceTitle(source.title, source.itemId || `source-${index + 1}`);
-        const tokenPattern = new RegExp(`\\[\\s*[sS]\\s*${index + 1}\\s*\\]`, "g");
-        next = next.replace(tokenPattern, `[${title}]`);
-    });
-    return next;
-}
+function parseAssistAnswerLines(answer: string): { summary: string; reference: string } {
+    const lines = answer
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (lines.length === 0) return { summary: "", reference: "" };
 
-function buildReferenceAnswer(params: {
-    answerText: string;
-    composerText: string;
-    fallbackQuery?: string;
-}): string {
-    const base = extractReferenceAnswer(params.answerText || "").trim();
-    if (!base) return "";
-    const question = (params.composerText || params.fallbackQuery || "").trim();
-    if (!question) return base;
-    const cleanQuestion = question.replace(/\s+/g, " ").replace(/[？?。.!！]+$/, "").trim();
-    if (!cleanQuestion) return base;
-    if (base.includes(cleanQuestion)) return base;
-    if (/^(是|不是|可|不可|建議|不建議|應該|不應該)/.test(base)) {
-        return `就「${cleanQuestion}」而言，${base}`;
+    const stripPrefix = (line: string): string => line
+        .replace(/^(summary|摘要|總結歸納|总结归纳)\s*[:：]\s*/i, "")
+        .replace(/^(reference answer|參考答案|参考答案)\s*[:：]\s*/i, "")
+        .trim();
+
+    if (lines.length === 1) {
+        return { summary: stripPrefix(lines[0] || ""), reference: "" };
     }
-    return `針對「${cleanQuestion}」，${base}`;
+
+    return {
+        summary: stripPrefix(lines[0] || ""),
+        reference: stripPrefix(lines[1] || ""),
+    };
 }
 
 type DraftMediaRegistryEntry = {
@@ -882,18 +834,12 @@ export const ChatRoom: React.FC = () => {
         });
         return map;
     }, [assistOutput?.sources]);
-    useEffect(() => {
-        if (!assistOutput) return;
-        const normalized = replaceSourceTagsWithTitles(assistOutput.answer, assistOutput.sources || []);
-        if (normalized && normalized !== assistDraft) {
-            setAssistDraft(normalized);
-        }
-    }, [assistOutput, assistDraft, setAssistDraft]);
-    const assistReferenceAnswer = useMemo(() => buildReferenceAnswer({
-        answerText: assistDraft || assistOutput?.answer || "",
-        composerText,
-        fallbackQuery: lastAssistTrigger?.type === "query" ? lastAssistTrigger.query : undefined,
-    }), [assistDraft, assistOutput?.answer, composerText, lastAssistTrigger]);
+    const assistAnswerFallback = useMemo(
+        () => parseAssistAnswerLines(assistOutput?.answer || ""),
+        [assistOutput?.answer],
+    );
+    const assistSummaryText = (assistDraft || assistOutput?.summaryText || assistAnswerFallback.summary || assistOutput?.answer || "").trim();
+    const assistReferenceAnswer = (assistOutput?.referenceAnswer || assistAnswerFallback.reference || assistSummaryText || assistOutput?.answer || "").trim();
     const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);
     const {
         pendingAttachmentsByRoom,
@@ -1545,7 +1491,7 @@ export const ChatRoom: React.FC = () => {
 
     const onDirectSendAssist = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
-        const finalText = assistReferenceAnswer.trim() || assistDraft.trim();
+        const finalText = assistReferenceAnswer || assistSummaryText || (assistOutput?.answer || "").trim();
         if (!finalText || assistLowConfidence) return;
         setAssistSending(true);
         try {
@@ -2361,7 +2307,7 @@ export const ChatRoom: React.FC = () => {
                         {assistOutput && (
                             <div className="mt-2 space-y-2">
                                 <textarea
-                                    value={assistDraft}
+                                    value={assistSummaryText}
                                     onChange={(event) => setAssistDraft(event.target.value)}
                                     rows={assistEditorFullscreen ? 16 : assistEditorRows}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -2397,7 +2343,7 @@ export const ChatRoom: React.FC = () => {
                                                     {(() => {
                                                         const linked = assistSourceMap.get(citation.sourceId)
                                                             || assistSourceMap.get(citation.sourceId.split(":")[0] || citation.sourceId);
-                                                        const title = linked?.title || citation.title || citation.sourceId;
+                                                        const title = normalizeSourceTitle(linked?.title || citation.title, citation.sourceId);
                                                         const snippet = (linked?.snippet || "").trim();
                                                         const scope = citation.sourceScope || linked?.sourceScope || "personal";
                                                         const fileName = citation.sourceFileName || linked?.sourceFileName || null;
@@ -2405,7 +2351,7 @@ export const ChatRoom: React.FC = () => {
                                                         return (
                                                             <div className="space-y-1">
                                                                 <div className="font-semibold text-slate-700 dark:text-slate-100">
-                                                                    {`來源[${title}]`}
+                                                                    {`[${title}|S${idx + 1}]`}
                                                                     {snippet ? `明確指出：${snippet}` : ""}
                                                                 </div>
                                                                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -2422,7 +2368,7 @@ export const ChatRoom: React.FC = () => {
                                 <div className="flex flex-wrap gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => setComposerText(assistDraft)}
+                                        onClick={() => setComposerText(assistSummaryText)}
                                         className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
                                     >
                                         {t("chat.notebook.applyToInput")}
@@ -2432,7 +2378,7 @@ export const ChatRoom: React.FC = () => {
                                         onClick={() => {
                                             void onDirectSendAssist();
                                         }}
-                                        disabled={assistLowConfidence || assistSending || (assistReferenceAnswer.trim() || assistDraft.trim()).length === 0}
+                                        disabled={assistLowConfidence || assistSending || assistReferenceAnswer.length === 0}
                                         className="rounded-lg bg-[#2F5C56] px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         {assistSending ? t("chat.notebook.sending") : "發送參考答案"}

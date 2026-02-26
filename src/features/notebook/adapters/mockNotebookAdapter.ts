@@ -113,6 +113,8 @@ function buildAssistResponse(query: string, scope: "personal" | "company" | "bot
     if (normalized.includes("不存在") || normalized.includes("unknown") || normalized.includes("hallucination")) {
         return {
             answer: "知識庫未找到明確依據，建議先向產品團隊確認後再回覆客戶。",
+            summaryText: "知識庫未找到明確依據。",
+            referenceAnswer: "目前沒有足夠依據可直接回覆，建議先向產品團隊確認後再答覆客戶。",
             confidence: 0.38,
             traceId: `mock-trace-${Date.now()}`,
             sources: [],
@@ -122,6 +124,8 @@ function buildAssistResponse(query: string, scope: "personal" | "company" | "bot
     const useCompany = scope === "company";
     return {
         answer: "根據現有知識庫，該功能支援標準版本。若需企業版差異，請附上客戶方案等級再確認。",
+        summaryText: "根據現有知識庫，該功能支援標準版本。",
+        referenceAnswer: "您好，此功能目前支援標準版本；若需確認企業版差異，請提供您的方案等級，我們可再協助核對。",
         confidence: 0.78,
         traceId: `mock-trace-${Date.now()}`,
         sources: [

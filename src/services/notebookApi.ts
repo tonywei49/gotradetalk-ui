@@ -135,6 +135,8 @@ export type NotebookAssistCitationDto = {
 
 export type NotebookAssistResponseDto = {
     answer: string;
+    summary_text?: string | null;
+    reference_answer?: string | null;
     sources: NotebookAssistSourceDto[];
     citations: NotebookAssistCitationDto[];
     confidence: number;
