@@ -170,6 +170,18 @@ async function leave(tag) {
   addResult(`leave-${tag}`, true, roomId);
 }
 
+async function kick(tagFrom, tagTarget, reason = "regression-kick") {
+  const roomId = state.roomId;
+  const token = state.tokens[tagFrom];
+  const target = state.userIds[tagTarget];
+  await requestJson(
+    "POST",
+    `/_matrix/client/v3/rooms/${encodeRoomId(roomId)}/kick`,
+    { token, body: { user_id: target, reason } },
+  );
+  addResult(`kick-${tagFrom}-to-${tagTarget}`, true, target);
+}
+
 async function assertInviteVersion(tag) {
   const token = state.tokens[tag];
   const roomId = state.roomId;
@@ -336,12 +348,17 @@ async function main() {
       await invite("A", "D");
       await assertInviteVersion("D");
       await join("D");
-      await invite("A", "C");
-      await assertInviteVersion("C");
-      await join("C");
     } else {
       addResult("invite-flow-D-branch", true, "skipped (D account not distinct)");
     }
+
+    // always run C re-invite branch (matches real usage path)
+    await invite("A", "C");
+    await assertInviteVersion("C");
+    await join("C");
+
+    // host removes member scenario
+    await kick("A", "B");
 
     await sendTestFileAndDelete();
   } catch (e) {
