@@ -54,11 +54,7 @@ import {
     useNotebookModule,
 } from "../features/notebook";
 import {
-    getCompanyNotebookAiSettings,
-    getCompanyTranslationSettings,
     getNotebookCapabilities,
-    type CompanyNotebookAiSettingsResponse,
-    type CompanyTranslationSettingsResponse,
     NotebookServiceError,
 } from "../services/notebookApi";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
@@ -263,12 +259,8 @@ export const MainLayout: React.FC = () => {
     const [chatGlobalSearchCursor, setChatGlobalSearchCursor] = useState<string | null>(null);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
     const [settingsDetail, setSettingsDetail] = useState<
-        "none" | "chat-language" | "translation-default" | "notebook-policy" | "translation-policy"
+        "none" | "chat-language" | "translation-default"
     >("none");
-    const [notebookPolicy, setNotebookPolicy] = useState<CompanyNotebookAiSettingsResponse | null>(null);
-    const [translationPolicy, setTranslationPolicy] = useState<CompanyTranslationSettingsResponse | null>(null);
-    const [policyLoading, setPolicyLoading] = useState(false);
-    const [policyError, setPolicyError] = useState<string | null>(null);
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
@@ -294,7 +286,11 @@ export const MainLayout: React.FC = () => {
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const accountButtonRef = useRef<HTMLButtonElement | null>(null);
+    const avatarUploadInputRef = useRef<HTMLInputElement | null>(null);
     const [meProfile, setMeProfile] = useState<HubProfileSummary | null>(null);
+    const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
+    const [avatarUploading, setAvatarUploading] = useState(false);
+    const [avatarUploadFeedback, setAvatarUploadFeedback] = useState<string | null>(null);
     const [notebookApiBaseUrlOverride, setNotebookApiBaseUrlOverride] = useState<string | null>(null);
     const [hubMeResolved, setHubMeResolved] = useState(false);
     const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
@@ -343,6 +339,11 @@ export const MainLayout: React.FC = () => {
     const retryNotebookCapability = useCallback(() => {
         setCapabilityRefreshSeq((prev) => prev + 1);
     }, []);
+
+    const resolveAvatarUrl = useCallback((mxcUrl: string | null | undefined): string | null => {
+        if (!matrixClient || !mxcUrl) return null;
+        return matrixClient.mxcUrlToHttp(mxcUrl, 96, 96, "crop") ?? matrixClient.mxcUrlToHttp(mxcUrl) ?? null;
+    }, [matrixClient]);
     useEffect(() => {
         if (notebookToken.reason !== "expired_hub_token") return;
         if (!hubSession?.refresh_token) return;
@@ -652,50 +653,6 @@ export const MainLayout: React.FC = () => {
     }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason, userType, t]);
 
     useEffect(() => {
-        if (activeTab !== "settings") return;
-        if (!notebookAuth || !notebookApiBaseUrlOverride) {
-            setNotebookPolicy(null);
-            setTranslationPolicy(null);
-            return;
-        }
-        let alive = true;
-        setPolicyLoading(true);
-        setPolicyError(null);
-        void Promise.all([
-            getCompanyNotebookAiSettings(notebookAuth),
-            getCompanyTranslationSettings(notebookAuth),
-        ]).then(([nb, tr]) => {
-            if (!alive) return;
-            setNotebookPolicy(nb);
-            setTranslationPolicy(tr);
-            setPolicyError(null);
-        }).catch((error) => {
-            if (!alive) return;
-            if (error instanceof NotebookServiceError) {
-                if (error.code === "NO_VALID_HUB_TOKEN" || error.code === "INVALID_AUTH_TOKEN" || error.code === "INVALID_TOKEN_TYPE") {
-                    setPolicyError(t("layout.notebook.authFailed"));
-                } else if (error.code === "CAPABILITY_DISABLED") {
-                    setPolicyError(t("layout.notebook.capabilityDisabled"));
-                } else if (error.code === "CAPABILITY_EXPIRED") {
-                    setPolicyError(t("layout.notebook.capabilityExpired"));
-                } else if (error.code === "QUOTA_EXCEEDED") {
-                    setPolicyError(t("layout.notebook.quotaExceeded"));
-                } else {
-                    setPolicyError(t("layout.notebook.systemBusy"));
-                }
-            } else {
-                setPolicyError(t("layout.notebook.systemBusy"));
-            }
-        }).finally(() => {
-            if (!alive) return;
-            setPolicyLoading(false);
-        });
-        return () => {
-            alive = false;
-        };
-    }, [activeTab, notebookAuth, notebookApiBaseUrlOverride, t]);
-
-    useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
             const target = event.target as Node;
             if (accountMenuRef.current?.contains(target) || accountButtonRef.current?.contains(target)) return;
@@ -751,9 +708,17 @@ export const MainLayout: React.FC = () => {
             setSelectedFileIds([]);
             setFileActionError(null);
         }
-        setMobileView("list");
         setSettingsDetail("none");
     }, [activeTab]);
+
+    useEffect(() => {
+        if (!matrixClient || !matrixCredentials?.user_id) {
+            setAccountAvatarUrl(null);
+            return;
+        }
+        const myMember = matrixClient.getUser(matrixCredentials.user_id);
+        setAccountAvatarUrl(resolveAvatarUrl(myMember?.avatarUrl));
+    }, [matrixClient, matrixCredentials?.user_id, resolveAvatarUrl]);
 
     useEffect(() => {
         if (activeTab === "contacts") {
@@ -829,6 +794,51 @@ export const MainLayout: React.FC = () => {
         clearSession();
         navigate("/auth");
     };
+
+    const onUploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file || !matrixClient) return;
+        setAvatarUploading(true);
+        setAvatarUploadFeedback(null);
+        try {
+            const uploadResult = (await matrixClient.uploadContent(file, {
+                includeFilename: false,
+            })) as unknown;
+            let mxcUrl = "";
+            if (typeof uploadResult === "string") {
+                if (uploadResult.startsWith("mxc://")) {
+                    mxcUrl = uploadResult;
+                } else {
+                    try {
+                        const parsed = JSON.parse(uploadResult) as { content_uri?: string };
+                        mxcUrl = parsed.content_uri || "";
+                    } catch {
+                        mxcUrl = "";
+                    }
+                }
+            } else if (uploadResult && typeof uploadResult === "object") {
+                const uri = (uploadResult as { content_uri?: string }).content_uri;
+                mxcUrl = typeof uri === "string" ? uri : "";
+            }
+            if (!mxcUrl.startsWith("mxc://")) {
+                throw new Error("Avatar upload failed");
+            }
+            await matrixClient.setAvatarUrl(mxcUrl);
+            setAccountAvatarUrl(resolveAvatarUrl(mxcUrl));
+            setAvatarUploadFeedback("Avatar updated");
+        } catch {
+            setAvatarUploadFeedback("Avatar upload failed");
+        } finally {
+            setAvatarUploading(false);
+        }
+    };
+
+    const getContactAvatarUrl = useCallback((matrixUserId?: string | null): string | null => {
+        if (!matrixClient || !matrixUserId) return null;
+        const user = matrixClient.getUser(matrixUserId);
+        return resolveAvatarUrl(user?.avatarUrl);
+    }, [matrixClient, resolveAvatarUrl]);
 
     const runChatGlobalSearch = useCallback(async (params?: { forceQuery?: string; cursor?: string; append?: boolean }) => {
         const q = (params?.forceQuery ?? debouncedChatGlobalSearchQuery).trim();
@@ -1369,16 +1379,23 @@ export const MainLayout: React.FC = () => {
                         ref={accountButtonRef}
                         type="button"
                         onClick={() => setShowAccountMenu((prev) => !prev)}
-                        className="w-10 h-10 bg-[#2F5C56] rounded-xl flex items-center justify-center text-white font-bold text-sm"
+                        className="w-10 h-10 bg-[#2F5C56] rounded-xl overflow-hidden flex items-center justify-center text-white font-bold text-sm"
                         aria-label={t("layout.accountMenu")}
                     >
-                        {accountInitial}
+                        {accountAvatarUrl ? (
+                            <img src={accountAvatarUrl} alt={accountId} className="h-full w-full object-cover" />
+                        ) : (
+                            accountInitial
+                        )}
                     </button>
                     {showAccountMenu && (
                         <div
                             ref={accountMenuRef}
                             className="absolute left-0 z-30 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-2 text-sm shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900"
                         >
+                            <div className="border-b border-gray-100 px-3 pb-2 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                                {accountId}
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => {
@@ -1403,28 +1420,44 @@ export const MainLayout: React.FC = () => {
                 {/* Nav Items */}
                 <div className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border border-slate-700/70 bg-slate-800/60 px-1 py-1 sm:gap-2 lg:w-full lg:flex-col lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
                     <NavBarItem
+                        icon={UserGroupIcon}
+                        active={activeTab === "contacts"}
+                        badgeCount={inviteBadgeCount}
+                        onClick={() => {
+                            setMobileView("list");
+                            setActiveTab("contacts");
+                        }}
+                        className="order-1 lg:order-none"
+                    />
+                    <NavBarItem
                         icon={ChatBubbleLeftRightIcon}
                         active={activeTab === "chat"}
                         badgeCount={unreadBadgeCount}
-                        onClick={() => setActiveTab("chat")}
+                        onClick={() => {
+                            setMobileView("list");
+                            setActiveTab("chat");
+                        }}
+                        className="order-2 lg:order-none"
                     />
                     {notebookCapabilityState.canUseNotebookBasic && (
                         <NavBarItem
                             icon={BookOpenIcon}
                             active={activeTab === "notebook"}
-                            onClick={() => setActiveTab("notebook")}
+                            onClick={() => {
+                                setMobileView("list");
+                                setActiveTab("notebook");
+                            }}
+                            className="order-3 lg:order-none"
                         />
                     )}
                     <NavBarItem
-                        icon={UserGroupIcon}
-                        active={activeTab === "contacts"}
-                        badgeCount={inviteBadgeCount}
-                        onClick={() => setActiveTab("contacts")}
-                    />
-                    <NavBarItem
                         icon={FolderIcon}
                         active={activeTab === "files"}
-                        onClick={() => setActiveTab("files")}
+                        onClick={() => {
+                            setMobileView("list");
+                            setActiveTab("files");
+                        }}
+                        className="order-4 lg:order-none"
                     />
                     <NavBarItem
                         icon={Cog6ToothIcon}
@@ -1434,7 +1467,7 @@ export const MainLayout: React.FC = () => {
                             setSettingsDetail("none");
                             setMobileView("list");
                         }}
-                        className="lg:hidden"
+                        className="order-5 lg:order-none lg:hidden"
                     />
                 </div>
 
@@ -1551,26 +1584,6 @@ export const MainLayout: React.FC = () => {
                             >
                                 {t("layout.translationDefaultContent")}
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSettingsDetail("notebook-policy");
-                                    setMobileView("detail");
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.notebook.platformNotebookPolicy")}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSettingsDetail("translation-policy");
-                                    setMobileView("detail");
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.notebook.platformTranslationPolicy")}
-                            </button>
                         </div>
                     </>
                 ) : activeTab === "account" ? (
@@ -1581,10 +1594,34 @@ export const MainLayout: React.FC = () => {
                             </div>
                         </div>
                         <div className="p-4 space-y-3">
-                            <label className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800">
-                                {t("layout.uploadAvatar")}
-                                <input type="file" accept="image/*" className="hidden" />
-                            </label>
+                            <button
+                                type="button"
+                                onClick={() => avatarUploadInputRef.current?.click()}
+                                disabled={avatarUploading}
+                                className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm text-slate-700 hover:bg-gray-50 disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                            >
+                                {avatarUploading ? t("common.loading") : t("layout.uploadAvatar")}
+                            </button>
+                            {avatarUploadFeedback && (
+                                <div
+                                    className={`text-xs ${
+                                        avatarUploadFeedback.includes("failed")
+                                            ? "text-rose-500"
+                                            : "text-emerald-600 dark:text-emerald-300"
+                                    }`}
+                                >
+                                    {avatarUploadFeedback}
+                                </div>
+                            )}
+                            <input
+                                ref={avatarUploadInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(event) => {
+                                    void onUploadAvatar(event);
+                                }}
+                            />
                             <button
                                 type="button"
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -1699,7 +1736,11 @@ export const MainLayout: React.FC = () => {
                         {/* Header */}
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                             <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
+                                {accountAvatarUrl ? (
+                                    <img src={accountAvatarUrl} alt={accountId} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                                ) : (
+                                    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
+                                )}
                                 <div className="min-w-0">
                                     <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
                                         {accountId}
@@ -1868,7 +1909,7 @@ export const MainLayout: React.FC = () => {
                             activeContactId={activeContact?.id ?? null}
                             contactsRefreshToken={contactsRefreshToken}
                             pinnedRoomIds={pinnedRoomIds}
-                            enableContactPolling={activeTab === "contacts"}
+                            enableContactPolling
                         />
                     </>
                 )}
@@ -1915,9 +1956,23 @@ export const MainLayout: React.FC = () => {
                                         >
                                             &lt;
                                         </button>
-                                        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-semibold dark:bg-emerald-900/40 dark:text-emerald-200">
-                                            {getContactLabel(activeContact).charAt(0).toUpperCase()}
-                                        </div>
+                                        {(() => {
+                                            const contactAvatarUrl = getContactAvatarUrl(activeContact.matrixUserId);
+                                            if (contactAvatarUrl) {
+                                                return (
+                                                    <img
+                                                        src={contactAvatarUrl}
+                                                        alt={getContactLabel(activeContact)}
+                                                        className="w-16 h-16 rounded-full object-cover"
+                                                    />
+                                                );
+                                            }
+                                            return (
+                                                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-semibold dark:bg-emerald-900/40 dark:text-emerald-200">
+                                                    {getContactLabel(activeContact).charAt(0).toUpperCase()}
+                                                </div>
+                                            );
+                                        })()}
                                         <div>
                                             <div className="text-xl font-semibold text-slate-800 dark:text-slate-100">
                                                 {getContactLabel(activeContact)}
@@ -2029,7 +2084,7 @@ export const MainLayout: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="px-6 pb-8 sm:px-8">
+                                <div className="sticky bottom-0 px-6 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3 sm:px-8 lg:static lg:pt-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-gray-100 dark:border-slate-800 lg:border-t-0">
                                     <button
                                         type="button"
                                         onClick={() => void onStartContactChat()}
@@ -2500,96 +2555,6 @@ export const MainLayout: React.FC = () => {
                                             {t("layout.translationDefaultOriginal")}
                                         </button>
                                     </div>
-                                </div>
-                            </>
-                        ) : activeTab === "settings" && (settingsDetail === "notebook-policy" || settingsDetail === "translation-policy") ? (
-                            <>
-                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    {t("layout.selectItem")}
-                                </div>
-                                <div className="px-6 pb-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMobileView("list")}
-                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label={t("layout.backToList")}
-                                        >
-                                            &lt;
-                                        </button>
-                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            {settingsDetail === "notebook-policy"
-                                                ? t("layout.notebook.platformNotebookPolicy")
-                                                : t("layout.notebook.platformTranslationPolicy")}
-                                        </div>
-                                    </div>
-                                    {policyLoading ? (
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
-                                            {t("common.loading")}
-                                        </div>
-                                    ) : policyError ? (
-                                        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                                            {policyError}
-                                        </div>
-                                    ) : (
-                                        (() => {
-                                            const target = settingsDetail === "notebook-policy" ? notebookPolicy : translationPolicy;
-                                            const enabled = settingsDetail === "notebook-policy"
-                                                ? Boolean(notebookPolicy?.notebook_ai_enabled)
-                                                : Boolean(translationPolicy?.translation_enabled);
-                                            const expireAt = settingsDetail === "notebook-policy"
-                                                ? notebookPolicy?.notebook_ai_expire_at
-                                                : translationPolicy?.translation_expire_at;
-                                            const monthlyQuota = settingsDetail === "notebook-policy"
-                                                ? notebookPolicy?.notebook_ai_quota_monthly_requests
-                                                : translationPolicy?.translation_quota_monthly_requests;
-                                            const monthlyUsed = settingsDetail === "notebook-policy"
-                                                ? notebookPolicy?.notebook_ai_quota_used_monthly_requests
-                                                : translationPolicy?.translation_quota_used_monthly_requests;
-
-                                            return (
-                                                <div className="space-y-3">
-                                                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
-                                                        <div className="text-xs uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
-                                                            {t("layout.notebook.managedByPlatform")}
-                                                        </div>
-                                                        <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                                            {target?.managed_by_platform ? t("common.confirm") : t("common.cancel")}
-                                                        </div>
-                                                        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                                            {t("layout.notebook.managedByPlatformHint")}
-                                                        </div>
-                                                    </div>
-                                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.statusLabel")}</div>
-                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                                                {enabled ? t("layout.notebook.enabled") : t("layout.notebook.disabled")}
-                                                            </div>
-                                                        </div>
-                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.expireAtLabel")}</div>
-                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                                                {expireAt ? new Date(expireAt).toLocaleString() : t("common.placeholder")}
-                                                            </div>
-                                                        </div>
-                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.quotaMonthlyLabel")}</div>
-                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                                                {typeof monthlyQuota === "number" ? monthlyQuota.toLocaleString() : t("common.placeholder")}
-                                                            </div>
-                                                        </div>
-                                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                                                            <div className="text-xs uppercase tracking-[0.1em] text-slate-400">{t("layout.notebook.quotaUsedLabel")}</div>
-                                                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                                                {typeof monthlyUsed === "number" ? monthlyUsed.toLocaleString() : t("common.placeholder")}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })()
-                                    )}
                                 </div>
                             </>
                         ) : (

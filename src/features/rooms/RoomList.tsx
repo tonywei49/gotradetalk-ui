@@ -73,6 +73,7 @@ type RoomListProps = {
 
 const EMPTY_STATE: ChatRoomEntry[] = [];
 const STAFF_CUSTOMER_DOMAIN = "matrix.gotradetalk.com";
+const CONTACTS_CACHE_PREFIX = "gtt_contacts_cache_v1:";
 
 function normalizeMatrixLocalpart(value: string): string {
     const trimmed = value.trim();
@@ -314,6 +315,11 @@ export function RoomList({
     const [pendingInviteRooms, setPendingInviteRooms] = useState<
         Record<string, { roomId: string; matrixUserId: string }>
     >({});
+    const contactCacheKey = useMemo(() => {
+        const userId = client?.getUserId() ?? "";
+        if (!userId) return null;
+        return `${CONTACTS_CACHE_PREFIX}${userId}`;
+    }, [client]);
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -474,6 +480,20 @@ export function RoomList({
     const searchToken = useHubToken ? hubAccessToken : matrixAccessToken;
     const searchHsUrl = useHubToken ? null : matrixHsUrl;
     const matrixHost = getMatrixHost(matrixHsUrl);
+
+    useEffect(() => {
+        if (!contactCacheKey) return;
+        try {
+            const raw = localStorage.getItem(contactCacheKey);
+            if (!raw) return;
+            const cached = JSON.parse(raw) as ContactSummary[];
+            if (!Array.isArray(cached) || cached.length === 0) return;
+            setContacts(cached);
+            setAcceptedIds(new Set(cached.map((item) => item.id)));
+        } catch {
+            // ignore cache read failures
+        }
+    }, [contactCacheKey]);
 
     useEffect(() => {
         if (!isStructuredSearch) return;
@@ -655,6 +675,25 @@ export function RoomList({
                     translationLocale: item.translation_locale,
                 })),
             );
+            if (contactCacheKey) {
+                try {
+                    localStorage.setItem(contactCacheKey, JSON.stringify(contactItems.map((item) => ({
+                        id: item.user_id,
+                        initiatedByMe: item.initiated_by_me,
+                        userType: item.user_type,
+                        displayName: item.display_name,
+                        userLocalId: item.user_local_id,
+                        companyName: item.company_name,
+                        country: item.country,
+                        matrixUserId: item.matrix_user_id,
+                        gender: item.gender,
+                        locale: item.locale,
+                        translationLocale: item.translation_locale,
+                    }))));
+                } catch {
+                    // ignore cache write failures
+                }
+            }
             setAcceptedIds(new Set(contactItems.map((item) => item.user_id)));
             setIncomingRequests(
                 requestItems.map((item) => ({
@@ -721,7 +760,7 @@ export function RoomList({
             void refreshContacts();
         }, 6000);
         return () => window.clearInterval(timer);
-    }, [searchToken, searchHsUrl, contactsRefreshToken, client, matrixHost, pendingInviteRooms, enableContactPolling]);
+    }, [searchToken, searchHsUrl, contactsRefreshToken, client, matrixHost, pendingInviteRooms, enableContactPolling, contactCacheKey]);
 
     useEffect(() => {
         if (!onInviteBadgeChange) return;
@@ -868,19 +907,32 @@ export function RoomList({
                 : ""
                 }`}
         >
-            <div className="min-w-0 text-left">
-                <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                    {getAccountIdLabel({
-                        matrixUserId: contact.matrixUserId,
-                        userLocalId: contact.userLocalId,
-                    })}
-                </div>
-                <div className="text-xs text-slate-500 truncate dark:text-slate-400">
-                    {getMetaLabel({
-                        companyName: contact.companyName,
-                        title: null,
-                        country: contact.country,
-                    })}
+            <div className="min-w-0 text-left flex items-center gap-2">
+                {(() => {
+                    const avatarMxc = contact.matrixUserId ? client?.getUser(contact.matrixUserId)?.avatarUrl : null;
+                    const avatarHttp = avatarMxc
+                        ? client?.mxcUrlToHttp(avatarMxc, 56, 56, "crop") ?? client?.mxcUrlToHttp(avatarMxc) ?? null
+                        : null;
+                    return avatarHttp ? (
+                        <img src={avatarHttp} alt={contact.displayName || contact.userLocalId || "contact"} className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                        <div className="h-9 w-9 rounded-full bg-gray-200 dark:bg-slate-700 flex-shrink-0" />
+                    );
+                })()}
+                <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                        {getAccountIdLabel({
+                            matrixUserId: contact.matrixUserId,
+                            userLocalId: contact.userLocalId,
+                        })}
+                    </div>
+                    <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                        {getMetaLabel({
+                            companyName: contact.companyName,
+                            title: null,
+                            country: contact.country,
+                        })}
+                    </div>
                 </div>
             </div>
         </button>
@@ -1092,7 +1144,17 @@ export function RoomList({
                                 </span>
                             </div>
                         ) : (
-                            <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
+                            (() => {
+                                const avatarMxc = entry.userId ? client?.getUser(entry.userId)?.avatarUrl : null;
+                                const avatarHttp = avatarMxc
+                                    ? client?.mxcUrlToHttp(avatarMxc, 64, 64, "crop") ?? client?.mxcUrlToHttp(avatarMxc) ?? null
+                                    : null;
+                                return avatarHttp ? (
+                                    <img src={avatarHttp} alt={entry.displayName} className="w-10 h-10 rounded-full object-cover" />
+                                ) : (
+                                    <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
+                                );
+                            })()
                         )}
                         {entry.unreadCount > 0 && (
                             <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">

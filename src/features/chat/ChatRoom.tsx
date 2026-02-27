@@ -88,6 +88,7 @@ type MessageBubbleProps = {
     onResend: (event: MatrixEvent) => void;
     mediaUrl: string | null;
     senderLabel: string;
+    senderAvatarUrl?: string | null;
     onOpenMedia: (payload: { url: string; type: "image" | "video" | "pdf" }) => void;
     translatedText?: string | null;
     showTranslation?: boolean;
@@ -223,6 +224,7 @@ const MessageBubble = ({
     onResend,
     mediaUrl,
     senderLabel,
+    senderAvatarUrl,
     onOpenMedia,
     translatedText,
     showTranslation,
@@ -323,7 +325,13 @@ const MessageBubble = ({
     return (
         <div className={`flex w-full mb-3 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
             {/* Avatar (Incoming only) */}
-            {!isMe && <div className="w-8 h-8 rounded-full bg-gray-300 mr-3 flex-shrink-0 self-start mt-1" />}
+            {!isMe && (
+                senderAvatarUrl ? (
+                    <img src={senderAvatarUrl} alt={senderLabel} className="w-8 h-8 rounded-full object-cover mr-3 flex-shrink-0 self-start mt-1" />
+                ) : (
+                    <div className="w-8 h-8 rounded-full bg-gray-300 mr-3 flex-shrink-0 self-start mt-1" />
+                )
+            )}
 
             <div className={`flex flex-col max-w-[70%] ${isMe ? "items-end" : "items-start"}`}>
                 {/* Sender Name (Incoming only) */}
@@ -2438,6 +2446,10 @@ export const ChatRoom: React.FC = () => {
                     const sender = event.getSender();
                     const senderMember = sender ? room?.getMember(sender) : null;
                     const senderLabel = getUserLabel(sender, senderMember?.name);
+                    const senderAvatarMxc = senderMember?.user?.avatarUrl ?? null;
+                    const senderAvatarUrl = senderAvatarMxc && matrixClient
+                        ? matrixClient.mxcUrlToHttp(senderAvatarMxc, 48, 48, "crop") ?? matrixClient.mxcUrlToHttp(senderAvatarMxc) ?? null
+                        : null;
                     const eventId = event.getId() ?? "";
                     return (
                         <div
@@ -2453,6 +2465,7 @@ export const ChatRoom: React.FC = () => {
                                 mediaUrl={mediaUrl}
                                 onResend={onResend}
                                 senderLabel={senderLabel}
+                                senderAvatarUrl={senderAvatarUrl}
                                 onOpenMedia={openMediaPreview}
                                 translatedText={translationMap[getMessageEventKey(event)]?.text ?? null}
                                 translationLoading={translationMap[getMessageEventKey(event)]?.loading ?? false}
