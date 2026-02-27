@@ -185,6 +185,15 @@ function getFileExtension(fileName: string, mimeType?: string): string {
     return simplified.toUpperCase();
 }
 
+function formatMatrixUserLocalId(matrixUserId: string | null | undefined): string {
+    const raw = String(matrixUserId || "").trim();
+    if (!raw) return "";
+    const withoutPrefix = raw.startsWith("@") ? raw.slice(1) : raw;
+    const colonIndex = withoutPrefix.indexOf(":");
+    if (colonIndex <= 0) return withoutPrefix;
+    return withoutPrefix.slice(0, colonIndex);
+}
+
 function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
     const out: MatrixEvent[] = [];
     const seen = new Set<string>();
@@ -1778,7 +1787,9 @@ export const MainLayout: React.FC = () => {
                                                                 className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
                                                             >
                                                                 <div className="font-semibold text-slate-700 dark:text-slate-100">{hit.display_name || hit.user_local_id || hit.matrix_user_id || "Unknown"}</div>
-                                                                <div className="text-slate-500 dark:text-slate-400">{hit.matrix_user_id || hit.company_name || ""}</div>
+                                                                <div className="text-slate-500 dark:text-slate-400">
+                                                                    {formatMatrixUserLocalId(hit.matrix_user_id) || hit.company_name || ""}
+                                                                </div>
                                                             </button>
                                                         ))}
                                                     </div>
@@ -1814,7 +1825,9 @@ export const MainLayout: React.FC = () => {
                                                                 className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
                                                             >
                                                                 <div className="line-clamp-2 font-semibold text-slate-700 dark:text-slate-100">{hit.preview || "(no preview)"}</div>
-                                                                <div className="text-slate-500 dark:text-slate-400">{`${hit.sender || ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}</div>
+                                                                <div className="text-slate-500 dark:text-slate-400">
+                                                                    {`${formatMatrixUserLocalId(hit.sender) || ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}
+                                                                </div>
                                                             </button>
                                                         ))}
                                                     </div>

@@ -140,6 +140,15 @@ function parseAssistAnswerLines(answer: string): { summary: string; reference: s
     };
 }
 
+function formatMatrixUserLocalId(matrixUserId: string | null | undefined): string {
+    const raw = String(matrixUserId || "").trim();
+    if (!raw) return "";
+    const withoutPrefix = raw.startsWith("@") ? raw.slice(1) : raw;
+    const colonIndex = withoutPrefix.indexOf(":");
+    if (colonIndex <= 0) return withoutPrefix;
+    return withoutPrefix.slice(0, colonIndex);
+}
+
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
     createdAt: number;
@@ -1308,6 +1317,19 @@ export const ChatRoom: React.FC = () => {
             setRoomSearchError("NO_VALID_HUB_TOKEN：請重新登入後再使用房內搜尋");
             return;
         }
+        const effectiveQuery = (params?.forceQuery ?? debouncedRoomSearchQuery).trim();
+        if (roomSearchType === "messages" && !effectiveQuery) {
+            setRoomSearchResult({
+                room_id: activeRoomId,
+                message_hits: [],
+                file_hits: [],
+                next_cursor: null,
+            });
+            setRoomSearchCursor(null);
+            setRoomSearchError(null);
+            setRoomSearchLoading(false);
+            return;
+        }
         setRoomSearchLoading(true);
         setRoomSearchError(null);
         try {
@@ -1318,7 +1340,7 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: matrixCredentials.user_id,
             }, {
                 roomId: activeRoomId,
-                q: params?.forceQuery ?? debouncedRoomSearchQuery,
+                q: effectiveQuery,
                 type: roomSearchType,
                 fromTs: formatDateTimeInputToIso(roomSearchFrom),
                 toTs: formatDateTimeInputToIso(roomSearchTo),
@@ -2274,7 +2296,9 @@ export const ChatRoom: React.FC = () => {
                                                 className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-left hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
                                             >
                                                 <div className="line-clamp-2 text-slate-700 dark:text-slate-100">{hit.preview || "(no preview)"}</div>
-                                                <div className="text-[11px] text-slate-500 dark:text-slate-400">{`${hit.sender || ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}</div>
+                                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                    {`${formatMatrixUserLocalId(hit.sender) || ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}
+                                                </div>
                                             </button>
                                         ))}
                                     </div>
