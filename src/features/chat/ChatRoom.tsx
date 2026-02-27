@@ -787,7 +787,7 @@ export const ChatRoom: React.FC = () => {
     const [showRoomSearchPanel, setShowRoomSearchPanel] = useState(false);
     const [roomSearchQuery, setRoomSearchQuery] = useState("");
     const [debouncedRoomSearchQuery, setDebouncedRoomSearchQuery] = useState("");
-    const [roomSearchType, setRoomSearchType] = useState<"all" | "messages" | "files">("all");
+    const [roomSearchType, setRoomSearchType] = useState<"all" | "messages" | "files">("messages");
     const [roomSearchFrom, setRoomSearchFrom] = useState("");
     const [roomSearchTo, setRoomSearchTo] = useState("");
     const [roomSearchLoading, setRoomSearchLoading] = useState(false);
@@ -1379,6 +1379,19 @@ export const ChatRoom: React.FC = () => {
 
     useEffect(() => {
         if (!showRoomSearchPanel || !activeRoomId) return;
+        const q = debouncedRoomSearchQuery.trim();
+        if (roomSearchType === "messages" && !q) {
+            setRoomSearchResult({
+                room_id: activeRoomId,
+                message_hits: [],
+                file_hits: [],
+                next_cursor: null,
+            });
+            setRoomSearchCursor(null);
+            setRoomSearchError(null);
+            setRoomSearchLoading(false);
+            return;
+        }
         void runRoomSearch();
     }, [activeRoomId, debouncedRoomSearchQuery, roomSearchType, roomSearchFrom, roomSearchTo, showRoomSearchPanel, runRoomSearch]);
 

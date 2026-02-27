@@ -45,7 +45,6 @@ import {
     type ChatSearchGlobalResponse,
     type ChatSearchMessageHit,
     type ChatSearchPersonHit,
-    type ChatSearchRoomHit,
 } from "../features/chat/chatSearchApi";
 import {
     getNotebookAdapter,
@@ -913,10 +912,6 @@ export const MainLayout: React.FC = () => {
             setChatGlobalSearchError(error instanceof Error ? error.message : "無法打開聊天室");
         }
     }, [matrixClient, openRoomWithOptionalJump]);
-
-    const onSelectSearchRoom = useCallback((hit: ChatSearchRoomHit) => {
-        openRoomWithOptionalJump(hit.room_id);
-    }, [openRoomWithOptionalJump]);
 
     const onSelectSearchMessage = useCallback((hit: ChatSearchMessageHit) => {
         openRoomWithOptionalJump(hit.room_id, hit.event_id);
@@ -1795,24 +1790,6 @@ export const MainLayout: React.FC = () => {
                                                     </div>
                                                 </div>
                                             ) : null}
-                                            {chatGlobalSearchResult?.room_hits?.length ? (
-                                                <div className="border-b border-gray-100 px-3 py-2 dark:border-slate-800">
-                                                    <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">房間</div>
-                                                    <div className="space-y-1">
-                                                        {chatGlobalSearchResult.room_hits.map((hit) => (
-                                                            <button
-                                                                key={hit.room_id}
-                                                                type="button"
-                                                                onClick={() => onSelectSearchRoom(hit)}
-                                                                className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
-                                                            >
-                                                                <div className="font-semibold text-slate-700 dark:text-slate-100">{hit.room_name || hit.room_id}</div>
-                                                                <div className="text-slate-500 dark:text-slate-400">{hit.last_ts ? new Date(hit.last_ts).toLocaleString() : ""}</div>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : null}
                                             {chatGlobalSearchResult?.message_hits?.length ? (
                                                 <div className="px-3 py-2">
                                                     <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">消息</div>
@@ -1833,7 +1810,7 @@ export const MainLayout: React.FC = () => {
                                                     </div>
                                                 </div>
                                             ) : null}
-                                            {!chatGlobalSearchResult?.people_hits?.length && !chatGlobalSearchResult?.room_hits?.length && !chatGlobalSearchResult?.message_hits?.length && (
+                                            {!chatGlobalSearchResult?.people_hits?.length && !chatGlobalSearchResult?.message_hits?.length && (
                                                 <div className="px-3 py-3 text-xs text-slate-500 dark:text-slate-300">沒有搜尋結果</div>
                                             )}
                                             {chatGlobalSearchCursor && (
