@@ -14,7 +14,6 @@ import {
     requestContact,
 } from "../../api/contacts";
 import {
-    getDirectRoomId,
     getOrCreateDirectRoom,
     setDirectRoom,
     createDirectRoomWithMessage,
@@ -28,7 +27,19 @@ import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../consta
 type ChatRoomEntry = {
     userId?: string;
     roomId: string;
-    room: Room;
+    room: Room | null;
+    myMembership: string;
+    displayName: string;
+    lastMessage: string;
+    lastActive: number;
+    unreadCount: number;
+    isDeprecated: boolean;
+    isGroup: boolean;
+};
+
+type RoomCacheEntry = {
+    userId?: string;
+    roomId: string;
     myMembership: string;
     displayName: string;
     lastMessage: string;
@@ -74,6 +85,7 @@ type RoomListProps = {
 const EMPTY_STATE: ChatRoomEntry[] = [];
 const STAFF_CUSTOMER_DOMAIN = "matrix.gotradetalk.com";
 const CONTACTS_CACHE_PREFIX = "gtt_contacts_cache_v1:";
+const ROOMS_CACHE_PREFIX = "gtt_rooms_cache_v1:";
 
 function normalizeMatrixLocalpart(value: string): string {
     const trimmed = value.trim();
@@ -315,10 +327,16 @@ export function RoomList({
     const [pendingInviteRooms, setPendingInviteRooms] = useState<
         Record<string, { roomId: string; matrixUserId: string }>
     >({});
+    const [cachedRooms, setCachedRooms] = useState<RoomCacheEntry[]>([]);
     const contactCacheKey = useMemo(() => {
         const userId = client?.getUserId() ?? "";
         if (!userId) return null;
         return `${CONTACTS_CACHE_PREFIX}${userId}`;
+    }, [client]);
+    const roomCacheKey = useMemo(() => {
+        const userId = client?.getUserId() ?? "";
+        if (!userId) return null;
+        return `${ROOMS_CACHE_PREFIX}${userId}`;
     }, [client]);
 
     const refresh = useMemo(() => {
@@ -468,11 +486,38 @@ export function RoomList({
         }
     }, [rooms, activeRoomId, onSelectRoom]);
 
-    // 計算總未讀數並通知父組件
     useEffect(() => {
-        const totalUnread = rooms.reduce((sum, room) => sum + room.unreadCount, 0);
+        if (!roomCacheKey) return;
+        try {
+            const snapshot: RoomCacheEntry[] = rooms.map((room) => ({
+                userId: room.userId,
+                roomId: room.roomId,
+                myMembership: room.myMembership,
+                displayName: room.displayName,
+                lastMessage: room.lastMessage,
+                lastActive: room.lastActive,
+                unreadCount: room.unreadCount,
+                isDeprecated: room.isDeprecated,
+                isGroup: room.isGroup,
+            }));
+            localStorage.setItem(roomCacheKey, JSON.stringify(snapshot));
+        } catch {
+            // ignore room cache write failures
+        }
+    }, [rooms, roomCacheKey]);
+
+    // 計算總未讀數並通知父組件
+    const displayedRooms: ChatRoomEntry[] = rooms.length
+        ? rooms
+        : cachedRooms.map((room) => ({
+            ...room,
+            room: null,
+        }));
+
+    useEffect(() => {
+        const totalUnread = displayedRooms.reduce((sum, room) => sum + room.unreadCount, 0);
         onUnreadBadgeChange?.(totalUnread);
-    }, [rooms, onUnreadBadgeChange]);
+    }, [displayedRooms, onUnreadBadgeChange]);
 
     const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const isStructuredSearch = userType === "staff" || userType === "client";
@@ -494,6 +539,19 @@ export function RoomList({
             // ignore cache read failures
         }
     }, [contactCacheKey]);
+
+    useEffect(() => {
+        if (!roomCacheKey) return;
+        try {
+            const raw = localStorage.getItem(roomCacheKey);
+            if (!raw) return;
+            const cached = JSON.parse(raw) as RoomCacheEntry[];
+            if (!Array.isArray(cached)) return;
+            setCachedRooms(cached);
+        } catch {
+            // ignore room cache read failures
+        }
+    }, [roomCacheKey]);
 
     useEffect(() => {
         if (!isStructuredSearch) return;
@@ -1014,57 +1072,7 @@ export function RoomList({
         }
     };
 
-    const resolveContactMatrixUserId = (contact: {
-        matrixUserId: string | null;
-        userLocalId: string | null;
-    }): string | null => {
-        if (contact.matrixUserId) return contact.matrixUserId;
-        if (contact.userLocalId && matrixHost) {
-            return `@${contact.userLocalId}:${matrixHost}`;
-        }
-        return null;
-    };
-
-    const shouldCreateRoomForContact = (contact: {
-        initiatedByMe: boolean;
-        userType: string | null;
-        matrixUserId: string | null;
-        userLocalId: string | null;
-    }): boolean => {
-        const contactMatrixUserId = resolveContactMatrixUserId(contact);
-        if (!contactMatrixUserId) return false;
-        if (userType === "staff") {
-            if (contact.userType === "client") return true;
-            if (contact.userType === "staff") return contact.initiatedByMe;
-            return contact.initiatedByMe;
-        }
-        if (userType === "client") {
-            if (contact.userType === "client") return contact.initiatedByMe;
-            if (!contact.userType) {
-                const domain = contactMatrixUserId.split(":")[1] || "";
-                return contact.initiatedByMe && Boolean(matrixHost) && domain === matrixHost;
-            }
-            return false;
-        }
-        return false;
-    };
-
-    useEffect(() => {
-        if (!client) return;
-        void (async (): Promise<void> => {
-            for (const contact of contacts) {
-                const contactMatrixUserId = resolveContactMatrixUserId(contact);
-                if (!contactMatrixUserId) continue;
-                if (!shouldCreateRoomForContact(contact)) continue;
-                const existing = getDirectRoomId(client, contactMatrixUserId);
-                if (!existing) {
-                    await getOrCreateDirectRoom(client, contactMatrixUserId);
-                }
-            }
-        })();
-    }, [client, contacts, userType]);
-
-    const visibleRooms = rooms;
+    const visibleRooms = displayedRooms;
     const inviteRooms = visibleRooms.filter((entry) => entry.myMembership === "invite");
     const activeRooms = visibleRooms.filter((entry) => entry.myMembership !== "invite");
     const pinnedSet = new Set(pinnedRoomIds);
