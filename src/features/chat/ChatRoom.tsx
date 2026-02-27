@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -64,6 +64,14 @@ import { MessageActionsMenu } from "./components/MessageActionsMenu";
 import { getNotebookAdapter } from "../notebook";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
+import {
+    chatSearchLocate,
+    chatSearchRoom,
+    ChatSearchError,
+    type ChatSearchFileHit,
+    type ChatSearchMessageHit,
+    type ChatSearchRoomResponse,
+} from "./chatSearchApi";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -102,6 +110,7 @@ const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
 const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
+const ROOM_SEARCH_DEBOUNCE_MS = 350;
 
 function normalizeSourceTitle(rawTitle: string | null | undefined, fallback: string): string {
     const title = String(rawTitle || "").trim();
@@ -758,12 +767,24 @@ export const ChatRoom: React.FC = () => {
     const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiBoardRef = useRef<HTMLDivElement | null>(null);
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+    const roomSearchButtonRef = useRef<HTMLButtonElement | null>(null);
+    const roomSearchPanelRef = useRef<HTMLDivElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const retryFileInputRef = useRef<HTMLInputElement | null>(null);
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
+    const [showRoomSearchPanel, setShowRoomSearchPanel] = useState(false);
+    const [roomSearchQuery, setRoomSearchQuery] = useState("");
+    const [debouncedRoomSearchQuery, setDebouncedRoomSearchQuery] = useState("");
+    const [roomSearchType, setRoomSearchType] = useState<"all" | "messages" | "files">("all");
+    const [roomSearchFrom, setRoomSearchFrom] = useState("");
+    const [roomSearchTo, setRoomSearchTo] = useState("");
+    const [roomSearchLoading, setRoomSearchLoading] = useState(false);
+    const [roomSearchError, setRoomSearchError] = useState<string | null>(null);
+    const [roomSearchResult, setRoomSearchResult] = useState<ChatSearchRoomResponse | null>(null);
+    const [roomSearchCursor, setRoomSearchCursor] = useState<string | null>(null);
     const [assistSending, setAssistSending] = useState(false);
     const [assistEditorRows, setAssistEditorRows] = useState(5);
     const [assistEditorFullscreen, setAssistEditorFullscreen] = useState(false);
@@ -1239,23 +1260,182 @@ export const ChatRoom: React.FC = () => {
     }, [canTranslate, inviteAccessToken, inviteHsUrl, translationContactsLoaded, contacts.length]);
 
     useEffect(() => {
-        if (!jumpToEventId) return;
+        const timer = window.setTimeout(() => {
+            setDebouncedRoomSearchQuery(roomSearchQuery.trim());
+        }, ROOM_SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [roomSearchQuery]);
+
+    useEffect(() => {
+        const onClickOutside = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (roomSearchPanelRef.current?.contains(target) || roomSearchButtonRef.current?.contains(target)) return;
+            setShowRoomSearchPanel(false);
+        };
+        if (showRoomSearchPanel) {
+            document.addEventListener("click", onClickOutside);
+        }
+        return () => {
+            document.removeEventListener("click", onClickOutside);
+        };
+    }, [showRoomSearchPanel]);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent): void => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+                event.preventDefault();
+                setShowRoomSearchPanel(true);
+            }
+            if (event.key === "Escape") {
+                setShowRoomSearchPanel(false);
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, []);
+
+    const formatDateTimeInputToIso = useCallback((value: string): string | undefined => {
+        const trimmed = value.trim();
+        if (!trimmed) return undefined;
+        const date = new Date(trimmed);
+        if (Number.isNaN(date.getTime())) return undefined;
+        return date.toISOString();
+    }, []);
+
+    const runRoomSearch = useCallback(async (params?: { forceQuery?: string; cursor?: string; append?: boolean }) => {
+        if (!showRoomSearchPanel || !activeRoomId) return;
+        if (!hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
+            setRoomSearchError("NO_VALID_HUB_TOKEN：請重新登入後再使用房內搜尋");
+            return;
+        }
+        setRoomSearchLoading(true);
+        setRoomSearchError(null);
+        try {
+            const response = await chatSearchRoom({
+                accessToken: hubAccessToken,
+                matrixAccessToken,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials.user_id,
+            }, {
+                roomId: activeRoomId,
+                q: params?.forceQuery ?? debouncedRoomSearchQuery,
+                type: roomSearchType,
+                fromTs: formatDateTimeInputToIso(roomSearchFrom),
+                toTs: formatDateTimeInputToIso(roomSearchTo),
+                limit: 20,
+                cursor: params?.cursor,
+            });
+            if (params?.append && roomSearchResult) {
+                setRoomSearchResult({
+                    ...response,
+                    message_hits: [...roomSearchResult.message_hits, ...response.message_hits],
+                    file_hits: [...roomSearchResult.file_hits, ...response.file_hits],
+                });
+            } else {
+                setRoomSearchResult(response);
+            }
+            setRoomSearchCursor(response.next_cursor ?? null);
+        } catch (error) {
+            if (error instanceof ChatSearchError) {
+                if (error.status === 401) {
+                    setRoomSearchError("401：房內搜尋驗證失敗，請重新登入");
+                } else if (error.status === 403) {
+                    setRoomSearchError("403：你沒有此聊天室的搜尋權限");
+                } else {
+                    setRoomSearchError(error.message || "房內搜尋失敗");
+                }
+            } else {
+                setRoomSearchError(error instanceof Error ? error.message : "房內搜尋失敗");
+            }
+        } finally {
+            setRoomSearchLoading(false);
+        }
+    }, [activeRoomId, debouncedRoomSearchQuery, formatDateTimeInputToIso, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, roomSearchFrom, roomSearchResult, roomSearchTo, roomSearchType, showRoomSearchPanel]);
+
+    useEffect(() => {
+        if (!showRoomSearchPanel || !activeRoomId) return;
+        void runRoomSearch();
+    }, [activeRoomId, debouncedRoomSearchQuery, roomSearchType, roomSearchFrom, roomSearchTo, showRoomSearchPanel, runRoomSearch]);
+
+    const revealEventInTimeline = useCallback(async (eventId: string): Promise<boolean> => {
         const container = timelineRef.current;
-        if (!container) return;
-        const escapedEventId = jumpToEventId.replace(/'/g, "\\'");
-        const target = container.querySelector(`[data-event-id='${escapedEventId}']`) as HTMLElement | null;
-        if (!target) return;
+        if (!container) return false;
+        const escapedEventId = eventId.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const findTarget = (): HTMLElement | null =>
+            container.querySelector(`[data-event-id="${escapedEventId}"]`) as HTMLElement | null;
+        let target = findTarget();
+        let rounds = 0;
+        while (!target && matrixClient && room && rounds < 8) {
+            await scrollbackTimeline(matrixClient, room, 60);
+            // allow timeline render to flush
+            await new Promise((resolve) => window.setTimeout(resolve, 80));
+            target = findTarget();
+            rounds += 1;
+        }
+        if (!target) return false;
         if (activeRoomId) {
             roomStickBottomRef.current[activeRoomId] = false;
         }
         target.scrollIntoView({ behavior: "smooth", block: "center" });
-        setHighlightedEventId(jumpToEventId);
-        onJumpHandled?.();
-        const timer = window.setTimeout(() => {
-            setHighlightedEventId((prev) => (prev === jumpToEventId ? null : prev));
+        setHighlightedEventId(eventId);
+        window.setTimeout(() => {
+            setHighlightedEventId((prev) => (prev === eventId ? null : prev));
         }, 1800);
-        return () => window.clearTimeout(timer);
-    }, [activeRoomId, jumpToEventId, mergedEvents.length, onJumpHandled]);
+        return true;
+    }, [activeRoomId, matrixClient, room]);
+
+    const onLocateSearchEvent = useCallback(async (eventId: string): Promise<void> => {
+        if (!activeRoomId || !hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
+            setRoomSearchError("NO_VALID_HUB_TOKEN：請重新登入後再使用定位");
+            return;
+        }
+        try {
+            const locate = await chatSearchLocate({
+                accessToken: hubAccessToken,
+                matrixAccessToken,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials.user_id,
+            }, {
+                roomId: activeRoomId,
+                eventId,
+                contextBefore: 5,
+                contextAfter: 5,
+            });
+            const anchorEventId = locate.anchor_event?.event_id || eventId;
+            const ok = await revealEventInTimeline(anchorEventId);
+            if (!ok) {
+                setRoomSearchError("定位失敗：未在目前可讀取的歷史中找到該訊息");
+            }
+        } catch (error) {
+            if (error instanceof ChatSearchError) {
+                if (error.status === 401) {
+                    setRoomSearchError("401：定位驗證失敗，請重新登入");
+                } else if (error.status === 403) {
+                    setRoomSearchError("403：你沒有此聊天室定位權限");
+                } else {
+                    setRoomSearchError(error.message || "定位失敗");
+                }
+            } else {
+                setRoomSearchError(error instanceof Error ? error.message : "定位失敗");
+            }
+        }
+    }, [activeRoomId, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, revealEventInTimeline]);
+
+    useEffect(() => {
+        if (!jumpToEventId) return;
+        let cancelled = false;
+        void (async (): Promise<void> => {
+            const ok = await revealEventInTimeline(jumpToEventId);
+            if (cancelled) return;
+            if (!ok) {
+                setUploadError("目標訊息定位失敗，請稍後再試");
+            }
+            onJumpHandled?.();
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [jumpToEventId, onJumpHandled, revealEventInTimeline]);
 
     useEffect(() => {
         const prevRoomId = previousRoomIdRef.current;
@@ -1902,7 +2082,12 @@ export const ChatRoom: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-4 text-gray-500 dark:text-slate-400">
-                    <button className="hover:text-[#2F5C56] transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800">
+                    <button
+                        ref={roomSearchButtonRef}
+                        type="button"
+                        onClick={() => setShowRoomSearchPanel((prev) => !prev)}
+                        className={`transition-colors p-2 rounded-full hover:bg-gray-50 dark:hover:bg-slate-800 ${showRoomSearchPanel ? "text-[#2F5C56] dark:text-emerald-300" : "hover:text-[#2F5C56]"}`}
+                    >
                         <MagnifyingGlassIcon className="w-6 h-6" />
                     </button>
                     <div className="relative">
@@ -2022,6 +2207,112 @@ export const ChatRoom: React.FC = () => {
                     </div>
                 </div>
             </header>
+
+            {showRoomSearchPanel && (
+                <div ref={roomSearchPanelRef} className="border-b border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs dark:border-emerald-900/50 dark:bg-emerald-900/20">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <input
+                            type="text"
+                            value={roomSearchQuery}
+                            onChange={(event) => setRoomSearchQuery(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    void runRoomSearch({ forceQuery: roomSearchQuery });
+                                }
+                            }}
+                            placeholder="搜尋此聊天室（訊息/檔案）"
+                            className="min-w-[220px] flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                        <select
+                            value={roomSearchType}
+                            onChange={(event) => setRoomSearchType(event.target.value as "all" | "messages" | "files")}
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                            <option value="all">全部</option>
+                            <option value="messages">消息</option>
+                            <option value="files">文件</option>
+                        </select>
+                        <input
+                            type="datetime-local"
+                            value={roomSearchFrom}
+                            onChange={(event) => setRoomSearchFrom(event.target.value)}
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                        <input
+                            type="datetime-local"
+                            value={roomSearchTo}
+                            onChange={(event) => setRoomSearchTo(event.target.value)}
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => void runRoomSearch({ forceQuery: roomSearchQuery })}
+                            className="rounded-md bg-[#2F5C56] px-3 py-1.5 font-semibold text-white"
+                        >
+                            搜尋
+                        </button>
+                    </div>
+                    {roomSearchLoading && <div className="text-slate-500 dark:text-slate-300">搜尋中...</div>}
+                    {roomSearchError && <div className="text-rose-600 dark:text-rose-300">{roomSearchError}</div>}
+                    {!roomSearchLoading && !roomSearchError && roomSearchResult && (
+                        <div className="space-y-2">
+                            {roomSearchResult.message_hits.length > 0 && (
+                                <div>
+                                    <div className="mb-1 font-semibold text-slate-500 dark:text-slate-300">消息結果</div>
+                                    <div className="space-y-1">
+                                        {roomSearchResult.message_hits.map((hit: ChatSearchMessageHit) => (
+                                            <button
+                                                key={`${hit.room_id}-${hit.event_id}`}
+                                                type="button"
+                                                onClick={() => {
+                                                    void onLocateSearchEvent(hit.event_id);
+                                                }}
+                                                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-left hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+                                            >
+                                                <div className="line-clamp-2 text-slate-700 dark:text-slate-100">{hit.preview || "(no preview)"}</div>
+                                                <div className="text-[11px] text-slate-500 dark:text-slate-400">{`${hit.sender || ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {roomSearchResult.file_hits.length > 0 && (
+                                <div>
+                                    <div className="mb-1 font-semibold text-slate-500 dark:text-slate-300">文件結果</div>
+                                    <div className="space-y-1">
+                                        {roomSearchResult.file_hits.map((hit: ChatSearchFileHit) => (
+                                            <button
+                                                key={`${hit.room_id}-${hit.event_id}-file`}
+                                                type="button"
+                                                onClick={() => {
+                                                    void onLocateSearchEvent(hit.event_id);
+                                                }}
+                                                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-left hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+                                            >
+                                                <div className="text-slate-700 dark:text-slate-100">{hit.file_name || "unnamed file"}</div>
+                                                <div className="text-[11px] text-slate-500 dark:text-slate-400">{`${hit.mime || ""}${typeof hit.size === "number" ? ` · ${hit.size} bytes` : ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {roomSearchResult.message_hits.length === 0 && roomSearchResult.file_hits.length === 0 && (
+                                <div className="text-slate-500 dark:text-slate-300">沒有搜尋結果</div>
+                            )}
+                            {roomSearchCursor && (
+                                <button
+                                    type="button"
+                                    onClick={() => void runRoomSearch({ forceQuery: roomSearchQuery, cursor: roomSearchCursor, append: true })}
+                                    className="rounded-md border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                >
+                                    載入更多
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Chat History (Timeline) */}
             <div

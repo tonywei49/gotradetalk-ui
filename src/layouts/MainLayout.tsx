@@ -40,6 +40,14 @@ import {
     type FileLibraryRoomSummary,
 } from "../features/files/fileCenterRepository";
 import {
+    chatSearchGlobal,
+    ChatSearchError,
+    type ChatSearchGlobalResponse,
+    type ChatSearchMessageHit,
+    type ChatSearchPersonHit,
+    type ChatSearchRoomHit,
+} from "../features/chat/chatSearchApi";
+import {
     getNotebookAdapter,
     NotebookPanel,
     NotebookSidebar,
@@ -197,6 +205,7 @@ function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
 
 const FILE_ROOM_SEARCH_DEBOUNCE_MS = 250;
 const FILE_LIST_SEARCH_DEBOUNCE_MS = 250;
+const CHAT_GLOBAL_SEARCH_DEBOUNCE_MS = 350;
 const FILE_LIST_PAGE_SIZE = 80;
 const FILE_HISTORY_TARGET_EVENTS = 260;
 const FILE_HISTORY_SCROLLBACK_LIMIT = 50;
@@ -237,6 +246,13 @@ export const MainLayout: React.FC = () => {
     const previewDragStartRef = useRef({ x: 0, y: 0 });
     const previewDragOriginRef = useRef({ x: 0, y: 0 });
     const [jumpToEventId, setJumpToEventId] = useState<string | null>(null);
+    const [chatGlobalSearchQuery, setChatGlobalSearchQuery] = useState("");
+    const [debouncedChatGlobalSearchQuery, setDebouncedChatGlobalSearchQuery] = useState("");
+    const [chatGlobalSearchOpen, setChatGlobalSearchOpen] = useState(false);
+    const [chatGlobalSearchLoading, setChatGlobalSearchLoading] = useState(false);
+    const [chatGlobalSearchError, setChatGlobalSearchError] = useState<string | null>(null);
+    const [chatGlobalSearchResult, setChatGlobalSearchResult] = useState<ChatSearchGlobalResponse | null>(null);
+    const [chatGlobalSearchCursor, setChatGlobalSearchCursor] = useState<string | null>(null);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
     const [settingsDetail, setSettingsDetail] = useState<
         "none" | "chat-language" | "translation-default" | "notebook-policy" | "translation-policy"
@@ -251,6 +267,7 @@ export const MainLayout: React.FC = () => {
     const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original">("translated");
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
+    const chatGlobalSearchPanelRef = useRef<HTMLDivElement | null>(null);
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
     const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const themeMode = useThemeStore((state) => state.mode);
@@ -708,6 +725,13 @@ export const MainLayout: React.FC = () => {
     }, [fileListSearch]);
 
     useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedChatGlobalSearchQuery(chatGlobalSearchQuery.trim());
+        }, CHAT_GLOBAL_SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [chatGlobalSearchQuery]);
+
+    useEffect(() => {
         if (activeTab !== "contacts") {
             setActiveContact(null);
             setShowContactMenu(false);
@@ -765,6 +789,20 @@ export const MainLayout: React.FC = () => {
     }, [showContactMenu]);
 
     useEffect(() => {
+        const onClickOutside = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (chatGlobalSearchPanelRef.current?.contains(target)) return;
+            setChatGlobalSearchOpen(false);
+        };
+        if (chatGlobalSearchOpen) {
+            document.addEventListener("click", onClickOutside);
+        }
+        return () => {
+            document.removeEventListener("click", onClickOutside);
+        };
+    }, [chatGlobalSearchOpen]);
+
+    useEffect(() => {
         if (!isNotificationSoundSupported()) return;
         const unlock = (): void => {
             ensureNotificationSoundEnabled();
@@ -783,6 +821,94 @@ export const MainLayout: React.FC = () => {
         clearSession();
         navigate("/auth");
     };
+
+    const runChatGlobalSearch = useCallback(async (params?: { forceQuery?: string; cursor?: string; append?: boolean }) => {
+        const q = (params?.forceQuery ?? debouncedChatGlobalSearchQuery).trim();
+        if (!q) {
+            setChatGlobalSearchResult(null);
+            setChatGlobalSearchCursor(null);
+            setChatGlobalSearchError(null);
+            return;
+        }
+        if (!hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
+            setChatGlobalSearchError("NO_VALID_HUB_TOKEN：請重新登入後再使用聊天搜尋");
+            return;
+        }
+        setChatGlobalSearchLoading(true);
+        setChatGlobalSearchError(null);
+        try {
+            const response = await chatSearchGlobal({
+                accessToken: hubAccessToken,
+                matrixAccessToken,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials.user_id,
+            }, {
+                q,
+                limit: 20,
+                cursor: params?.cursor,
+            });
+            if (params?.append && chatGlobalSearchResult) {
+                setChatGlobalSearchResult({
+                    people_hits: [...chatGlobalSearchResult.people_hits, ...response.people_hits],
+                    room_hits: [...chatGlobalSearchResult.room_hits, ...response.room_hits],
+                    message_hits: [...chatGlobalSearchResult.message_hits, ...response.message_hits],
+                    next_cursor: response.next_cursor,
+                });
+            } else {
+                setChatGlobalSearchResult(response);
+            }
+            setChatGlobalSearchCursor(response.next_cursor ?? null);
+        } catch (error) {
+            if (error instanceof ChatSearchError) {
+                if (error.status === 401) {
+                    setChatGlobalSearchError("401：聊天搜尋驗證失敗，請重新登入");
+                } else if (error.status === 403) {
+                    setChatGlobalSearchError("403：目前無權限使用聊天搜尋");
+                } else {
+                    setChatGlobalSearchError(error.message || "聊天搜尋失敗");
+                }
+            } else {
+                setChatGlobalSearchError(error instanceof Error ? error.message : "聊天搜尋失敗");
+            }
+        } finally {
+            setChatGlobalSearchLoading(false);
+        }
+    }, [chatGlobalSearchResult, debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl]);
+
+    useEffect(() => {
+        if (!chatGlobalSearchOpen) return;
+        if (!debouncedChatGlobalSearchQuery) return;
+        void runChatGlobalSearch();
+    }, [chatGlobalSearchOpen, debouncedChatGlobalSearchQuery, runChatGlobalSearch]);
+
+    const openRoomWithOptionalJump = useCallback((roomId: string, eventId?: string | null) => {
+        setActiveTab("chat");
+        setActiveRoomId(roomId);
+        setMobileView("detail");
+        setChatGlobalSearchOpen(false);
+        if (eventId) setJumpToEventId(eventId);
+    }, []);
+
+    const onSelectSearchPerson = useCallback(async (hit: ChatSearchPersonHit) => {
+        if (!matrixClient || !hit.matrix_user_id) {
+            setChatGlobalSearchError("無法定位該使用者聊天室");
+            return;
+        }
+        try {
+            const roomId = await getOrCreateDirectRoom(matrixClient, hit.matrix_user_id);
+            openRoomWithOptionalJump(roomId);
+        } catch (error) {
+            setChatGlobalSearchError(error instanceof Error ? error.message : "無法打開聊天室");
+        }
+    }, [matrixClient, openRoomWithOptionalJump]);
+
+    const onSelectSearchRoom = useCallback((hit: ChatSearchRoomHit) => {
+        openRoomWithOptionalJump(hit.room_id);
+    }, [openRoomWithOptionalJump]);
+
+    const onSelectSearchMessage = useCallback((hit: ChatSearchMessageHit) => {
+        openRoomWithOptionalJump(hit.room_id, hit.event_id);
+    }, [openRoomWithOptionalJump]);
 
     const onHideActiveRoom = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId) return;
@@ -1577,7 +1703,7 @@ export const MainLayout: React.FC = () => {
                         </div>
 
                         {/* Search Bar */}
-                        <div className="p-3">
+                        <div ref={chatGlobalSearchPanelRef} className="p-3 relative">
                             <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
                                 <svg
                                     className="w-5 h-5 text-gray-400 dark:text-slate-400"
@@ -1594,6 +1720,26 @@ export const MainLayout: React.FC = () => {
                                 </svg>
                                 <input
                                     type="text"
+                                    value={chatGlobalSearchQuery}
+                                    onFocus={() => setChatGlobalSearchOpen(true)}
+                                    onChange={(event) => {
+                                        setChatGlobalSearchQuery(event.target.value);
+                                        setChatGlobalSearchOpen(true);
+                                        if (!event.target.value.trim()) {
+                                            setChatGlobalSearchResult(null);
+                                            setChatGlobalSearchCursor(null);
+                                            setChatGlobalSearchError(null);
+                                        }
+                                    }}
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            void runChatGlobalSearch({ forceQuery: chatGlobalSearchQuery });
+                                        }
+                                        if (event.key === "Escape") {
+                                            setChatGlobalSearchOpen(false);
+                                        }
+                                    }}
                                     placeholder={t("layout.searchPlaceholder")}
                                     className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
                                 />
@@ -1605,6 +1751,91 @@ export const MainLayout: React.FC = () => {
                                     {t("layout.groupChat")}
                                 </button>
                             </div>
+                            {chatGlobalSearchOpen && (
+                                <div className="absolute left-3 right-3 top-[58px] z-30 max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                                    {chatGlobalSearchLoading && (
+                                        <div className="px-3 py-3 text-xs text-slate-500 dark:text-slate-300">搜尋中...</div>
+                                    )}
+                                    {chatGlobalSearchError && (
+                                        <div className="px-3 py-3 text-xs text-rose-600 dark:text-rose-300">{chatGlobalSearchError}</div>
+                                    )}
+                                    {!chatGlobalSearchLoading && !chatGlobalSearchError && chatGlobalSearchQuery.trim() && (
+                                        <>
+                                            {chatGlobalSearchResult?.people_hits?.length ? (
+                                                <div className="border-b border-gray-100 px-3 py-2 dark:border-slate-800">
+                                                    <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">人員</div>
+                                                    <div className="space-y-1">
+                                                        {chatGlobalSearchResult.people_hits.map((hit) => (
+                                                            <button
+                                                                key={`${hit.profile_id}-${hit.matrix_user_id || ""}`}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    void onSelectSearchPerson(hit);
+                                                                }}
+                                                                className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                                                            >
+                                                                <div className="font-semibold text-slate-700 dark:text-slate-100">{hit.display_name || hit.user_local_id || hit.matrix_user_id || "Unknown"}</div>
+                                                                <div className="text-slate-500 dark:text-slate-400">{hit.matrix_user_id || hit.company_name || ""}</div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                            {chatGlobalSearchResult?.room_hits?.length ? (
+                                                <div className="border-b border-gray-100 px-3 py-2 dark:border-slate-800">
+                                                    <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">房間</div>
+                                                    <div className="space-y-1">
+                                                        {chatGlobalSearchResult.room_hits.map((hit) => (
+                                                            <button
+                                                                key={hit.room_id}
+                                                                type="button"
+                                                                onClick={() => onSelectSearchRoom(hit)}
+                                                                className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                                                            >
+                                                                <div className="font-semibold text-slate-700 dark:text-slate-100">{hit.room_name || hit.room_id}</div>
+                                                                <div className="text-slate-500 dark:text-slate-400">{hit.last_ts ? new Date(hit.last_ts).toLocaleString() : ""}</div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                            {chatGlobalSearchResult?.message_hits?.length ? (
+                                                <div className="px-3 py-2">
+                                                    <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">消息</div>
+                                                    <div className="space-y-1">
+                                                        {chatGlobalSearchResult.message_hits.map((hit) => (
+                                                            <button
+                                                                key={`${hit.room_id}-${hit.event_id}`}
+                                                                type="button"
+                                                                onClick={() => onSelectSearchMessage(hit)}
+                                                                className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                                                            >
+                                                                <div className="line-clamp-2 font-semibold text-slate-700 dark:text-slate-100">{hit.preview || "(no preview)"}</div>
+                                                                <div className="text-slate-500 dark:text-slate-400">{`${hit.sender || ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}</div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                            {!chatGlobalSearchResult?.people_hits?.length && !chatGlobalSearchResult?.room_hits?.length && !chatGlobalSearchResult?.message_hits?.length && (
+                                                <div className="px-3 py-3 text-xs text-slate-500 dark:text-slate-300">沒有搜尋結果</div>
+                                            )}
+                                            {chatGlobalSearchCursor && (
+                                                <div className="border-t border-gray-100 px-3 py-2 dark:border-slate-800">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void runChatGlobalSearch({ forceQuery: chatGlobalSearchQuery, cursor: chatGlobalSearchCursor, append: true })}
+                                                        disabled={chatGlobalSearchLoading}
+                                                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                                                    >
+                                                        載入更多
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Group Invite List - 獨立組件，不影響私聊邏輯 */}
