@@ -1325,11 +1325,14 @@ export const ChatRoom: React.FC = () => {
                 limit: 20,
                 cursor: params?.cursor,
             });
-            if (params?.append && roomSearchResult) {
-                setRoomSearchResult({
-                    ...response,
-                    message_hits: [...roomSearchResult.message_hits, ...response.message_hits],
-                    file_hits: [...roomSearchResult.file_hits, ...response.file_hits],
+            if (params?.append) {
+                setRoomSearchResult((prev) => {
+                    if (!prev) return response;
+                    return {
+                        ...response,
+                        message_hits: [...prev.message_hits, ...response.message_hits],
+                        file_hits: [...prev.file_hits, ...response.file_hits],
+                    };
                 });
             } else {
                 setRoomSearchResult(response);
@@ -1350,7 +1353,7 @@ export const ChatRoom: React.FC = () => {
         } finally {
             setRoomSearchLoading(false);
         }
-    }, [activeRoomId, debouncedRoomSearchQuery, formatDateTimeInputToIso, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, roomSearchFrom, roomSearchResult, roomSearchTo, roomSearchType, showRoomSearchPanel]);
+    }, [activeRoomId, debouncedRoomSearchQuery, formatDateTimeInputToIso, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, roomSearchFrom, roomSearchTo, roomSearchType, showRoomSearchPanel]);
 
     useEffect(() => {
         if (!showRoomSearchPanel || !activeRoomId) return;

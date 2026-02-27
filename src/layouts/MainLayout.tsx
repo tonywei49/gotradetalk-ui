@@ -847,12 +847,15 @@ export const MainLayout: React.FC = () => {
                 limit: 20,
                 cursor: params?.cursor,
             });
-            if (params?.append && chatGlobalSearchResult) {
-                setChatGlobalSearchResult({
-                    people_hits: [...chatGlobalSearchResult.people_hits, ...response.people_hits],
-                    room_hits: [...chatGlobalSearchResult.room_hits, ...response.room_hits],
-                    message_hits: [...chatGlobalSearchResult.message_hits, ...response.message_hits],
-                    next_cursor: response.next_cursor,
+            if (params?.append) {
+                setChatGlobalSearchResult((prev) => {
+                    if (!prev) return response;
+                    return {
+                        people_hits: [...prev.people_hits, ...response.people_hits],
+                        room_hits: [...prev.room_hits, ...response.room_hits],
+                        message_hits: [...prev.message_hits, ...response.message_hits],
+                        next_cursor: response.next_cursor,
+                    };
                 });
             } else {
                 setChatGlobalSearchResult(response);
@@ -873,7 +876,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setChatGlobalSearchLoading(false);
         }
-    }, [chatGlobalSearchResult, debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl]);
+    }, [debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl]);
 
     useEffect(() => {
         if (!chatGlobalSearchOpen) return;
