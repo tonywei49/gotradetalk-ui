@@ -81,6 +81,9 @@ export function shouldTranslateIncomingMessage(context: TranslateContext): boole
     } = context;
 
     if (!canTranslate || translationBlocked || isMeMessage) return false;
+    // Keep existing translation flow, but short-circuit client<->client direct chat
+    // before firing any request to avoid "pending -> unavailable" flicker.
+    if (isDirectRoom && userType === "client" && senderContact?.user_type === "client") return false;
     if (isDirectRoom && !directTranslationEnabled) return false;
     if (isGroupChat && !groupTranslationEnabled) return false;
     if (!messageBody) return false;
