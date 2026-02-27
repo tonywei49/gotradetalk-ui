@@ -123,6 +123,8 @@ export function useMessageTranslation(params: Params) {
             const messageId = event.getId();
             if (!messageId) return;
             const key = getMessageEventKey(event);
+            const isMeMessage = event.getSender() === userId;
+            if (!shouldTranslateEvent(event, isMeMessage)) return;
             const roomId = activeRoomId ?? "";
 
             if (!forceRetry && roomId && targetLanguage) {
@@ -203,10 +205,12 @@ export function useMessageTranslation(params: Params) {
             }
         },
         [
+            shouldTranslateEvent,
             translateAccessToken,
             activeRoomId,
             targetLanguage,
             translationCacheStore,
+            userId,
             resolveContactByMatrixUserId,
             translationDefaultView,
             translateHsUrl,

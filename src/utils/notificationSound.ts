@@ -4,6 +4,7 @@
  */
 
 let audioContext: AudioContext | null = null;
+export type NotificationSoundMode = "off" | "classic" | "soft" | "chime";
 
 export function ensureNotificationSoundEnabled(): void {
     try {
@@ -22,8 +23,9 @@ export function ensureNotificationSoundEnabled(): void {
  * 播放通知音效
  * 使用 Web Audio API 生成簡單的提示音，避免需要外部音頻文件
  */
-export function playNotificationSound(): void {
+export function playNotificationSound(mode: NotificationSoundMode = "classic"): void {
     try {
+        if (mode === "off") return;
         // 懶加載 AudioContext
         if (!audioContext) {
             audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
@@ -34,25 +36,33 @@ export function playNotificationSound(): void {
             void audioContext.resume();
         }
 
-        // 創建振盪器生成提示音
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        const now = audioContext.currentTime;
+        const playTone = (params: { frequency: number; type: OscillatorType; gain: number; attack: number; release: number; startAt: number }): void => {
+            const oscillator = audioContext as AudioContext;
+            const osc = oscillator.createOscillator();
+            const gainNode = oscillator.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(oscillator.destination);
+            osc.type = params.type;
+            osc.frequency.setValueAtTime(params.frequency, params.startAt);
+            gainNode.gain.setValueAtTime(0, params.startAt);
+            gainNode.gain.linearRampToValueAtTime(params.gain, params.startAt + params.attack);
+            gainNode.gain.linearRampToValueAtTime(0, params.startAt + params.attack + params.release);
+            osc.start(params.startAt);
+            osc.stop(params.startAt + params.attack + params.release);
+        };
 
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        // 設置音調為柔和的提示音
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.type = "sine";
-
-        // 設置音量包絡 - 快速淡入淡出
-        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
-        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.15);
-
-        // 播放
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.15);
+        if (mode === "soft") {
+            playTone({ frequency: 620, type: "sine", gain: 0.16, attack: 0.015, release: 0.18, startAt: now });
+            return;
+        }
+        if (mode === "chime") {
+            playTone({ frequency: 660, type: "triangle", gain: 0.14, attack: 0.01, release: 0.16, startAt: now });
+            playTone({ frequency: 880, type: "triangle", gain: 0.1, attack: 0.01, release: 0.14, startAt: now + 0.11 });
+            return;
+        }
+        // classic
+        playTone({ frequency: 800, type: "sine", gain: 0.26, attack: 0.01, release: 0.14, startAt: now });
     } catch (error) {
         // 靜默失敗 - 某些瀏覽器可能不支持 Web Audio API
         console.warn("Failed to play notification sound:", error);

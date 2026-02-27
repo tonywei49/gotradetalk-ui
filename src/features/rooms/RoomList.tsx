@@ -20,7 +20,7 @@ import {
     hideDirectRoom,
     joinDirectRoom,
 } from "../../matrix/direct";
-import { playNotificationSound } from "../../utils/notificationSound";
+import { playNotificationSound, type NotificationSoundMode } from "../../utils/notificationSound";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
@@ -80,6 +80,7 @@ type RoomListProps = {
     contactsRefreshToken?: number;
     pinnedRoomIds?: string[];
     enableContactPolling?: boolean;
+    notificationSoundMode?: NotificationSoundMode;
 };
 
 const EMPTY_STATE: ChatRoomEntry[] = [];
@@ -283,6 +284,7 @@ export function RoomList({
     contactsRefreshToken,
     pinnedRoomIds = [],
     enableContactPolling = true,
+    notificationSoundMode = "classic",
 }: RoomListProps) {
     const { t } = useTranslation();
     const [rooms, setRooms] = useState<ChatRoomEntry[]>(EMPTY_STATE);
@@ -438,7 +440,7 @@ export function RoomList({
                 const isFromMe = event.getSender() === myUserId;
                 const isBackground = typeof document !== "undefined" && document.hidden;
                 if (!isFromMe && (room.roomId !== activeRoomId || isBackground)) {
-                    playNotificationSound();
+                    playNotificationSound(notificationSoundMode);
                 }
             }
         };
@@ -475,7 +477,7 @@ export function RoomList({
             client.off("Room" as any, onRoom);
             client.off(RoomEvent.MyMembership, onMembership);
         };
-    }, [client, refresh, activeRoomId]);
+    }, [client, refresh, activeRoomId, notificationSoundMode]);
 
     useEffect(() => {
         if (!rooms.length) return;

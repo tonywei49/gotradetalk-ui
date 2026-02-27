@@ -22,7 +22,12 @@ import { GroupInviteList } from "../features/groups/GroupInviteList";
 // GroupDetailsPanel 將在 ChatRoom 中整合使用
 // import { GroupDetailsPanel, isGroupRoom } from "../features/groups/GroupDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
-import { ensureNotificationSoundEnabled, isNotificationSoundSupported } from "../utils/notificationSound";
+import {
+    ensureNotificationSoundEnabled,
+    isNotificationSoundSupported,
+    playNotificationSound,
+    type NotificationSoundMode,
+} from "../utils/notificationSound";
 import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
 import { setLanguage } from "../i18n";
@@ -311,11 +316,17 @@ export const MainLayout: React.FC = () => {
         () => `gtt_translation_default_view:${matrixCredentials?.user_id ?? "guest"}`,
         [matrixCredentials?.user_id],
     );
+    const notificationSoundStorageKey = useMemo(
+        () => `gtt_notification_sound:${matrixCredentials?.user_id ?? "guest"}`,
+        [matrixCredentials?.user_id],
+    );
+    const [notificationSoundMode, setNotificationSoundMode] = useState<NotificationSoundMode>("classic");
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : null;
     const meUpdateOptions = undefined;
     const [capabilityValues, setCapabilityValues] = useState<string[]>([]);
     const [capabilityLoaded, setCapabilityLoaded] = useState(false);
     const [capabilityError, setCapabilityError] = useState<string | null>(null);
+    const [refreshingNotebookToken, setRefreshingNotebookToken] = useState(false);
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
     const [capabilityTokenRefreshSeq, setCapabilityTokenRefreshSeq] = useState(0);
     const { notebookAuth, notebookToken } = useMemo(() => buildNotebookAuth({
@@ -344,40 +355,81 @@ export const MainLayout: React.FC = () => {
         if (!matrixClient || !mxcUrl) return null;
         return matrixClient.mxcUrlToHttp(mxcUrl, 96, 96, "crop") ?? matrixClient.mxcUrlToHttp(mxcUrl) ?? null;
     }, [matrixClient]);
-    useEffect(() => {
-        if (notebookToken.reason !== "expired_hub_token") return;
-        if (!hubSession?.refresh_token) return;
-        let alive = true;
-        void (async (): Promise<void> => {
-            try {
-                const supabase = getSupabaseClient();
-                const { data, error } = await supabase.auth.refreshSession({
-                    refresh_token: hubSession.refresh_token,
-                });
-                if (error || !data.session?.access_token) {
-                    throw new Error("INVALID_AUTH_TOKEN");
-                }
-                if (!alive) return;
-                setHubSession({
-                    access_token: data.session.access_token,
-                    refresh_token: data.session.refresh_token || hubSession.refresh_token,
-                    expires_at: data.session.expires_at ?? undefined,
-                });
-                setCapabilityTokenRefreshSeq((prev) => prev + 1);
-            } catch {
-                if (!alive) return;
-                setCapabilityError(t("layout.notebook.authFailed"));
+    const refreshNotebookToken = useCallback(async (): Promise<boolean> => {
+        if (!hubSession?.refresh_token) return false;
+        setRefreshingNotebookToken(true);
+        try {
+            const supabase = getSupabaseClient();
+            const { data, error } = await supabase.auth.refreshSession({
+                refresh_token: hubSession.refresh_token,
+            });
+            if (error || !data.session?.access_token) {
+                throw new Error("INVALID_AUTH_TOKEN");
             }
-        })();
-        return () => {
-            alive = false;
+            setHubSession({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token || hubSession.refresh_token,
+                expires_at: data.session.expires_at ?? undefined,
+            });
+            setCapabilityTokenRefreshSeq((prev) => prev + 1);
+            setCapabilityError(null);
+            return true;
+        } catch {
+            setCapabilityError(t("layout.notebook.authFailed"));
+            return false;
+        } finally {
+            setRefreshingNotebookToken(false);
+        }
+    }, [hubSession?.refresh_token, setHubSession, t]);
+
+    useEffect(() => {
+        if (
+            notebookToken.reason !== "expired_hub_token" &&
+            notebookToken.reason !== "missing_hub_token" &&
+            notebookToken.reason !== "invalid_hub_token_format"
+        ) {
+            return;
+        }
+        if (!hubSession?.refresh_token || refreshingNotebookToken) return;
+        void refreshNotebookToken();
+    }, [hubSession?.refresh_token, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
+
+    useEffect(() => {
+        const shouldTryRefresh =
+            notebookToken.reason === "expired_hub_token" ||
+            notebookToken.reason === "missing_hub_token" ||
+            notebookToken.reason === "invalid_hub_token_format";
+        if (!shouldTryRefresh) return;
+        if (!hubSession?.refresh_token) return;
+
+        const onFocus = (): void => {
+            if (refreshingNotebookToken) return;
+            void refreshNotebookToken();
         };
-    }, [hubSession, notebookToken.reason, setHubSession, t]);
+        const onVisibility = (): void => {
+            if (document.visibilityState !== "visible") return;
+            if (refreshingNotebookToken) return;
+            void refreshNotebookToken();
+        };
+
+        window.addEventListener("focus", onFocus);
+        document.addEventListener("visibilitychange", onVisibility);
+        return () => {
+            window.removeEventListener("focus", onFocus);
+            document.removeEventListener("visibilitychange", onVisibility);
+        };
+    }, [hubSession?.refresh_token, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
         auth: notebookAuth,
         enabled: notebookCapabilityState.canUseNotebookBasic && activeTab === "notebook",
     });
+    useEffect(() => {
+        if (userType === "client" && notebookModule.sourceScope === "company") {
+            notebookModule.setSourceScope("personal");
+            notebookModule.setViewFilter("all");
+        }
+    }, [notebookModule, userType]);
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
@@ -570,17 +622,27 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         if (!capabilityToken) {
-            setCapabilityLoaded(true);
-            setCapabilityValues([]);
             if (
                 notebookToken.reason === "expired_hub_token" ||
                 notebookToken.reason === "missing_hub_token" ||
                 notebookToken.reason === "invalid_hub_token_format"
             ) {
+                setCapabilityValues([]);
+                if (hubSession?.refresh_token) {
+                    setCapabilityLoaded(false);
+                    setCapabilityError(null);
+                    if (!refreshingNotebookToken) {
+                        void refreshNotebookToken();
+                    }
+                    return;
+                }
+                setCapabilityLoaded(true);
                 setCapabilityError(t("layout.notebook.authFailed"));
-            } else {
-                setCapabilityError(t("layout.notebook.authFailed"));
+                return;
             }
+            setCapabilityLoaded(true);
+            setCapabilityValues([]);
+            setCapabilityError(t("layout.notebook.authFailed"));
             return;
         }
         if (!hubMeResolved) {
@@ -650,7 +712,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason, userType, t]);
+    }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason, userType, t, hubSession?.refresh_token, refreshingNotebookToken, refreshNotebookToken]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -674,6 +736,19 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         localStorage.setItem(translationDefaultStorageKey, translationDefaultView);
     }, [translationDefaultStorageKey, translationDefaultView]);
+
+    useEffect(() => {
+        const raw = localStorage.getItem(notificationSoundStorageKey);
+        if (raw === "off" || raw === "classic" || raw === "soft" || raw === "chime") {
+            setNotificationSoundMode(raw);
+            return;
+        }
+        setNotificationSoundMode("classic");
+    }, [notificationSoundStorageKey]);
+
+    useEffect(() => {
+        localStorage.setItem(notificationSoundStorageKey, notificationSoundMode);
+    }, [notificationSoundMode, notificationSoundStorageKey]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -716,8 +791,46 @@ export const MainLayout: React.FC = () => {
             setAccountAvatarUrl(null);
             return;
         }
-        const myMember = matrixClient.getUser(matrixCredentials.user_id);
-        setAccountAvatarUrl(resolveAvatarUrl(myMember?.avatarUrl));
+        let alive = true;
+        const myUserId = matrixCredentials.user_id;
+
+        const refreshMyAvatar = async (): Promise<void> => {
+            const cachedMxc = matrixClient.getUser(myUserId)?.avatarUrl;
+            if (cachedMxc) {
+                if (!alive) return;
+                setAccountAvatarUrl(resolveAvatarUrl(cachedMxc));
+                return;
+            }
+            try {
+                const profile = await matrixClient.getProfileInfo(myUserId);
+                if (!alive) return;
+                const serverMxc = typeof profile?.avatar_url === "string" ? profile.avatar_url : null;
+                setAccountAvatarUrl(resolveAvatarUrl(serverMxc));
+            } catch {
+                if (!alive) return;
+                const fallbackMxc = matrixClient.getUser(myUserId)?.avatarUrl;
+                setAccountAvatarUrl(resolveAvatarUrl(fallbackMxc));
+            }
+        };
+
+        void refreshMyAvatar();
+
+        const onSync = (): void => {
+            void refreshMyAvatar();
+        };
+        const onEvent = (event: MatrixEvent): void => {
+            if (event.getType() !== "m.presence") return;
+            if (event.getSender() !== myUserId) return;
+            void refreshMyAvatar();
+        };
+
+        matrixClient.on(ClientEvent.Sync, onSync);
+        matrixClient.on(ClientEvent.Event, onEvent);
+        return () => {
+            alive = false;
+            matrixClient.off(ClientEvent.Sync, onSync);
+            matrixClient.off(ClientEvent.Event, onEvent);
+        };
     }, [matrixClient, matrixCredentials?.user_id, resolveAvatarUrl]);
 
     useEffect(() => {
@@ -1406,13 +1519,6 @@ export const MainLayout: React.FC = () => {
                             >
                                 {t("layout.accountSettings")}
                             </button>
-                            <button
-                                type="button"
-                                onClick={onLogout}
-                                className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.logout")}
-                            </button>
                         </div>
                     )}
                 </div>
@@ -1584,6 +1690,47 @@ export const MainLayout: React.FC = () => {
                             >
                                 {t("layout.translationDefaultContent")}
                             </button>
+                            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
+                                <div className="mb-2 text-sm text-slate-700 dark:text-slate-100">
+                                    {t("layout.notificationSound")}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={notificationSoundMode}
+                                        onChange={(event) => {
+                                            const next = event.target.value as NotificationSoundMode;
+                                            setNotificationSoundMode(next);
+                                            if (next !== "off") {
+                                                playNotificationSound(next);
+                                            }
+                                        }}
+                                        className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    >
+                                        <option value="off">{t("layout.notificationSoundOff")}</option>
+                                        <option value="classic">{t("layout.notificationSoundClassic")}</option>
+                                        <option value="soft">{t("layout.notificationSoundSoft")}</option>
+                                        <option value="chime">{t("layout.notificationSoundChime")}</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (notificationSoundMode === "off") return;
+                                            playNotificationSound(notificationSoundMode);
+                                        }}
+                                        disabled={notificationSoundMode === "off"}
+                                        className="rounded-md border border-gray-200 px-3 py-1 text-xs text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        {t("layout.notificationSoundPreview")}
+                                    </button>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onLogout}
+                                className="w-full text-left rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-slate-800"
+                            >
+                                {t("layout.logoutAccount")}
+                            </button>
                         </div>
                     </>
                 ) : activeTab === "account" ? (
@@ -1662,6 +1809,7 @@ export const MainLayout: React.FC = () => {
                         onLoadMore={() => {
                             void notebookModule.loadMore();
                         }}
+                        showCompanyFilter={userType !== "client"}
                     />
                 ) : activeTab === "files" ? (
                     <>
@@ -1910,6 +2058,7 @@ export const MainLayout: React.FC = () => {
                             contactsRefreshToken={contactsRefreshToken}
                             pinnedRoomIds={pinnedRoomIds}
                             enableContactPolling
+                            notificationSoundMode={notificationSoundMode}
                         />
                     </>
                 )}

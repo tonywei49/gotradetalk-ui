@@ -20,6 +20,7 @@ type NotebookSidebarProps = {
     hasMore: boolean;
     loadingMore: boolean;
     onLoadMore: () => void;
+    showCompanyFilter?: boolean;
 };
 
 function indexStateChip(status: NotebookItem["indexStatus"]): string {
@@ -51,8 +52,9 @@ export function NotebookSidebar({
     hasMore,
     loadingMore,
     onLoadMore,
+    showCompanyFilter = true,
 }: NotebookSidebarProps) {
-    const quickFilter: NotebookQuickFilter = sourceScope === "company"
+    const quickFilter: NotebookQuickFilter = showCompanyFilter && sourceScope === "company"
         ? "company"
         : filter === "knowledge"
             ? "knowledge"
@@ -116,13 +118,15 @@ export function NotebookSidebar({
                     >
                         記事本
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => applyQuickFilter("company")}
-                        className={`rounded-full px-2 py-1 ${quickFilter === "company" ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"}`}
-                    >
-                        公司資料
-                    </button>
+                    {showCompanyFilter && (
+                        <button
+                            type="button"
+                            onClick={() => applyQuickFilter("company")}
+                            className={`rounded-full px-2 py-1 ${quickFilter === "company" ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"}`}
+                        >
+                            公司資料
+                        </button>
+                    )}
                 </div>
                 <input
                     type="text"
