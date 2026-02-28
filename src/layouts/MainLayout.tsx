@@ -540,8 +540,18 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         if (!matrixClient) return undefined;
-        matrixClient.startClient({ initialSyncLimit: 20 });
+        let cancelled = false;
+        void (async () => {
+            try {
+                await matrixClient.initRustCrypto();
+            } catch {
+                // fallback to non-crypto mode if rust crypto init fails
+            }
+            if (cancelled) return;
+            matrixClient.startClient({ initialSyncLimit: 20 });
+        })();
         return () => {
+            cancelled = true;
             matrixClient.stopClient();
         };
     }, [matrixClient]);
