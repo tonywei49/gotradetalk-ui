@@ -194,6 +194,22 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
     return withoutPrefix.slice(0, colonIndex);
 }
 
+function parseJwtSub(token: string | null | undefined): string | null {
+    const raw = String(token || "").trim();
+    if (!raw) return null;
+    const parts = raw.split(".");
+    if (parts.length < 2 || !parts[1]) return null;
+    try {
+        const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+        const json = atob(base64 + padding);
+        const parsed = JSON.parse(json) as { sub?: string };
+        return typeof parsed.sub === "string" ? parsed.sub : null;
+    } catch {
+        return null;
+    }
+}
+
 function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
     const out: MatrixEvent[] = [];
     const seen = new Set<string>();
@@ -327,6 +343,11 @@ export const MainLayout: React.FC = () => {
     const [capabilityLoaded, setCapabilityLoaded] = useState(false);
     const [capabilityError, setCapabilityError] = useState<string | null>(null);
     const [refreshingNotebookToken, setRefreshingNotebookToken] = useState(false);
+    const notebookRefreshBackoffUntilRef = useRef(0);
+    const notebookRefreshFailureCountRef = useRef(0);
+    const notebookRefreshFlightRef = useRef<Promise<boolean> | null>(null);
+    const notebookRefreshFlightTimerRef = useRef<number | null>(null);
+    const notebookUserSubRef = useRef<string | null>(parseJwtSub(hubSession?.access_token));
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
     const [capabilityTokenRefreshSeq, setCapabilityTokenRefreshSeq] = useState(0);
     const { notebookAuth, notebookToken } = useMemo(() => buildNotebookAuth({
@@ -347,40 +368,92 @@ export const MainLayout: React.FC = () => {
             }),
         [capabilityLoaded, capabilityValues, userType],
     );
-    const retryNotebookCapability = useCallback(() => {
-        setCapabilityRefreshSeq((prev) => prev + 1);
-    }, []);
-
     const resolveAvatarUrl = useCallback((mxcUrl: string | null | undefined): string | null => {
         if (!matrixClient || !mxcUrl) return null;
         return matrixClient.mxcUrlToHttp(mxcUrl, 96, 96, "crop") ?? matrixClient.mxcUrlToHttp(mxcUrl) ?? null;
     }, [matrixClient]);
-    const refreshNotebookToken = useCallback(async (): Promise<boolean> => {
+    useEffect(() => {
+        notebookUserSubRef.current = parseJwtSub(hubSession?.access_token);
+    }, [hubSession?.access_token]);
+
+    const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<boolean> => {
         if (!hubSession?.refresh_token) return false;
-        setRefreshingNotebookToken(true);
-        try {
-            const supabase = getSupabaseClient();
-            const { data, error } = await supabase.auth.refreshSession({
-                refresh_token: hubSession.refresh_token,
-            });
-            if (error || !data.session?.access_token) {
-                throw new Error("INVALID_AUTH_TOKEN");
+        if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return false;
+        if (notebookRefreshFlightRef.current) return notebookRefreshFlightRef.current;
+
+        const flight = (async (): Promise<boolean> => {
+            setRefreshingNotebookToken(true);
+            try {
+                const supabase = getSupabaseClient();
+                const { data, error } = await supabase.auth.refreshSession({
+                    refresh_token: hubSession.refresh_token,
+                });
+                if (error) {
+                    throw error;
+                }
+                if (!data.session?.access_token) {
+                    throw new Error("INVALID_AUTH_TOKEN");
+                }
+
+                const expectedSub = notebookUserSubRef.current || parseJwtSub(hubSession.access_token);
+                const nextUserId = data.session.user?.id || null;
+                const nextSub = parseJwtSub(data.session.access_token);
+                const nextIdentity = nextUserId || nextSub;
+                if (expectedSub && nextIdentity && expectedSub !== nextIdentity) {
+                    clearSession();
+                    setCapabilityError(t("layout.notebook.authFailed"));
+                    return false;
+                }
+
+                setHubSession({
+                    access_token: data.session.access_token,
+                    refresh_token: data.session.refresh_token || hubSession.refresh_token,
+                    expires_at: data.session.expires_at ?? undefined,
+                });
+                notebookUserSubRef.current = nextIdentity || expectedSub || null;
+                notebookRefreshBackoffUntilRef.current = 0;
+                notebookRefreshFailureCountRef.current = 0;
+                setCapabilityTokenRefreshSeq((prev) => prev + 1);
+                setCapabilityError(null);
+                return true;
+            } catch (error) {
+                const status = (error as { status?: number } | null)?.status;
+                const message = error instanceof Error ? error.message : String(error ?? "");
+                const isRateLimited = status === 429 || message.includes("429") || message.toLowerCase().includes("too many requests");
+                notebookRefreshFailureCountRef.current = Math.min(notebookRefreshFailureCountRef.current + 1, 6);
+                const step = notebookRefreshFailureCountRef.current;
+                const delayMs = isRateLimited
+                    ? Math.min(15000 * (2 ** Math.max(0, step - 1)), 5 * 60 * 1000)
+                    : Math.min(5000 * (2 ** Math.max(0, step - 1)), 60 * 1000);
+                notebookRefreshBackoffUntilRef.current = Date.now() + delayMs;
+                setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.authFailed"));
+                return false;
+            } finally {
+                if (notebookRefreshFlightTimerRef.current) {
+                    window.clearTimeout(notebookRefreshFlightTimerRef.current);
+                    notebookRefreshFlightTimerRef.current = null;
+                }
+                notebookRefreshFlightRef.current = null;
+                setRefreshingNotebookToken(false);
             }
-            setHubSession({
-                access_token: data.session.access_token,
-                refresh_token: data.session.refresh_token || hubSession.refresh_token,
-                expires_at: data.session.expires_at ?? undefined,
-            });
-            setCapabilityTokenRefreshSeq((prev) => prev + 1);
-            setCapabilityError(null);
-            return true;
-        } catch {
-            setCapabilityError(t("layout.notebook.authFailed"));
-            return false;
-        } finally {
-            setRefreshingNotebookToken(false);
-        }
-    }, [hubSession?.refresh_token, setHubSession, t]);
+        })();
+
+        notebookRefreshFlightRef.current = flight;
+        notebookRefreshFlightTimerRef.current = window.setTimeout(() => {
+            if (notebookRefreshFlightRef.current === flight) {
+                notebookRefreshFlightRef.current = null;
+                setRefreshingNotebookToken(false);
+            }
+        }, 20000);
+        return flight;
+    }, [clearSession, hubSession?.refresh_token, hubSession?.access_token, setHubSession, t]);
+
+    const retryNotebookCapability = useCallback(() => {
+        notebookRefreshBackoffUntilRef.current = 0;
+        notebookRefreshFailureCountRef.current = 0;
+        setCapabilityRefreshSeq((prev) => prev + 1);
+        void refreshNotebookToken({ force: true });
+    }, [refreshNotebookToken]);
 
     useEffect(() => {
         if (
@@ -630,7 +703,6 @@ export const MainLayout: React.FC = () => {
                 setCapabilityValues([]);
                 if (hubSession?.refresh_token) {
                     setCapabilityLoaded(false);
-                    setCapabilityError(null);
                     if (!refreshingNotebookToken) {
                         void refreshNotebookToken();
                     }
