@@ -337,6 +337,7 @@ export const MainLayout: React.FC = () => {
         [matrixCredentials?.user_id],
     );
     const [notificationSoundMode, setNotificationSoundMode] = useState<NotificationSoundMode>("classic");
+    const [notificationSoundHydrated, setNotificationSoundHydrated] = useState(false);
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : null;
     const meUpdateOptions = undefined;
     const [capabilityValues, setCapabilityValues] = useState<string[]>([]);
@@ -810,17 +811,21 @@ export const MainLayout: React.FC = () => {
     }, [translationDefaultStorageKey, translationDefaultView]);
 
     useEffect(() => {
+        setNotificationSoundHydrated(false);
         const raw = localStorage.getItem(notificationSoundStorageKey);
         if (raw === "off" || raw === "classic" || raw === "soft" || raw === "chime") {
             setNotificationSoundMode(raw);
+            setNotificationSoundHydrated(true);
             return;
         }
         setNotificationSoundMode("classic");
+        setNotificationSoundHydrated(true);
     }, [notificationSoundStorageKey]);
 
     useEffect(() => {
+        if (!notificationSoundHydrated) return;
         localStorage.setItem(notificationSoundStorageKey, notificationSoundMode);
-    }, [notificationSoundMode, notificationSoundStorageKey]);
+    }, [notificationSoundHydrated, notificationSoundMode, notificationSoundStorageKey]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
