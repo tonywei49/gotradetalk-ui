@@ -142,6 +142,9 @@ export const httpNotebookAdapter: NotebookAdapter = {
                 content_markdown: input.contentMarkdown,
                 is_indexable: input.isIndexable ?? true,
                 item_type: input.itemType ?? "text",
+                chunk_strategy: input.chunkStrategy,
+                chunk_size: input.chunkSize,
+                chunk_separator: input.chunkSeparator,
             });
             return mapItem(response.item);
         } catch (error) {
@@ -175,6 +178,9 @@ export const httpNotebookAdapter: NotebookAdapter = {
                 matrix_media_mime: input.matrixMediaMime,
                 matrix_media_size: input.matrixMediaSize,
                 is_indexable: input.isIndexable ?? true,
+                chunk_strategy: input.chunkStrategy,
+                chunk_size: input.chunkSize,
+                chunk_separator: input.chunkSeparator,
             });
             return mapItem(response.item);
         } catch (error) {

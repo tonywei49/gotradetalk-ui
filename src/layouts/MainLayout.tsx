@@ -1864,11 +1864,10 @@ export const MainLayout: React.FC = () => {
                             </button>
                             {avatarUploadFeedback && (
                                 <div
-                                    className={`text-xs ${
-                                        avatarUploadFeedback.includes("failed")
+                                    className={`text-xs ${avatarUploadFeedback.includes("failed")
                                             ? "text-rose-500"
                                             : "text-emerald-600 dark:text-emerald-300"
-                                    }`}
+                                        }`}
                                 >
                                     {avatarUploadFeedback}
                                 </div>
@@ -2719,6 +2718,8 @@ export const MainLayout: React.FC = () => {
                         busy={notebookModule.actionBusy}
                         actionError={notebookModule.actionError}
                         onMobileBack={() => setMobileView("list")}
+                        chunkSettings={notebookModule.chunkSettings}
+                        onChunkSettingsChange={notebookModule.setChunkSettings}
                     />
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
@@ -2799,11 +2800,10 @@ export const MainLayout: React.FC = () => {
                                                 setSettingsDetail("none");
                                                 setMobileView("list");
                                             }}
-                                            className={`rounded-lg border px-3 py-2 text-sm ${
-                                                translationDefaultView === "translated"
+                                            className={`rounded-lg border px-3 py-2 text-sm ${translationDefaultView === "translated"
                                                     ? "border-emerald-400 text-emerald-600"
                                                     : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                            }`}
+                                                }`}
                                         >
                                             {t("layout.translationDefaultTranslated")}
                                         </button>
@@ -2814,11 +2814,10 @@ export const MainLayout: React.FC = () => {
                                                 setSettingsDetail("none");
                                                 setMobileView("list");
                                             }}
-                                            className={`rounded-lg border px-3 py-2 text-sm ${
-                                                translationDefaultView === "original"
+                                            className={`rounded-lg border px-3 py-2 text-sm ${translationDefaultView === "original"
                                                     ? "border-emerald-400 text-emerald-600"
                                                     : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                            }`}
+                                                }`}
                                         >
                                             {t("layout.translationDefaultOriginal")}
                                         </button>

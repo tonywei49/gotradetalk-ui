@@ -3,6 +3,7 @@ import type { NotebookAdapter } from "./adapters/types";
 import type { NotebookAuthContext, NotebookItem, NotebookListState } from "./types";
 import { useNotebookParsedView } from "./hooks/useNotebookParsedView";
 import { useNotebookItemFiles } from "./hooks/useNotebookItemFiles";
+import { defaultChunkSettings, type ChunkSettings } from "./components/ChunkSettingsPanel";
 
 type UseNotebookModuleParams = {
     adapter: NotebookAdapter;
@@ -35,6 +36,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const countsSeqRef = useRef(0);
     const draftLockRef = useRef(false);
     const listCacheRef = useRef<Map<string, { items: NotebookItem[]; nextCursor: string | null }>>(new Map());
+    const [chunkSettings, setChunkSettings] = useState<ChunkSettings>({ ...defaultChunkSettings });
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -272,11 +274,20 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 if (sourceScope === "company") {
                     throw new Error("MANAGED_BY_PLATFORM");
                 }
+                const chunkParams: { chunkStrategy?: string; chunkSize?: number; chunkSeparator?: string } = {};
+                if (isIndexable && chunkSettings.enabled) {
+                    chunkParams.chunkStrategy = chunkSettings.strategy;
+                    chunkParams.chunkSize = chunkSettings.chunkSize;
+                    if (chunkSettings.strategy === 'custom' && chunkSettings.separator) {
+                        chunkParams.chunkSeparator = chunkSettings.separator;
+                    }
+                }
                 const created = await adapter.createItem(auth, {
                     title: editorTitle.trim() || "Untitled note",
                     contentMarkdown: editorContent,
                     isIndexable,
                     itemType: "text",
+                    ...chunkParams,
                 });
                 invalidateListCache();
                 const next = [created, ...items];
@@ -318,7 +329,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId, sourceScope]);
+    }, [adapter, auth, chunkSettings, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId, sourceScope]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -464,5 +475,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         attachFile,
         removeFile,
         ...parsedView,
+        chunkSettings,
+        setChunkSettings,
     };
 }

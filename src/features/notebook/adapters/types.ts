@@ -26,6 +26,9 @@ export type CreateNotebookItemInput = {
     contentMarkdown: string;
     isIndexable?: boolean;
     itemType?: "text" | "file";
+    chunkStrategy?: string;
+    chunkSize?: number;
+    chunkSeparator?: string;
 };
 
 export type UpdateNotebookItemInput = {
@@ -40,6 +43,9 @@ export type AttachNotebookFileInput = {
     matrixMediaMime?: string;
     matrixMediaSize?: number;
     isIndexable?: boolean;
+    chunkStrategy?: string;
+    chunkSize?: number;
+    chunkSeparator?: string;
 };
 
 export type NotebookAssistQueryInput = {

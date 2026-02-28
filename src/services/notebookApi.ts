@@ -341,7 +341,7 @@ export async function getCompanyTranslationSettings(auth: NotebookApiAuth): Prom
 
 export async function createNotebookItem(
     auth: NotebookApiAuth,
-    input: { title: string; content_markdown: string; item_type?: "text" | "file"; is_indexable?: boolean },
+    input: { title: string; content_markdown: string; item_type?: "text" | "file"; is_indexable?: boolean; chunk_strategy?: string; chunk_size?: number; chunk_separator?: string },
 ): Promise<{ item: NotebookItemDto }> {
     return postJson<{ item: NotebookItemDto }>(auth, "/notebook/items", input);
 }
@@ -370,6 +370,9 @@ export async function attachNotebookFile(
         matrix_media_mime?: string;
         matrix_media_size?: number;
         is_indexable?: boolean;
+        chunk_strategy?: string;
+        chunk_size?: number;
+        chunk_separator?: string;
     },
 ): Promise<{ item: NotebookItemDto; index_job: { id: string } | null }> {
     return postJson<{ item: NotebookItemDto; index_job: { id: string } | null }>(auth, `/notebook/items/${encodeURIComponent(itemId)}/files`, input);

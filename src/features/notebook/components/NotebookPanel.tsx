@@ -2,6 +2,7 @@ import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../type
 import { useTranslation } from "react-i18next";
 import { useRef } from "react";
 import { NotebookParsedSection } from "./NotebookParsedSection";
+import { ChunkSettingsPanel, type ChunkSettings } from "./ChunkSettingsPanel";
 
 type NotebookPanelProps = {
     enabled: boolean;
@@ -33,6 +34,8 @@ type NotebookPanelProps = {
     busy: boolean;
     actionError: string | null;
     onMobileBack?: () => void;
+    chunkSettings?: ChunkSettings;
+    onChunkSettingsChange?: (settings: ChunkSettings) => void;
 };
 
 function indexHint(item: NotebookItem): { tone: string; text: string } {
@@ -96,6 +99,8 @@ export function NotebookPanel({
     busy,
     actionError,
     onMobileBack,
+    chunkSettings,
+    onChunkSettingsChange,
 }: NotebookPanelProps) {
     const { t } = useTranslation();
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -264,6 +269,11 @@ export function NotebookPanel({
                             >
                                 保存為記事本
                             </button>
+                            {chunkSettings && onChunkSettingsChange && (
+                                <div className="w-full mt-2">
+                                    <ChunkSettingsPanel settings={chunkSettings} onChange={onChunkSettingsChange} />
+                                </div>
+                            )}
                             {!isCreatingDraft && (
                                 <>
                                     <button
