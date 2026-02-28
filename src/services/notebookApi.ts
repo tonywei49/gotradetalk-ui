@@ -97,6 +97,7 @@ export type CompanyNotebookAiSettingsResponse = {
     notebook_ai_expire_at: string | null;
     notebook_ai_quota_monthly_requests: number | null;
     notebook_ai_quota_used_monthly_requests: number | null;
+    notebook_upload_max_mb?: number | null;
 };
 
 export type CompanyTranslationSettingsResponse = {

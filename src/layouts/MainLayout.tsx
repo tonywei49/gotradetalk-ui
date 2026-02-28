@@ -59,6 +59,7 @@ import {
     useNotebookModule,
 } from "../features/notebook";
 import {
+    getCompanyNotebookAiSettings,
     getNotebookCapabilities,
     NotebookServiceError,
 } from "../services/notebookApi";
@@ -313,6 +314,7 @@ export const MainLayout: React.FC = () => {
     const [avatarUploading, setAvatarUploading] = useState(false);
     const [avatarUploadFeedback, setAvatarUploadFeedback] = useState<string | null>(null);
     const [notebookApiBaseUrlOverride, setNotebookApiBaseUrlOverride] = useState<string | null>(null);
+    const [notebookUploadLimitMb, setNotebookUploadLimitMb] = useState<number>(20);
     const [hubMeResolved, setHubMeResolved] = useState(false);
     const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
     const accountId = meProfile?.user_local_id || fallbackAccountId;
@@ -664,6 +666,7 @@ export const MainLayout: React.FC = () => {
         if (!hubAccessToken) {
             setMeProfile(null);
             setNotebookApiBaseUrlOverride(null);
+            setNotebookUploadLimitMb(20);
             setHubMeResolved(true);
             return;
         }
@@ -693,6 +696,7 @@ export const MainLayout: React.FC = () => {
                 if (!isActive) return;
                 setMeProfile(null);
                 setNotebookApiBaseUrlOverride(null);
+                setNotebookUploadLimitMb(20);
             } finally {
                 if (isActive) {
                     setHubMeResolved(true);
@@ -703,6 +707,28 @@ export const MainLayout: React.FC = () => {
             isActive = false;
         };
     }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id]);
+
+    useEffect(() => {
+        if (!notebookAuth || !notebookApiBaseUrlOverride) {
+            setNotebookUploadLimitMb(20);
+            return;
+        }
+        let alive = true;
+        void getCompanyNotebookAiSettings(notebookAuth)
+            .then((response) => {
+                if (!alive) return;
+                const raw = Number(response?.notebook_upload_max_mb ?? 20);
+                const normalized = Number.isFinite(raw) && raw > 0 ? Math.min(Math.max(Math.floor(raw), 1), 200) : 20;
+                setNotebookUploadLimitMb(normalized);
+            })
+            .catch(() => {
+                if (!alive) return;
+                setNotebookUploadLimitMb(20);
+            });
+        return () => {
+            alive = false;
+        };
+    }, [notebookAuth, notebookApiBaseUrlOverride]);
 
     useEffect(() => {
         if (!capabilityToken) {
@@ -2625,6 +2651,11 @@ export const MainLayout: React.FC = () => {
                         }}
                         onUploadFile={(file) => {
                             if (!matrixClient) return;
+                            const maxBytes = notebookUploadLimitMb * 1024 * 1024;
+                            if (file.size > maxBytes) {
+                                window.alert(`檔案超過上限（${notebookUploadLimitMb}MB）`);
+                                return;
+                            }
                             void (async () => {
                                 try {
                                     const uploadResult = (await matrixClient.uploadContent(file, {
@@ -2664,6 +2695,7 @@ export const MainLayout: React.FC = () => {
                                 }
                             })();
                         }}
+                        uploadLimitMb={notebookUploadLimitMb}
                         onDeleteFile={(fileId) => {
                             void notebookModule.removeFile(fileId);
                         }}

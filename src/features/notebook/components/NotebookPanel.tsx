@@ -22,6 +22,7 @@ type NotebookPanelProps = {
     onRetryIndex: () => void;
     onAttachFile: () => void;
     onUploadFile: (file: File) => void;
+    uploadLimitMb: number;
     onDeleteFile: (fileId: string) => void;
     onDownloadFile: (mxcUrl: string, preferredName?: string | null) => void;
     previewBusy: boolean;
@@ -84,6 +85,7 @@ export function NotebookPanel({
     onRetryIndex,
     onAttachFile,
     onUploadFile,
+    uploadLimitMb,
     onDeleteFile,
     onDownloadFile,
     previewBusy,
@@ -163,6 +165,9 @@ export function NotebookPanel({
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <div className="mb-2 font-semibold">
                         Attached files ({isCreatingDraft ? 0 : (selectedItem?.files.length || 0)})
+                    </div>
+                    <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        單檔上限：{uploadLimitMb}MB
                     </div>
                     {isCreatingDraft ? (
                         <div className="text-slate-500 dark:text-slate-400">保存後即可上傳或連結檔案。</div>
