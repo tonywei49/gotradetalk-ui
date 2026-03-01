@@ -1,6 +1,6 @@
 import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../types";
 import { useTranslation } from "react-i18next";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { NotebookParsedSection } from "./NotebookParsedSection";
 import { ChunkSettingsPanel, type ChunkSettings } from "./ChunkSettingsPanel";
 
@@ -26,6 +26,7 @@ type NotebookPanelProps = {
     uploadLimitMb: number;
     onDeleteFile: (fileId: string) => void;
     onDownloadFile: (mxcUrl: string, preferredName?: string | null) => void;
+    draftFiles?: NotebookItem["files"];
     previewBusy: boolean;
     previewError: string | null;
     parsedPreview: NotebookParsedPreview | null;
@@ -91,6 +92,7 @@ export function NotebookPanel({
     uploadLimitMb,
     onDeleteFile,
     onDownloadFile,
+    draftFiles,
     previewBusy,
     previewError,
     parsedPreview,
@@ -104,6 +106,7 @@ export function NotebookPanel({
 }: NotebookPanelProps) {
     const { t } = useTranslation();
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
+    const [showChunkConfirm, setShowChunkConfirm] = useState(false);
     if (!enabled) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -129,7 +132,7 @@ export function NotebookPanel({
     const isCompanyReadOnly = Boolean(!isCreatingDraft && (selectedItem?.sourceScope === "company" || selectedItem?.readOnly));
 
     return (
-        <div className="flex h-full flex-col bg-white dark:bg-slate-900">
+        <div className="relative flex h-full flex-col bg-white dark:bg-slate-900">
             <div className="border-b border-gray-100 px-6 py-4 dark:border-slate-800">
                 <div className="flex items-center gap-3">
                     {onMobileBack && (
@@ -169,13 +172,35 @@ export function NotebookPanel({
                 </label>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <div className="mb-2 font-semibold">
-                        Attached files ({isCreatingDraft ? 0 : (selectedItem?.files.length || 0)})
+                        Attached files ({isCreatingDraft ? (draftFiles?.length || 0) : (selectedItem?.files.length || 0)})
                     </div>
                     <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
                         單檔上限：{uploadLimitMb}MB
                     </div>
                     {isCreatingDraft ? (
-                        <div className="text-slate-500 dark:text-slate-400">保存後即可上傳或連結檔案。</div>
+                        (draftFiles?.length || 0) === 0 ? (
+                            <div className="text-slate-500 dark:text-slate-400">可先上傳/連結檔案，保存時會一起寫入。</div>
+                        ) : (
+                            <div className="space-y-2">
+                                {(draftFiles || []).map((file) => (
+                                    <div key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                        <div className="min-w-0 flex-1 truncate">
+                                            {file.matrixMediaName || file.matrixMediaMxc}
+                                        </div>
+                                        {isEditing && !isCompanyReadOnly && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onDeleteFile(file.id)}
+                                                disabled={busy}
+                                                className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )
                     ) : (selectedItem?.files.length || 0) === 0 ? (
                         <div className="text-slate-500 dark:text-slate-400">No files yet.</div>
                     ) : (
@@ -255,7 +280,7 @@ export function NotebookPanel({
                         <>
                             <button
                                 type="button"
-                                onClick={onSaveAsKnowledge}
+                                onClick={() => setShowChunkConfirm(true)}
                                 disabled={busy}
                                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                             >
@@ -269,29 +294,24 @@ export function NotebookPanel({
                             >
                                 保存為記事本
                             </button>
-                            {chunkSettings && onChunkSettingsChange && (
-                                <div className="w-full mt-2">
-                                    <ChunkSettingsPanel settings={chunkSettings} onChange={onChunkSettingsChange} />
-                                </div>
-                            )}
+                            <button
+                                type="button"
+                                onClick={() => notebookUploadInputRef.current?.click()}
+                                disabled={busy}
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                            >
+                                Upload file
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onAttachFile}
+                                disabled={busy}
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                            >
+                                Link file
+                            </button>
                             {!isCreatingDraft && (
                                 <>
-                                    <button
-                                        type="button"
-                                        onClick={() => notebookUploadInputRef.current?.click()}
-                                        disabled={busy}
-                                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                                    >
-                                        Upload file
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={onAttachFile}
-                                        disabled={busy}
-                                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                                    >
-                                        Link file
-                                    </button>
                                     <button
                                         type="button"
                                         onClick={onDelete}
@@ -350,6 +370,33 @@ export function NotebookPanel({
                     )}
                 </div>
             </div>
+            {showChunkConfirm && chunkSettings && onChunkSettingsChange && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+                    <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                        <div className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100">保存為知識庫前設定切片</div>
+                        <ChunkSettingsPanel settings={chunkSettings} onChange={onChunkSettingsChange} />
+                        <div className="mt-4 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowChunkConfirm(false)}
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                            >
+                                取消
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowChunkConfirm(false);
+                                    onSaveAsKnowledge();
+                                }}
+                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+                            >
+                                確認並保存
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

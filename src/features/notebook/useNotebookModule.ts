@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NotebookAdapter } from "./adapters/types";
-import type { NotebookAuthContext, NotebookItem, NotebookListState } from "./types";
+import type { NotebookAuthContext, NotebookItem, NotebookItemFile, NotebookListState } from "./types";
 import { useNotebookParsedView } from "./hooks/useNotebookParsedView";
 import { useNotebookItemFiles } from "./hooks/useNotebookItemFiles";
 import { defaultChunkSettings, type ChunkSettings } from "./components/ChunkSettingsPanel";
@@ -28,6 +28,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [editorContent, setEditorContent] = useState("");
     const [isEditing, setIsEditing] = useState(false);
     const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+    const [draftFiles, setDraftFiles] = useState<NotebookItemFile[]>([]);
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setNextCursor(null);
         setLoadingMore(false);
         setIsCreatingDraft(false);
+        setDraftFiles([]);
     }, [auth?.matrixUserId, auth?.apiBaseUrl, enabled]);
 
     const selectedItem = useMemo(
@@ -68,6 +70,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setEditorTitle(next?.title ?? "");
         setEditorContent(next?.contentMarkdown ?? "");
         setIsEditing(false);
+        setDraftFiles([]);
     }, [items]);
 
     const applySelection = useCallback((nextItems: NotebookItem[], preferredId?: string | null) => {
@@ -258,6 +261,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setActionError(null);
         loadSeqRef.current += 1;
         setIsCreatingDraft(true);
+        setDraftFiles([]);
         setSelectedItemId(null);
         setEditorTitle("");
         setEditorContent("");
@@ -270,17 +274,17 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         setActionBusy(true);
         setActionError(null);
         try {
+            const chunkParams: { chunkStrategy?: string; chunkSize?: number; chunkSeparator?: string } = {};
+            if (isIndexable && chunkSettings.enabled) {
+                chunkParams.chunkStrategy = chunkSettings.strategy;
+                chunkParams.chunkSize = chunkSettings.chunkSize;
+                if (chunkSettings.strategy === "custom" && chunkSettings.separator) {
+                    chunkParams.chunkSeparator = chunkSettings.separator;
+                }
+            }
             if (isCreatingDraft || !selectedItemId) {
                 if (sourceScope === "company") {
                     throw new Error("MANAGED_BY_PLATFORM");
-                }
-                const chunkParams: { chunkStrategy?: string; chunkSize?: number; chunkSeparator?: string } = {};
-                if (isIndexable && chunkSettings.enabled) {
-                    chunkParams.chunkStrategy = chunkSettings.strategy;
-                    chunkParams.chunkSize = chunkSettings.chunkSize;
-                    if (chunkSettings.strategy === 'custom' && chunkSettings.separator) {
-                        chunkParams.chunkSeparator = chunkSettings.separator;
-                    }
                 }
                 const created = await adapter.createItem(auth, {
                     title: editorTitle.trim() || "Untitled note",
@@ -289,18 +293,30 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                     itemType: "text",
                     ...chunkParams,
                 });
+                let nextCreated = created;
+                for (const file of draftFiles) {
+                    nextCreated = await adapter.attachFile(auth, nextCreated.id, {
+                        matrixMediaMxc: file.matrixMediaMxc,
+                        matrixMediaName: file.matrixMediaName || undefined,
+                        matrixMediaMime: file.matrixMediaMime || undefined,
+                        matrixMediaSize: file.matrixMediaSize || undefined,
+                        isIndexable,
+                        ...chunkParams,
+                    });
+                }
                 invalidateListCache();
-                const next = [created, ...items];
+                const next = [nextCreated, ...items];
                 setItems(next);
                 setCounts((prev) => ({
                     all: prev.all + 1,
-                    knowledge: prev.knowledge + (created.isIndexable ? 1 : 0),
-                    note: prev.note + (created.isIndexable ? 0 : 1),
+                    knowledge: prev.knowledge + (nextCreated.isIndexable ? 1 : 0),
+                    note: prev.note + (nextCreated.isIndexable ? 0 : 1),
                 }));
-                setSelectedItemId(created.id);
-                setEditorTitle(created.title);
-                setEditorContent(created.contentMarkdown);
+                setSelectedItemId(nextCreated.id);
+                setEditorTitle(nextCreated.title);
+                setEditorContent(nextCreated.contentMarkdown);
                 setIsCreatingDraft(false);
+                setDraftFiles([]);
                 setIsEditing(false);
                 setListState("ready");
                 return;
@@ -309,6 +325,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 title: editorTitle,
                 contentMarkdown: editorContent,
                 isIndexable,
+                ...chunkParams,
             });
             invalidateListCache();
             const prev = items.find((item) => item.id === selectedItemId);
@@ -329,7 +346,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, chunkSettings, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId, sourceScope]);
+    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId, sourceScope]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -406,6 +423,9 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         adapter,
         auth,
         selectedItemId,
+        isCreatingDraft,
+        draftFiles,
+        setDraftFiles,
         setActionBusy,
         setActionError,
         setItems,
@@ -429,6 +449,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             setSelectedItemId(fallback?.id ?? null);
             setEditorTitle(fallback?.title ?? "");
             setEditorContent(fallback?.contentMarkdown ?? "");
+            setDraftFiles([]);
             return;
         }
         if (!selectedItem) return;
@@ -474,6 +495,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         cancelEdit,
         attachFile,
         removeFile,
+        draftFiles,
         ...parsedView,
         chunkSettings,
         setChunkSettings,

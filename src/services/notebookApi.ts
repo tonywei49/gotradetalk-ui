@@ -349,7 +349,16 @@ export async function createNotebookItem(
 export async function updateNotebookItem(
     auth: NotebookApiAuth,
     itemId: string,
-    input: { title?: string; content_markdown?: string; is_indexable?: boolean; status?: "active" | "deleted"; revision?: number },
+    input: {
+        title?: string;
+        content_markdown?: string;
+        is_indexable?: boolean;
+        status?: "active" | "deleted";
+        revision?: number;
+        chunk_strategy?: string;
+        chunk_size?: number;
+        chunk_separator?: string;
+    },
 ): Promise<{ item: NotebookItemDto; conflict: boolean }> {
     return patchJson<{ item: NotebookItemDto; conflict: boolean }>(auth, `/notebook/items/${encodeURIComponent(itemId)}`, input);
 }

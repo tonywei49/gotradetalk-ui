@@ -157,6 +157,9 @@ export const httpNotebookAdapter: NotebookAdapter = {
                 title: input.title,
                 content_markdown: input.contentMarkdown,
                 is_indexable: input.isIndexable,
+                chunk_strategy: input.chunkStrategy,
+                chunk_size: input.chunkSize,
+                chunk_separator: input.chunkSeparator,
             });
             return mapItem(response.item);
         } catch (error) {

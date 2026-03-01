@@ -35,6 +35,9 @@ export type UpdateNotebookItemInput = {
     title?: string;
     contentMarkdown?: string;
     isIndexable?: boolean;
+    chunkStrategy?: string;
+    chunkSize?: number;
+    chunkSeparator?: string;
 };
 
 export type AttachNotebookFileInput = {

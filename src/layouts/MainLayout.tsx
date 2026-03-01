@@ -2710,6 +2710,7 @@ export const MainLayout: React.FC = () => {
                             anchor.click();
                             document.body.removeChild(anchor);
                         }}
+                        draftFiles={notebookModule.draftFiles}
                         previewBusy={notebookModule.previewBusy}
                         previewError={notebookModule.previewError}
                         parsedPreview={notebookModule.parsedPreview}
