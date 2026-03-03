@@ -136,126 +136,51 @@ function getLastMessagePreview(room: Room): string {
     return "";
 }
 
-function buildDirectRooms(client: MatrixClient): ChatRoomEntry[] {
-    const accountData = client.getAccountData(EventType.Direct);
-    const content = (accountData?.getContent() ?? {}) as Record<string, string[]>;
-    const byUser = new Map<string, ChatRoomEntry>();
-    const deprecatedEntries: ChatRoomEntry[] = [];
-    const deprecatedRoomIds = new Set<string>();
-    const visibleRoomIds = new Set(client.getVisibleRooms().map((room) => room.roomId));
-    const myUserId = client.getUserId();
-
-    Object.entries(content).forEach(([userId, roomIds]) => {
+function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
+    const directContent = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as Record<string, string[]>;
+    const directUserByRoomId = new Map<string, string>();
+    Object.entries(directContent).forEach(([userId, roomIds]) => {
         roomIds.forEach((roomId) => {
-            if (!visibleRoomIds.has(roomId)) return;
-            const room = client.getRoom(roomId);
-            if (!room) return;
-            // 排除邀請狀態 - 私聊邀請通過好友請求流程處理
-            if (room.getMyMembership() === "invite") return;
-            // 排除群組房間 - 可能由於歷史原因存在於 m.direct 中
-            const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-            const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
-            if (kind === ROOM_KIND_GROUP) return;
-            const lastActive = room.getLastActiveTimestamp();
-            const unreadCount = room.getUnreadNotificationCount() ?? 0;
-            const entry: ChatRoomEntry = {
+            if (!directUserByRoomId.has(roomId)) {
+                directUserByRoomId.set(roomId, userId);
+            }
+        });
+    });
+
+    const myUserId = client.getUserId();
+    return client
+        .getRooms()
+        .filter((room) => {
+            const membership = room.getMyMembership();
+            return (membership === "join" || membership === "invite") && !room.isSpaceRoom();
+        })
+        .map((room) => {
+            const mappedDirectUserId = directUserByRoomId.get(room.roomId);
+            const fallbackPeerUserId =
+                room.getJoinedMembers().length === 2
+                    ? room.getJoinedMembers().find((member) => member.userId !== myUserId)?.userId
+                    : undefined;
+            const userId = mappedDirectUserId || fallbackPeerUserId;
+            const displayName =
+                (userId ? room.getMember(userId)?.name : null) ||
+                room.name ||
+                userId ||
+                "Chat";
+
+            return {
                 userId,
-                roomId,
+                roomId: room.roomId,
                 room,
                 myMembership: room.getMyMembership(),
-                displayName: room.getMember(userId)?.name ?? userId,
+                displayName,
                 lastMessage: getLastMessagePreview(room),
-                lastActive,
-                unreadCount,
+                lastActive: room.getLastActiveTimestamp(),
+                unreadCount: room.getUnreadNotificationCount() ?? 0,
                 isDeprecated: room.name?.startsWith(DEPRECATED_DM_PREFIX) ?? false,
                 isGroup: false,
             };
-            if (entry.isDeprecated) {
-                if (!deprecatedRoomIds.has(entry.roomId)) {
-                    deprecatedRoomIds.add(entry.roomId);
-                    deprecatedEntries.push(entry);
-                }
-                return;
-            }
-            const existing = byUser.get(userId);
-            if (!existing) {
-                byUser.set(userId, entry);
-                return;
-            }
-            if (entry.lastActive > existing.lastActive) {
-                byUser.set(userId, entry);
-            }
-        });
-    });
-
-    client.getRooms().forEach((room) => {
-        if (room.getMyMembership() !== "join") return;
-        if (room.isSpaceRoom()) return;
-        if (!room.name?.startsWith(DEPRECATED_DM_PREFIX)) return;
-        if (visibleRoomIds.size && !visibleRoomIds.has(room.roomId)) return;
-        const members = room.getJoinedMembers();
-        if (members.length !== 2) return;
-        const otherMember = members.find((member) => member.userId !== myUserId);
-        if (!otherMember) return;
-        const entry: ChatRoomEntry = {
-            userId: otherMember.userId,
-            roomId: room.roomId,
-            room,
-            myMembership: room.getMyMembership(),
-            displayName: otherMember.name ?? otherMember.userId,
-            lastMessage: getLastMessagePreview(room),
-            lastActive: room.getLastActiveTimestamp(),
-            unreadCount: room.getUnreadNotificationCount() ?? 0,
-            isDeprecated: true,
-            isGroup: false,
-        };
-        if (!deprecatedRoomIds.has(entry.roomId)) {
-            deprecatedRoomIds.add(entry.roomId);
-            deprecatedEntries.push(entry);
-        }
-    });
-
-    return [...Array.from(byUser.values()), ...deprecatedEntries].sort((a, b) => b.lastActive - a.lastActive);
-}
-
-/**
- * 群組房間類型 - 獨立於私聊邏輯
- */
-/**
- * 構建群組房間列表 - 不影響私聊邏輯
- */
-function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
-    const allRooms = client.getRooms();
-    const directRoomIds = new Set<string>();
-    const accountData = client.getAccountData(EventType.Direct);
-    const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
-    Object.values(directContent).forEach((roomIds) => {
-        roomIds.forEach((roomId) => directRoomIds.add(roomId));
-    });
-
-    const groupRooms: ChatRoomEntry[] = [];
-    for (const room of allRooms) {
-        const membership = room.getMyMembership();
-        if (membership !== "join") continue;
-        if (room.isSpaceRoom()) continue;
-        const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-        const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
-        if (kind && kind !== ROOM_KIND_GROUP) continue;
-        if (!kind && directRoomIds.has(room.roomId)) continue;
-        groupRooms.push({
-            roomId: room.roomId,
-            room,
-            myMembership: room.getMyMembership(),
-            displayName: room.name || "Group",
-            lastMessage: getLastMessagePreview(room),
-            lastActive: room.getLastActiveTimestamp(),
-            unreadCount: room.getUnreadNotificationCount() ?? 0,
-            isDeprecated: false,
-            isGroup: false,
-        });
-    }
-
-    return groupRooms.sort((a, b) => b.lastActive - a.lastActive);
+        })
+        .sort((a, b) => b.lastActive - a.lastActive);
 }
 
 /**
@@ -369,39 +294,10 @@ export function RoomList({
                 }
             });
 
-            const directRooms = buildDirectRooms(client);
-            const directRoomIdSet = new Set(directRooms.map((entry) => entry.roomId));
-            // 群組房間不應該基於 directRoomIdSet 過濾，因為 m.direct 帳戶數據可能包含舊數據
-            // buildGroupRooms 已經根據 room_kind 正確識別群組
-            const groupRooms = buildGroupRooms(client);
-            const unlabeledRooms = client
-                .getRooms()
-                .filter((room) => {
-                    if (room.getMyMembership() !== "join") return false;
-                    if (room.isSpaceRoom()) return false;
-                    const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-                    const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
-                    return !kind && !directRoomIds.has(room.roomId);
-                })
-                .map((room) => ({
-                    roomId: room.roomId,
-                    room,
-                    myMembership: room.getMyMembership(),
-                    displayName: room.name || "Chat",
-                    lastMessage: getLastMessagePreview(room),
-                    lastActive: room.getLastActiveTimestamp(),
-                    unreadCount: room.getUnreadNotificationCount() ?? 0,
-                    isDeprecated: Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX)),
-                    isGroup: false,
-                }));
+            const chatRooms = buildChatRooms(client);
             const inviteRooms = buildInviteRooms(client);
             setRooms(
-                [
-                    ...inviteRooms,
-                    ...directRooms,
-                    ...groupRooms,
-                    ...unlabeledRooms.filter((entry) => !directRoomIdSet.has(entry.roomId)),
-                ]
+                [...inviteRooms, ...chatRooms]
                     .filter((entry) => !hiddenDirectRoomIds.has(entry.roomId))
                     .sort((a, b) => b.lastActive - a.lastActive),
             );
