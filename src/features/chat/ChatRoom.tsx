@@ -39,9 +39,9 @@ import {
 } from "./chatService";
 import {
     deriveRoomPermissions,
-    hasDirectByAccountData,
-    hasDirectByMembers,
-    isDirectRoomByPolicy,
+    hasOneToOneByAccountData,
+    hasOneToOneByMembers,
+    isOneToOneRoomByPolicy,
     resolveDirectPeerUserId,
     type PowerLevelContent,
 } from "./roomMembershipPolicy";
@@ -1094,11 +1094,11 @@ export const ChatRoom: React.FC = () => {
         if (!matrixClient || !activeRoomId) return false;
         const event = matrixClient.getAccountData("m.direct" as never);
         const content = event?.getContent() as Record<string, unknown> | undefined;
-        return hasDirectByAccountData(content, activeRoomId);
+        return hasOneToOneByAccountData(content, activeRoomId);
     }, [activeRoomId, matrixClient]);
     const isDirectByMembers = useMemo(() => {
         if (!room) return false;
-        return hasDirectByMembers({
+        return hasOneToOneByMembers({
             isSpaceRoom: room.isSpaceRoom(),
             joinedMemberIds: room.getJoinedMembers().map((member) => member.userId),
             invitedMemberIds: room.getMembersWithMembership("invite").map((member) => member.userId),
@@ -1106,7 +1106,7 @@ export const ChatRoom: React.FC = () => {
         });
     }, [room, userId]);
     const isDirectRoom = useMemo(() => {
-        return isDirectRoomByPolicy({
+        return isOneToOneRoomByPolicy({
             isSpaceRoom: Boolean(room?.isSpaceRoom()),
             roomKind,
             isDirectByAccountData,

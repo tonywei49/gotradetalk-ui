@@ -20,6 +20,8 @@ export function hasDirectByAccountData(
     });
 }
 
+export const hasOneToOneByAccountData = hasDirectByAccountData;
+
 export function hasDirectByMembers(params: {
     isSpaceRoom: boolean;
     joinedMemberIds: string[];
@@ -34,6 +36,8 @@ export function hasDirectByMembers(params: {
     return others.length === 1;
 }
 
+export const hasOneToOneByMembers = hasDirectByMembers;
+
 export function isDirectRoomByPolicy(params: {
     isSpaceRoom: boolean;
     roomKind?: string | null;
@@ -47,6 +51,8 @@ export function isDirectRoomByPolicy(params: {
     if (isDirectByAccountData) return true;
     return isDirectByMembers;
 }
+
+export const isOneToOneRoomByPolicy = isDirectRoomByPolicy;
 
 export function resolveDirectPeerUserId(
     joinedMemberIds: string[],
