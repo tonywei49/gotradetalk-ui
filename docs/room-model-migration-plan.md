@@ -41,10 +41,12 @@
   - `CreateGroupModal` renamed to `CreateRoomModal`
   - `GroupDetailsPanel` renamed to `RoomDetailsPanel` (with compatibility alias)
   - `createRoomWithInvite` added as room-first alias for existing room creation helper
- - Runtime logic alignment:
-   - room conversation grouping no longer requires legacy `room_kind = group`
-   - direct-room hide filtering no longer depends on legacy `room_kind`
-   - room action menu leave flow available for all non-space rooms
+- Runtime logic alignment:
+  - room conversation grouping no longer requires legacy `room_kind = group`
+  - direct-room hide filtering no longer depends on legacy `room_kind`
+  - room action menu leave flow available for all non-space rooms
+  - `ChatRoom` internal variables shifted to room-first naming (`isMultiMemberRoom`, `joinedMembers`)
+  - membership policy now exposes one-to-one aliases (`isOneToOneRoomByPolicy`, etc.) while keeping old APIs
 
 ## This Iteration (In Progress)
 - Continue replacing remaining user-facing "group/direct" copy with "room/chat room" copy.
