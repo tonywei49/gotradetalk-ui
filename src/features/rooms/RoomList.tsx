@@ -251,7 +251,7 @@ function buildGroupRooms(client: MatrixClient): ChatRoomEntry[] {
             lastActive: room.getLastActiveTimestamp(),
             unreadCount: room.getUnreadNotificationCount() ?? 0,
             isDeprecated: false,
-            isGroup: true,
+            isGroup: false,
         });
     }
 
@@ -1081,6 +1081,23 @@ export function RoomList({
     const pinnedRooms = activeRooms.filter((entry) => pinnedSet.has(entry.roomId));
     const unpinnedRooms = activeRooms.filter((entry) => !pinnedSet.has(entry.roomId));
 
+    const renderRoomAvatar = (entry: ChatRoomEntry): ReactNode => {
+        const avatarMxc = entry.userId ? client?.getUser(entry.userId)?.avatarUrl : null;
+        const avatarHttp = avatarMxc
+            ? client?.mxcUrlToHttp(avatarMxc, 64, 64, "crop") ?? client?.mxcUrlToHttp(avatarMxc) ?? null
+            : null;
+        if (avatarHttp) {
+            return <img src={avatarHttp} alt={entry.displayName} className="w-10 h-10 rounded-full object-cover" />;
+        }
+        return (
+            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
+                    {entry.displayName[0]?.toUpperCase() || "R"}
+                </span>
+            </div>
+        );
+    };
+
     const renderRoomEntry = (entry: ChatRoomEntry): ReactNode => {
         const isInvite = entry.myMembership === "invite";
         if (isInvite) {
@@ -1090,22 +1107,14 @@ export function RoomList({
                     className="group w-full px-4 py-3 flex gap-3 items-center border border-emerald-100 rounded-xl bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-900/20"
                 >
                     <div className="relative w-10 h-10 flex-shrink-0">
-                        {entry.isGroup ? (
-                            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
-                                    {entry.displayName[0]?.toUpperCase() || "G"}
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
-                        )}
+                        {renderRoomAvatar(entry)}
                     </div>
                     <div className="flex-1 min-w-0">
                         <div className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
                             {entry.displayName}
                         </div>
                         <div className="text-[12px] text-emerald-600 dark:text-emerald-400">
-                            Invited you to this group
+                            Invited you to this room
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1147,25 +1156,7 @@ export function RoomList({
                     className="flex-1 min-w-0 flex items-center gap-3 text-left"
                 >
                     <div className="relative w-10 h-10 flex-shrink-0">
-                        {entry.isGroup ? (
-                            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
-                                    {entry.displayName[0]?.toUpperCase() || "G"}
-                                </span>
-                            </div>
-                        ) : (
-                            (() => {
-                                const avatarMxc = entry.userId ? client?.getUser(entry.userId)?.avatarUrl : null;
-                                const avatarHttp = avatarMxc
-                                    ? client?.mxcUrlToHttp(avatarMxc, 64, 64, "crop") ?? client?.mxcUrlToHttp(avatarMxc) ?? null
-                                    : null;
-                                return avatarHttp ? (
-                                    <img src={avatarHttp} alt={entry.displayName} className="w-10 h-10 rounded-full object-cover" />
-                                ) : (
-                                    <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-slate-700" />
-                                );
-                            })()
-                        )}
+                        {renderRoomAvatar(entry)}
                         {entry.unreadCount > 0 && (
                             <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
                                 {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
