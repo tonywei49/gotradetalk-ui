@@ -33,6 +33,12 @@
   - single-pane mobile and major side panels can scroll with visible scrollbar style
 - Invite list behavior:
   - unified pending room invites (all non-space invite rooms)
+ - Leave behavior:
+   - leave-room entry available for all non-space rooms
+   - leave action decoupled from hide-room action
+ - Naming alignment:
+   - `GroupInviteList` renamed to `RoomInviteList`
+   - `CreateGroupModal` renamed to `CreateRoomModal`
 
 ## This Iteration (In Progress)
 - Continue replacing remaining user-facing "group/direct" copy with "room/chat room" copy.
