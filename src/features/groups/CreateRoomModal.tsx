@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { devLog } from "../../utils/devLog";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 
-export type CreateGroupModalProps = {
+export type CreateRoomModalProps = {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: (roomId: string) => void;
@@ -16,7 +16,7 @@ export type CreateGroupModalProps = {
     hsUrl: string | null;
 };
 
-export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
+export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     isOpen,
     onClose,
     onSuccess,
@@ -105,7 +105,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         setError(null);
         try {
             const inviteesList = Array.from(selectedMembers);
-            devLog("[CreateGroupModal] Creating group with invitees", inviteesList);
+            devLog("[CreateRoomModal] Creating room with invitees", inviteesList);
             const roomId = await createGroupChat(matrixClient, {
                 name: groupName.trim(),
                 invitees: inviteesList,

@@ -17,7 +17,7 @@ import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../ap
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
-import { CreateGroupModal } from "../features/groups/CreateGroupModal";
+import { CreateRoomModal } from "../features/groups/CreateRoomModal";
 import { RoomInviteList } from "../features/groups/RoomInviteList";
 // GroupDetailsPanel 將在 ChatRoom 中整合使用
 // import { GroupDetailsPanel, isGroupRoom } from "../features/groups/GroupDetailsPanel";
@@ -296,7 +296,7 @@ export const MainLayout: React.FC = () => {
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
     const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original">("translated");
-    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+    const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
     const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
     const chatGlobalSearchPanelRef = useRef<HTMLDivElement | null>(null);
     const contactMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2120,7 +2120,7 @@ export const MainLayout: React.FC = () => {
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => setShowCreateGroupModal(true)}
+                                    onClick={() => setShowCreateRoomModal(true)}
                                     className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
                                 >
                                     {t("layout.groupChat", "New room")}
@@ -2984,9 +2984,9 @@ export const MainLayout: React.FC = () => {
             </main>
 
             {/* Create Room Modal */}
-            <CreateGroupModal
-                isOpen={showCreateGroupModal}
-                onClose={() => setShowCreateGroupModal(false)}
+            <CreateRoomModal
+                isOpen={showCreateRoomModal}
+                onClose={() => setShowCreateRoomModal(false)}
                 onSuccess={(roomId) => {
                     setActiveRoomId(roomId);
                     setActiveTab("chat");
