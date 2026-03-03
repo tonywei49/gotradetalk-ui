@@ -47,6 +47,8 @@
   - room action menu leave flow available for all non-space rooms
   - `ChatRoom` internal variables shifted to room-first naming (`isMultiMemberRoom`, `joinedMembers`)
   - membership policy now exposes one-to-one aliases (`isOneToOneRoomByPolicy`, etc.) while keeping old APIs
+  - translation pipeline now supports room-first context keys (`isMultiMemberRoom`, `roomTranslationEnabled`) with backward compatibility
+  - member modal labels in `ChatRoom` now use `chat.*` keys instead of `group.*`
 
 ## This Iteration (In Progress)
 - Continue replacing remaining user-facing "group/direct" copy with "room/chat room" copy.
