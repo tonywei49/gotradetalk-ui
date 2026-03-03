@@ -2968,7 +2968,7 @@ export const MainLayout: React.FC = () => {
                 {/* <div className="flex-1 flex items-center justify-center text-gray-400">Select a chat to start messaging</div> */}
             </main>
 
-            {/* Create Group Modal */}
+            {/* Create Room Modal */}
             <CreateGroupModal
                 isOpen={showCreateGroupModal}
                 onClose={() => setShowCreateGroupModal(false)}

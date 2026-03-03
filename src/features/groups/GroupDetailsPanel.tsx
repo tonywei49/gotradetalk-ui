@@ -25,8 +25,8 @@ interface MemberInfo {
 }
 
 /**
- * 獨立的群組詳情面板組件。
- * 只在 isGroup === true 時加載，不影響私聊界面。
+ * 獨立的聊天室詳情面板組件。
+ * 當前仍沿用 group 命名，後續可重命名為 room 詳情面板。
  */
 export const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
     room,
@@ -110,7 +110,7 @@ export const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
                     </div>
                     <div className="flex-1 min-w-0">
                         <h2 className="font-semibold text-slate-800 dark:text-slate-100 truncate">
-                            {room.name || t("group.unnamed", "Unnamed Group")}
+                            {room.name || t("group.unnamed", "Unnamed Room")}
                         </h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400">
                             {joinedMembers.length} {t("group.members", "members")}
@@ -189,12 +189,12 @@ export const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
                 )}
             </div>
 
-            {/* Leave Group Button */}
+            {/* Leave Room Button */}
             <div className="p-4 border-t border-gray-200 dark:border-slate-700">
                 {showConfirm ? (
                     <div className="space-y-3">
                         <p className="text-sm text-slate-600 dark:text-slate-400 text-center">
-                            {t("group.leaveConfirm", "Are you sure you want to leave this group?")}
+                            {t("group.leaveConfirm", "Are you sure you want to leave this room?")}
                         </p>
                         <div className="flex gap-2">
                             <button
@@ -221,7 +221,7 @@ export const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
                         className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 font-medium hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
                     >
                         <ArrowRightOnRectangleIcon className="w-5 h-5" />
-                        {t("group.leaveGroup", "Leave Group")}
+                        {t("group.leaveGroup", "Leave Room")}
                     </button>
                 )}
             </div>
