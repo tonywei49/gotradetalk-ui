@@ -19,8 +19,8 @@ import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { CreateRoomModal } from "../features/groups/CreateRoomModal";
 import { RoomInviteList } from "../features/groups/RoomInviteList";
-// GroupDetailsPanel 將在 ChatRoom 中整合使用
-// import { GroupDetailsPanel, isGroupRoom } from "../features/groups/GroupDetailsPanel";
+// RoomDetailsPanel 將在 ChatRoom 中整合使用
+// import { RoomDetailsPanel, isRoomWithMultipleMembers } from "../features/groups/RoomDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import {
     ensureNotificationSoundEnabled,

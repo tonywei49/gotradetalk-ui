@@ -9,10 +9,10 @@ import {
 } from "@heroicons/react/24/outline";
 import { useTranslation } from "react-i18next";
 
-export type GroupDetailsPanelProps = {
+export type RoomDetailsPanelProps = {
     room: Room;
     matrixClient: MatrixClient;
-    onLeaveGroup: () => void;
+    onLeaveRoom: () => void;
 };
 
 type MemberStatus = "join" | "invite" | "leave" | "ban";
@@ -28,10 +28,10 @@ interface MemberInfo {
  * 獨立的聊天室詳情面板組件。
  * 當前仍沿用 group 命名，後續可重命名為 room 詳情面板。
  */
-export const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
+export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
     room,
     matrixClient,
-    onLeaveGroup,
+    onLeaveRoom,
 }) => {
     const { t } = useTranslation();
     const [leaving, setLeaving] = useState(false);
@@ -65,9 +65,9 @@ export const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         setLeaving(true);
         try {
             await matrixClient.leave(room.roomId);
-            onLeaveGroup();
+            onLeaveRoom();
         } catch (err) {
-            console.error("Failed to leave group:", err);
+            console.error("Failed to leave room:", err);
         } finally {
             setLeaving(false);
             setShowConfirm(false);
@@ -232,9 +232,13 @@ export const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
 /**
  * 判斷房間是否為群組聊天（非 1對1 私聊）
  */
-export function isGroupRoom(room: Room): boolean {
+export function isRoomWithMultipleMembers(room: Room): boolean {
     // 檢查房間是否在 m.direct 帳戶數據中
     // 如果不在，或成員數 > 2，則為群組
     const members = room.getJoinedMembers();
     return members.length > 2 || !room.isSpaceRoom();
 }
+
+export type GroupDetailsPanelProps = RoomDetailsPanelProps;
+export const GroupDetailsPanel = RoomDetailsPanel;
+export const isGroupRoom = isRoomWithMultipleMembers;

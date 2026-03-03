@@ -1,4 +1,9 @@
 export { CreateRoomModal } from "./CreateRoomModal";
-export { GroupDetailsPanel, isGroupRoom } from "./GroupDetailsPanel";
+export {
+    RoomDetailsPanel,
+    isRoomWithMultipleMembers,
+    GroupDetailsPanel,
+    isGroupRoom,
+} from "./RoomDetailsPanel";
 export { RoomInviteList } from "./RoomInviteList";
 export type { RoomInvite } from "./RoomInviteList";

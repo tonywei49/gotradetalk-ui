@@ -4,7 +4,7 @@ import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../constants/roomKinds";
 
 export type HistoryVisibility = "shared" | "joined";
 
-export interface CreateGroupChatOptions {
+export interface CreateRoomOptions {
     name: string;
     invitees: string[];
     historyVisibility: HistoryVisibility;
@@ -18,9 +18,9 @@ export interface CreateGroupChatOptions {
  * @param options 鍓靛缓閬搁爡
  * @returns 鏂板壍寤虹殑鎴块枔 ID
  */
-export async function createGroupChat(
+export async function createRoomWithInvite(
     client: MatrixClient,
-    options: CreateGroupChatOptions
+    options: CreateRoomOptions
 ): Promise<string> {
     const { name, invitees, historyVisibility, topic } = options;
     const userId = client.getUserId();
@@ -115,6 +115,15 @@ export async function createGroupChat(
     }
 
     return roomId;
+}
+
+export type CreateGroupChatOptions = CreateRoomOptions;
+
+export async function createGroupChat(
+    client: MatrixClient,
+    options: CreateGroupChatOptions,
+): Promise<string> {
+    return createRoomWithInvite(client, options);
 }
 
 async function waitForInviteState(

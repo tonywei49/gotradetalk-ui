@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { XMarkIcon, UserGroupIcon, CheckIcon } from "@heroicons/react/24/outline";
 import type { MatrixClient } from "matrix-js-sdk";
 import { listContacts, type ContactEntry } from "../../api/contacts";
-import { createGroupChat, type HistoryVisibility } from "../../matrix/group";
+import { createRoomWithInvite, type HistoryVisibility } from "../../matrix/group";
 import { useTranslation } from "react-i18next";
 import { devLog } from "../../utils/devLog";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
@@ -106,7 +106,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
         try {
             const inviteesList = Array.from(selectedMembers);
             devLog("[CreateRoomModal] Creating room with invitees", inviteesList);
-            const roomId = await createGroupChat(matrixClient, {
+            const roomId = await createRoomWithInvite(matrixClient, {
                 name: groupName.trim(),
                 invitees: inviteesList,
                 historyVisibility,
