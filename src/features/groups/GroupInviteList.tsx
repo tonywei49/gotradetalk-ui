@@ -3,7 +3,6 @@ import type { MatrixClient, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { useTranslation } from "react-i18next";
-import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 
 export type GroupInvite = {
@@ -47,16 +46,9 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
         return false;
     };
 
-    // 妲嬪缓缇ょ祫閭€璜嬪垪琛?
+    // Build pending room invitations list.
     const buildGroupInvites = (): GroupInvite[] => {
         if (!client) return [];
-
-        const directRooms = new Set<string>();
-        const accountData = client.getAccountData(EventType.Direct);
-        const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
-        Object.values(directContent).forEach((roomIds) => {
-            roomIds.forEach((roomId) => directRooms.add(roomId));
-        });
 
         const myUserId = client.getUserId();
         if (!myUserId) return [];
@@ -66,39 +58,19 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             .filter((room) => {
                 if (suppressedInviteIds.has(room.roomId)) return false;
                 const membership = room.getMyMembership();
-                const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-                const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
-                const isDirect = directRooms.has(room.roomId);
-                const memberCount = room.getJoinedMemberCount() ?? 0;
 
-                // 妾㈡煡鎴愬摗浜嬩欢涓殑 is_direct 灞€?
-                const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
-                const isDirectFromMemberEvent = Boolean(memberEvent?.getContent()?.is_direct);
-
-                // 鍙檿鐞嗛個璜嬬媭鎱嬬殑鎴块枔
                 if (membership !== "invite") return false;
-
-                // 濡傛灉鏈?room_kind锛屾牴鎿氬畠鍒ゆ柗
-                if (kind) {
-                    return kind === ROOM_KIND_GROUP;
-                }
-
-                if (!room.name) return false;
-                // 濡傛灉娌掓湁 room_kind锛屼娇鐢ㄥ叾浠栨柟寮忓垽鏂?
-                // 鎺掗櫎绉佽亰閭€璜嬶紙is_direct 鐐?true 鎴栧湪 m.direct 涓級
-                if (isDirectFromMemberEvent) return false;
-                if (isDirect && memberCount <= 2) return false;
-
-                return true;
+                return !room.isSpaceRoom();
             })
             .map((room) => {
                 const inviteEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
                 const inviterId = inviteEvent?.getSender() ?? null;
                 const inviter = inviterId ? room.getMember(inviterId) : null;
+                const fallbackName = inviter?.name || inviterId || t("group.unnamed", "Room");
                 return {
                     roomId: room.roomId,
                     room,
-                    name: room.name || t("group.unnamed", "Room"),
+                    name: room.name || fallbackName,
                     inviterId,
                     inviterName: inviter?.name ?? inviterId,
                     memberCount: room.getJoinedMemberCount() ?? 0,
