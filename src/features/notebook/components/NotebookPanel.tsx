@@ -149,7 +149,7 @@ export function NotebookPanel({
                 </div>
                 <div className={`mt-2 rounded-lg border px-3 py-2 text-sm ${hint.tone}`}>{hint.text}</div>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar p-6 space-y-4">
                 <label className="block">
                     <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Title</div>
                     <input

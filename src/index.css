@@ -27,3 +27,38 @@ input {
 #root {
     min-height: 100vh;
 }
+
+/* Force visible scrollbars for key app panels, including narrow single-pane layout. */
+.gt-visible-scrollbar {
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.dark .gt-visible-scrollbar {
+    scrollbar-color: #475569 #0f172a;
+}
+
+.gt-visible-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.gt-visible-scrollbar::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+.dark .gt-visible-scrollbar::-webkit-scrollbar-track {
+    background: #0f172a;
+}
+
+.gt-visible-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 9999px;
+    border: 2px solid #f1f5f9;
+}
+
+.dark .gt-visible-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #475569;
+    border-color: #0f172a;
+}

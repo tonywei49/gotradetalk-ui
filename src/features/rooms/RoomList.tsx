@@ -1198,7 +1198,7 @@ export function RoomList({
     };
 
     return (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar">
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                 <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     {view === "contacts" ? t("roomList.sections.contacts") : t("roomList.sections.directMessages")}
