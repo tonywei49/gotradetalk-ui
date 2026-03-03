@@ -36,9 +36,11 @@
  - Leave behavior:
    - leave-room entry available for all non-space rooms
    - leave action decoupled from hide-room action
- - Naming alignment:
-   - `GroupInviteList` renamed to `RoomInviteList`
-   - `CreateGroupModal` renamed to `CreateRoomModal`
+- Naming alignment:
+  - `GroupInviteList` renamed to `RoomInviteList`
+  - `CreateGroupModal` renamed to `CreateRoomModal`
+  - `GroupDetailsPanel` renamed to `RoomDetailsPanel` (with compatibility alias)
+  - `createRoomWithInvite` added as room-first alias for existing room creation helper
 
 ## This Iteration (In Progress)
 - Continue replacing remaining user-facing "group/direct" copy with "room/chat room" copy.
