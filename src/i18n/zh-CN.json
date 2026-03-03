@@ -368,6 +368,7 @@
         "leaveGroupConfirm": "是否要退出聊天室？",
         "leaveRoomConfirm": "是否要退出此聊天室？",
         "groupNameFallback": "聊天室",
+        "roomNameFallback": "聊天室",
         "joinedMembers": "已加入成员",
         "invitedMembers": "已邀请",
         "groupAdminTag": "《版主》",

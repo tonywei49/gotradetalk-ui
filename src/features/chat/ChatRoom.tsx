@@ -1812,7 +1812,7 @@ export const ChatRoom: React.FC = () => {
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
     const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room?.name || t("chat.headerFallback");
-    const roomName = room?.name || t("chat.groupNameFallback");
+    const roomName = room?.name || t("chat.roomNameFallback", t("chat.groupNameFallback"));
     const roomDisplayName = room?.name || headerName || t("chat.headerFallback");
     const memberEntries = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;

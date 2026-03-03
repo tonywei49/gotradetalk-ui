@@ -368,6 +368,7 @@
         "leaveGroupConfirm": "Leave this room?",
         "leaveRoomConfirm": "Do you want to leave this room?",
         "groupNameFallback": "Room",
+        "roomNameFallback": "Room",
         "joinedMembers": "Joined Members",
         "invitedMembers": "Invited",
         "groupAdminTag": "Host",
