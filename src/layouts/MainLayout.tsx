@@ -7,7 +7,7 @@ import {
     Cog6ToothIcon,
     FolderIcon,
 } from "@heroicons/react/24/outline";
-import { ClientEvent, EventTimeline, EventType, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
+import { ClientEvent, EventTimeline, EventType, Preset, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
@@ -16,7 +16,7 @@ import type { ContactSummary } from "../features/rooms/RoomList";
 import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
-import { getDirectRoomId, getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
+import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { CreateGroupModal } from "../features/groups/CreateGroupModal";
 import { GroupInviteList } from "../features/groups/GroupInviteList";
 // GroupDetailsPanel 將在 ChatRoom 中整合使用
@@ -31,7 +31,6 @@ import {
 import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
 import { setLanguage } from "../i18n";
-import { markRoomDeprecated } from "../services/matrix";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
 import { traceEvent } from "../utils/debugTrace";
 import { mapActionErrorToMessage } from "../utils/errorMessages";
@@ -73,6 +72,13 @@ type NavBarItemProps = {
     onClick?: () => void;
     badgeCount?: number;
     className?: string;
+};
+
+type SharedContactRoomEntry = {
+    roomId: string;
+    displayName: string;
+    memberCount: number;
+    lastActive: number;
 };
 
 const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "" }: NavBarItemProps) => (
@@ -279,6 +285,9 @@ export const MainLayout: React.FC = () => {
     const [chatGlobalSearchError, setChatGlobalSearchError] = useState<string | null>(null);
     const [chatGlobalSearchResult, setChatGlobalSearchResult] = useState<ChatSearchGlobalResponse | null>(null);
     const [chatGlobalSearchCursor, setChatGlobalSearchCursor] = useState<string | null>(null);
+    const [selectedSharedRoomId, setSelectedSharedRoomId] = useState<string | null>(null);
+    const [creatingContactRoom, setCreatingContactRoom] = useState(false);
+    const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
     const [settingsDetail, setSettingsDetail] = useState<
         "none" | "chat-language" | "translation-default"
@@ -1243,51 +1252,95 @@ export const MainLayout: React.FC = () => {
         }
     })();
 
-    const onStartContactChat = async (): Promise<void> => {
-        if (!matrixClient || !activeContact) return;
-        const matrixUserId =
-            activeContact.matrixUserId ||
+    const resolveActiveContactMatrixUserId = useCallback((): string | null => {
+        if (!activeContact) return null;
+        return activeContact.matrixUserId ||
             (activeContact.userLocalId && matrixHost ? `@${activeContact.userLocalId}:${matrixHost}` : null);
-        if (!matrixUserId) return;
-        const roomId = await getOrCreateDirectRoom(matrixClient, matrixUserId);
-        setActiveRoomId(roomId);
+    }, [activeContact, matrixHost]);
+
+    const sharedContactRooms = useMemo<SharedContactRoomEntry[]>(() => {
+        if (!matrixClient || !activeContact) return [];
+        const matrixUserId = resolveActiveContactMatrixUserId();
+        if (!matrixUserId) return [];
+        return matrixClient
+            .getRooms()
+            .filter((room) => {
+                if (room.getMyMembership() !== "join") return false;
+                if (room.isSpaceRoom()) return false;
+                if (room.name?.startsWith(DEPRECATED_DM_PREFIX)) return false;
+                const membership = room.getMember(matrixUserId)?.membership;
+                return membership === "join" || membership === "invite";
+            })
+            .map((room) => {
+                const memberCount = new Set(
+                    room
+                        .getMembers()
+                        .filter((member) => member.membership === "join" || member.membership === "invite")
+                        .map((member) => member.userId),
+                ).size;
+                return {
+                    roomId: room.roomId,
+                    displayName: room.name || room.roomId,
+                    memberCount: memberCount || room.getJoinedMembers().length || 2,
+                    lastActive: room.getLastActiveTimestamp(),
+                };
+            })
+            .sort((a, b) => b.lastActive - a.lastActive);
+    }, [activeContact, matrixClient, resolveActiveContactMatrixUserId]);
+
+    useEffect(() => {
+        if (sharedContactRooms.length === 0) {
+            setSelectedSharedRoomId(null);
+            return;
+        }
+        setSelectedSharedRoomId((prev) => {
+            if (prev && sharedContactRooms.some((room) => room.roomId === prev)) return prev;
+            return sharedContactRooms[0].roomId;
+        });
+    }, [sharedContactRooms]);
+
+    const onStartContactChat = async (): Promise<void> => {
+        if (!selectedSharedRoomId) {
+            setContactRoomActionError(t("layout.sharedRoomsSelectFirst"));
+            return;
+        }
+        setContactRoomActionError(null);
+        setActiveRoomId(selectedSharedRoomId);
         setActiveTab("chat");
         setMobileView("detail");
+    };
+
+    const onCreateContactRoom = async (): Promise<void> => {
+        if (!matrixClient || !activeContact) return;
+        const matrixUserId = resolveActiveContactMatrixUserId();
+        if (!matrixUserId) {
+            setContactRoomActionError(t("layout.sharedRoomsNoMatrixId"));
+            return;
+        }
+        setContactRoomActionError(null);
+        setCreatingContactRoom(true);
+        try {
+            const result = await matrixClient.createRoom({
+                invite: [matrixUserId],
+                preset: Preset.PrivateChat,
+            });
+            setSelectedSharedRoomId(result.room_id);
+            setActiveRoomId(result.room_id);
+            setActiveTab("chat");
+            setMobileView("detail");
+        } catch (error) {
+            setContactRoomActionError(error instanceof Error ? error.message : t("layout.sharedRoomsCreateFailed"));
+        } finally {
+            setCreatingContactRoom(false);
+        }
     };
 
     const onRemoveActiveContact = async (): Promise<void> => {
         if (!actionToken || !activeContact) return;
         try {
             await removeContact(actionToken, activeContact.id, actionHsUrl);
-            const matrixUserId =
-                activeContact.matrixUserId ||
-                (activeContact.userLocalId && matrixHost ? `@${activeContact.userLocalId}:${matrixHost}` : null);
-            if (matrixClient && matrixUserId) {
-                const roomId =
-                    getDirectRoomId(matrixClient, matrixUserId) ??
-                    ((matrixClient.getAccountData(EventType.Direct)?.getContent() as Record<string, string[]>)?.[
-                        matrixUserId
-                    ] ?? []).find((id) => Boolean(matrixClient.getRoom(id))) ??
-                    matrixClient
-                        .getRooms()
-                        .find(
-                            (room) =>
-                                room.getMyMembership() === "join" &&
-                                room.getJoinedMembers().length === 2 &&
-                                room.getJoinedMembers().some((member) => member.userId === matrixUserId),
-                        )?.roomId ??
-                    null;
-                if (roomId) {
-                    try {
-                        await markRoomDeprecated(roomId);
-                    } catch {
-                        // ignore mark failures
-                    }
-                    await hideDirectRoom(matrixClient, matrixUserId, roomId);
-                    await matrixClient.leave(roomId);
-                }
-            }
             setActiveContact(null);
+            setSelectedSharedRoomId(null);
             setShowContactMenu(false);
             setShowRemoveContactConfirm(false);
             setContactsRefreshToken((prev) => prev + 1);
@@ -2204,9 +2257,9 @@ export const MainLayout: React.FC = () => {
                 )}
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
-                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
+                    <div className="flex-1 min-h-0 overflow-y-scroll flex flex-col bg-white dark:bg-slate-900">
                         {activeContact ? (
-                            <div className="flex-1 flex flex-col">
+                            <div className="flex-1 min-h-0 flex flex-col">
                                 <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-slate-800 sm:px-8 sm:py-6">
                                     <div className="flex items-center gap-3 sm:gap-4">
                                         <button
@@ -2301,58 +2354,114 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 )}
 
-                                <div className="flex-1 px-6 py-6 sm:px-8">
-                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                {t("layout.details.id")}
-                                            </div>
-                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {activeContact.userLocalId || getLocalPart(activeContact.matrixUserId) || t("common.placeholder")}
-                                            </div>
-                                        </div>
-                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                {t("layout.details.name")}
-                                            </div>
-                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {activeContact.displayName || t("common.placeholder")}
+                                <div className="flex-1 px-6 py-4 sm:px-8">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                                                    {t("layout.details.id")}
+                                                </div>
+                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                    {activeContact.userLocalId || getLocalPart(activeContact.matrixUserId) || t("common.placeholder")}
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                {t("layout.details.gender")}
-                                            </div>
-                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {getGenderLabel(activeContact.gender)}
-                                            </div>
-                                        </div>
-                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                {t("layout.details.country")}
-                                            </div>
-                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {activeContact.country || t("common.placeholder")}
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                                                    {t("layout.details.name")}
+                                                </div>
+                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                    {activeContact.displayName || t("common.placeholder")}
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                                                {t("layout.details.language")}
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                                                    {t("layout.details.gender")}
+                                                </div>
+                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                    {getGenderLabel(activeContact.gender)}
+                                                </div>
                                             </div>
-                                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {getLanguageLabel(activeContact)}
+                                        </div>
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                                                    {t("layout.details.country")}
+                                                </div>
+                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                    {activeContact.country || t("common.placeholder")}
+                                                </div>
                                             </div>
+                                        </div>
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                                                    {t("layout.details.language")}
+                                                </div>
+                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                    {getLanguageLabel(activeContact)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950">
+                                        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                                            {t("layout.sharedRoomsTitle")}
+                                        </div>
+                                        <div className="mt-2 space-y-1.5">
+                                            {sharedContactRooms.length > 0 ? (
+                                                sharedContactRooms.map((room) => {
+                                                    const selected = room.roomId === selectedSharedRoomId;
+                                                    return (
+                                                        <button
+                                                            key={room.roomId}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedSharedRoomId(room.roomId);
+                                                                setContactRoomActionError(null);
+                                                            }}
+                                                            className={`w-full rounded-lg border px-3 py-1.5 text-left transition ${selected
+                                                                ? "border-emerald-400 bg-emerald-50 text-emerald-900 dark:border-emerald-500/60 dark:bg-emerald-900/30 dark:text-emerald-100"
+                                                                : "border-gray-200 bg-white text-slate-700 hover:border-emerald-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                                                }`}
+                                                        >
+                                                            <div className="text-sm font-semibold leading-5">{`${room.displayName} (${room.memberCount})`}</div>
+                                                        </button>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="rounded-lg border border-dashed border-gray-200 px-3 py-2 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                                    {t("layout.sharedRoomsEmpty")}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
                                 <div className="sticky bottom-0 px-6 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3 sm:px-8 lg:static lg:pt-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-gray-100 dark:border-slate-800 lg:border-t-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => void onStartContactChat()}
-                                        className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
-                                    >
-                                        {t("layout.chatAction")}
-                                    </button>
+                                    {contactRoomActionError ? (
+                                        <div className="mb-2 text-xs text-rose-500 dark:text-rose-300">{contactRoomActionError}</div>
+                                    ) : null}
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => void onStartContactChat()}
+                                            disabled={!selectedSharedRoomId}
+                                            className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md enabled:hover:bg-[#244a45] disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-emerald-500 dark:enabled:hover:bg-emerald-400 dark:disabled:bg-slate-700"
+                                        >
+                                            {t("layout.chatAction")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => void onCreateContactRoom()}
+                                            disabled={creatingContactRoom}
+                                            className="inline-flex items-center justify-center rounded-xl border border-emerald-500 px-6 py-3 text-sm font-semibold text-emerald-700 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400 dark:text-emerald-300 dark:enabled:hover:bg-emerald-900/20"
+                                        >
+                                            {creatingContactRoom ? t("layout.creatingRoomAction") : t("layout.createRoomAction")}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ) : (

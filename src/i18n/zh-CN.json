@@ -254,6 +254,13 @@
         "accountSubtitleFallback": "账号",
         "contactFallback": "联系人",
         "chatAction": "聊天",
+        "createRoomAction": "开新聊天室",
+        "creatingRoomAction": "创建中...",
+        "sharedRoomsTitle": "共同聊天室",
+        "sharedRoomsEmpty": "暂时没有共同聊天室。",
+        "sharedRoomsSelectFirst": "请先选择一个聊天室。",
+        "sharedRoomsNoMatrixId": "该联系人没有 Matrix ID。",
+        "sharedRoomsCreateFailed": "创建聊天室失败。",
         "details": {
             "id": "ID",
             "name": "姓名",

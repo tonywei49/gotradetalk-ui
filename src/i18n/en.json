@@ -254,6 +254,13 @@
         "accountSubtitleFallback": "Account",
         "contactFallback": "Contact",
         "chatAction": "Chat",
+        "createRoomAction": "Open new room",
+        "creatingRoomAction": "Creating...",
+        "sharedRoomsTitle": "Shared chat rooms",
+        "sharedRoomsEmpty": "No shared chat room yet.",
+        "sharedRoomsSelectFirst": "Please select a chat room first.",
+        "sharedRoomsNoMatrixId": "This contact has no Matrix ID.",
+        "sharedRoomsCreateFailed": "Failed to create room.",
         "details": {
             "id": "ID",
             "name": "Name",
