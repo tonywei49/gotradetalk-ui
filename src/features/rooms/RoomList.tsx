@@ -238,7 +238,7 @@ export function RoomList({
     const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
     const [contactSort, setContactSort] = useState<"company" | "name">("company");
     const [sendingRequest, setSendingRequest] = useState(false);
-    const [pendingInviteRooms, setPendingInviteRooms] = useState<
+    const [pendingRequestRooms, setPendingRequestRooms] = useState<
         Record<string, { roomId: string; matrixUserId: string }>
     >({});
     const [cachedRooms, setCachedRooms] = useState<RoomCacheEntry[]>([]);
@@ -650,7 +650,7 @@ export function RoomList({
             setRequestedIds(outgoingTargetIds);
             if (client) {
                 const acceptedById = new Map(contactItems.map((item) => [item.user_id, item]));
-                const pendingEntries = Object.entries(pendingInviteRooms);
+                const pendingEntries = Object.entries(pendingRequestRooms);
                 for (const [targetId, pending] of pendingEntries) {
                     const acceptedContact = acceptedById.get(targetId);
                     if (acceptedContact) {
@@ -663,7 +663,7 @@ export function RoomList({
                         if (matrixUserId) {
                             await setDirectRoom(client, matrixUserId, pending.roomId);
                         }
-                        setPendingInviteRooms((prev) => {
+                        setPendingRequestRooms((prev) => {
                             const next = { ...prev };
                             delete next[targetId];
                             return next;
@@ -676,7 +676,7 @@ export function RoomList({
                         } catch {
                             // ignore cleanup failures
                         }
-                        setPendingInviteRooms((prev) => {
+                        setPendingRequestRooms((prev) => {
                             const next = { ...prev };
                             delete next[targetId];
                             return next;
@@ -697,7 +697,7 @@ export function RoomList({
             void refreshContacts();
         }, 6000);
         return () => window.clearInterval(timer);
-    }, [searchToken, searchHsUrl, contactsRefreshToken, client, matrixHost, pendingInviteRooms, enableContactPolling, contactCacheKey]);
+    }, [searchToken, searchHsUrl, contactsRefreshToken, client, matrixHost, pendingRequestRooms, enableContactPolling, contactCacheKey]);
 
     useEffect(() => {
         if (!onInviteBadgeChange) return;
@@ -763,7 +763,7 @@ export function RoomList({
                 setRequestedIds((prev) => new Set(prev).add(targetId));
             }
             await hideDirectRoom(client, targetMatrixUserId, roomId);
-            setPendingInviteRooms((prev) => ({
+            setPendingRequestRooms((prev) => ({
                 ...prev,
                 [targetId]: { roomId, matrixUserId: targetMatrixUserId },
             }));
