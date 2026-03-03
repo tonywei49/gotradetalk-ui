@@ -23,7 +23,7 @@ import { useRoomTimeline } from "../../matrix/hooks/useRoomTimeline";
 import { inviteUsersToRoom, updateRoomInvitePermission } from "../../services/matrix";
 import { listContacts, type ContactEntry } from "../../api/contacts";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
-import { ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
+import { ROOM_KIND_EVENT } from "../../constants/roomKinds";
 import { traceEvent } from "../../utils/debugTrace";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 import { useToastStore } from "../../stores/ToastStore";
@@ -1113,7 +1113,7 @@ export const ChatRoom: React.FC = () => {
             isDirectByMembers,
         });
     }, [isDirectByAccountData, isDirectByMembers, room, roomKind]);
-    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom && roomKind === ROOM_KIND_GROUP;
+    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom;
     const canManageRoom = Boolean(room) && !room?.isSpaceRoom();
     const canLeaveRoom = canManageRoom;
     const directPeerUserId = useMemo(() => {

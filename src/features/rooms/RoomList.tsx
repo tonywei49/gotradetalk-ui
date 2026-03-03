@@ -22,7 +22,6 @@ import {
 } from "../../matrix/direct";
 import { playNotificationSound, type NotificationSoundMode } from "../../utils/notificationSound";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
-import { ROOM_KIND_DIRECT, ROOM_KIND_EVENT, ROOM_KIND_GROUP } from "../../constants/roomKinds";
 
 type ChatRoomEntry = {
     userId?: string;
@@ -268,15 +267,11 @@ export function RoomList({
             client.getRooms().forEach((room) => {
                 if (room.getMyMembership() !== "join") return;
                 if (room.isSpaceRoom()) return;
-                const kindEvent = room.currentState.getStateEvents(ROOM_KIND_EVENT, "");
-                const kind = (kindEvent?.getContent() as { kind?: string } | undefined)?.kind;
-                if (kind === ROOM_KIND_GROUP) return;
                 const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
                 const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
                 const isDeprecated = Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX));
                 const memberCount = room.getJoinedMemberCount() ?? 0;
-                const shouldHideDirect =
-                    kind === ROOM_KIND_DIRECT || (!kind && isDirect && memberCount === 2);
+                const shouldHideDirect = isDirect && memberCount <= 2;
                 if (shouldHideDirect && !directRoomIds.has(room.roomId) && !isDeprecated) {
                     hiddenDirectRoomIds.add(room.roomId);
                 }
