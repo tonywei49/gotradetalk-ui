@@ -34,7 +34,6 @@ type ChatRoomEntry = {
     lastActive: number;
     unreadCount: number;
     isDeprecated: boolean;
-    isGroup: boolean;
 };
 
 type RoomCacheEntry = {
@@ -46,7 +45,6 @@ type RoomCacheEntry = {
     lastActive: number;
     unreadCount: number;
     isDeprecated: boolean;
-    isGroup: boolean;
 };
 
 export type ContactSummary = {
@@ -177,7 +175,6 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
                 lastActive: room.getLastActiveTimestamp(),
                 unreadCount: room.getUnreadNotificationCount() ?? 0,
                 isDeprecated: room.name?.startsWith(DEPRECATED_DM_PREFIX) ?? false,
-                isGroup: false,
             };
         })
         .sort((a, b) => b.lastActive - a.lastActive);
@@ -394,10 +391,9 @@ export function RoomList({
                 displayName: room.displayName,
                 lastMessage: room.lastMessage,
                 lastActive: room.lastActive,
-                unreadCount: room.unreadCount,
-                isDeprecated: room.isDeprecated,
-                isGroup: room.isGroup,
-            }));
+                    unreadCount: room.unreadCount,
+                    isDeprecated: room.isDeprecated,
+                }));
             localStorage.setItem(roomCacheKey, JSON.stringify(snapshot));
         } catch {
             // ignore room cache write failures
