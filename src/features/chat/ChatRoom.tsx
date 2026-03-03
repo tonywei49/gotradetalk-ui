@@ -2204,7 +2204,7 @@ export const ChatRoom: React.FC = () => {
                                         }}
                                         className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
                                     >
-                                        {t("chat.renameGroup")}
+                                        {t("chat.renameRoom", "Rename room")}
                                     </button>
                                 )}
                                 <button
@@ -2226,7 +2226,7 @@ export const ChatRoom: React.FC = () => {
                                         }}
                                         className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
                                     >
-                                        {t("chat.leaveGroup")}
+                                        {t("chat.leaveRoom", "Leave room")}
                                     </button>
                                 ) : (
                                     <>
@@ -3175,7 +3175,7 @@ export const ChatRoom: React.FC = () => {
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                                {t("chat.renameGroup")}
+                                {t("chat.renameRoom", "Rename room")}
                             </h3>
                             <button
                                 type="button"
@@ -3190,7 +3190,7 @@ export const ChatRoom: React.FC = () => {
                             type="text"
                             value={renameValue}
                             onChange={(event) => setRenameValue(event.target.value)}
-                            placeholder={t("chat.renameGroupPlaceholder")}
+                            placeholder={t("chat.renameRoomPlaceholder", "Enter a new room name...")}
                             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         />
                         {renameError && <div className="mt-3 text-sm text-rose-500">{renameError}</div>}
@@ -3209,7 +3209,7 @@ export const ChatRoom: React.FC = () => {
                                     if (!matrixClient || !room) return;
                                     const nextName = renameValue.trim();
                                     if (!nextName) {
-                                        setRenameError(t("chat.renameGroupRequired"));
+                                        setRenameError(t("chat.renameRoomRequired", "Please enter room name."));
                                         return;
                                     }
                                     setRenameBusy(true);
@@ -3220,7 +3220,7 @@ export const ChatRoom: React.FC = () => {
                                             setShowRenameModal(false);
                                         })
                                         .catch((err) => {
-                                            const message = mapActionErrorToMessage(t, err, "chat.renameGroupFailed");
+                                            const message = mapActionErrorToMessage(t, err, "chat.renameRoomFailed");
                                             setRenameError(message);
                                             pushToast("error", message);
                                         })
@@ -3239,7 +3239,7 @@ export const ChatRoom: React.FC = () => {
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-3">
-                            {t("chat.leaveGroupConfirm")}
+                            {t("chat.leaveRoomConfirm", "Do you want to leave this room?")}
                         </div>
                         <div className="flex gap-2">
                             <button
@@ -3257,7 +3257,7 @@ export const ChatRoom: React.FC = () => {
                                 }}
                                 className="flex-1 rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600"
                             >
-                                {t("chat.leaveGroup")}
+                                {t("chat.leaveRoom", "Leave room")}
                             </button>
                         </div>
                     </div>
