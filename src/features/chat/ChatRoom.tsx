@@ -1113,7 +1113,7 @@ export const ChatRoom: React.FC = () => {
             isDirectByMembers,
         });
     }, [isDirectByAccountData, isDirectByMembers, room, roomKind]);
-    const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom;
+    const isMultiMemberRoom = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom;
     const canManageRoom = Boolean(room) && !room?.isSpaceRoom();
     const canLeaveRoom = canManageRoom;
     const directPeerUserId = useMemo(() => {
@@ -1136,10 +1136,10 @@ export const ChatRoom: React.FC = () => {
             companyName,
         });
     }, [companyName, directPeerContact, isDirectRoom, userType]);
-    const groupTranslationEnabled = useMemo(() => {
-        if (!isGroupChat) return false;
+    const roomTranslationEnabled = useMemo(() => {
+        if (!isMultiMemberRoom) return false;
         return true;
-    }, [isGroupChat]);
+    }, [isMultiMemberRoom]);
 
     const { translationMap, translationView, setTranslationView, requestTranslation } = useMessageTranslation({
         activeRoomId,
@@ -1153,9 +1153,9 @@ export const ChatRoom: React.FC = () => {
         translateHsUrl,
         translateMatrixUserId,
         isDirectRoom,
-        isGroupChat,
+        isGroupChat: isMultiMemberRoom,
         directTranslationEnabled,
-        groupTranslationEnabled,
+        groupTranslationEnabled: roomTranslationEnabled,
         userType,
         companyName,
         resolveContactByMatrixUserId,
@@ -1177,9 +1177,9 @@ export const ChatRoom: React.FC = () => {
     };
 
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
-    const groupMembers = room?.getJoinedMembers() ?? [];
+    const joinedMembers = room?.getJoinedMembers() ?? [];
     const invitedMembers = room?.getMembersWithMembership("invite") ?? [];
-    const memberCount = groupMembers.length;
+    const memberCount = joinedMembers.length;
     const invitedCount = invitedMembers.length;
     const powerLevels = useMemo((): PowerLevelContent | null => {
         if (!room) return null;
@@ -1198,7 +1198,7 @@ export const ChatRoom: React.FC = () => {
     const canInviteMembers = roomPermissions.canInviteMembers;
     const canRenameRoom = roomPermissions.canRenameRoom ?? roomPermissions.canRenameGroup;
     const canRemoveMembers = roomPermissions.canRemoveMembers;
-    const memberIdSet = useMemo(() => new Set(groupMembers.map((member) => member.userId)), [groupMembers]);
+    const memberIdSet = useMemo(() => new Set(joinedMembers.map((member) => member.userId)), [joinedMembers]);
     const filteredContacts = useMemo(() => {
         const needle = contactFilter.trim().toLowerCase();
         return contacts.filter((contact) => {
@@ -1617,17 +1617,17 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: translateMatrixUserId,
             },
         });
-        const shouldPretranslateForGroupClients =
+        const shouldPretranslateForRoomClients =
             userType === "staff" &&
-            isGroupChat &&
+            isMultiMemberRoom &&
             translationContactsLoaded &&
             Boolean(translateAccessToken && sentEventId);
         pretranslateGroupToClients({
-            enabled: shouldPretranslateForGroupClients,
+            enabled: shouldPretranslateForRoomClients,
             text: trimmed,
             messageId: sentEventId,
             roomId: activeRoomId,
-            memberIds: groupMembers.map((member) => member.userId),
+            memberIds: joinedMembers.map((member) => member.userId),
             selfUserId: userId,
             resolveContactByMatrixUserId,
             translate: {
@@ -1816,7 +1816,7 @@ export const ChatRoom: React.FC = () => {
     const roomDisplayName = room?.name || headerName || t("chat.headerFallback");
     const memberEntries = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;
-        return groupMembers
+        return joinedMembers
             .map((member) => ({
                 userId: member.userId,
                 name: member.name || member.userId,
@@ -1826,7 +1826,7 @@ export const ChatRoom: React.FC = () => {
                 if (a.powerLevel !== b.powerLevel) return b.powerLevel - a.powerLevel;
                 return a.name.localeCompare(b.name);
             });
-    }, [groupMembers, powerLevels]);
+    }, [joinedMembers, powerLevels]);
     const invitedEntries = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;
         return invitedMembers
@@ -2100,7 +2100,7 @@ export const ChatRoom: React.FC = () => {
                             <ChevronLeftIcon className="h-5 w-5" />
                         </button>
                     )}
-                    {isGroupChat ? (
+                    {isMultiMemberRoom ? (
                         <>
                             <div className="w-11 h-11 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-300 text-sm font-semibold">
                                 {roomName.charAt(0).toUpperCase()}
