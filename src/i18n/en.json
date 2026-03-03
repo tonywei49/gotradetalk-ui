@@ -280,6 +280,7 @@
     "roomList": {
         "sections": {
             "contacts": "Contacts",
+            "chatRooms": "Chat rooms",
             "directMessages": "Chat list",
             "requests": "Requests",
             "groupChats": "Group Chats"
@@ -291,6 +292,7 @@
             "hide": "Hide"
         },
         "empty": {
+            "chatRooms": "No chat rooms yet.",
             "directChats": "No direct chats yet.",
             "contacts": "No contacts yet.",
             "results": "No results."

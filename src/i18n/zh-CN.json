@@ -280,6 +280,7 @@
     "roomList": {
         "sections": {
             "contacts": "联系人",
+            "chatRooms": "聊天室",
             "directMessages": "聊天列表",
             "requests": "请求",
             "groupChats": "群聊"
@@ -291,6 +292,7 @@
             "hide": "隐藏"
         },
         "empty": {
+            "chatRooms": "暂无聊天室。",
             "directChats": "暂无私聊。",
             "contacts": "暂无联系人。",
             "results": "暂无结果。"
