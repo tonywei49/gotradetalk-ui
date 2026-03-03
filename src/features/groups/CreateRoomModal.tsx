@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { XMarkIcon, UserGroupIcon, CheckIcon } from "@heroicons/react/24/outline";
 import type { MatrixClient } from "matrix-js-sdk";
 import { listContacts, type ContactEntry } from "../../api/contacts";
-import { createRoomWithInvite, type HistoryVisibility } from "../../matrix/group";
+import { createRoomWithInvite, type HistoryVisibility } from "../../matrix/room";
 import { useTranslation } from "react-i18next";
 import { devLog } from "../../utils/devLog";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
