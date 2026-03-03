@@ -49,6 +49,8 @@
   - membership policy now exposes one-to-one aliases (`isOneToOneRoomByPolicy`, etc.) while keeping old APIs
   - translation pipeline now supports room-first context keys (`isMultiMemberRoom`, `roomTranslationEnabled`) with backward compatibility
   - member modal labels in `ChatRoom` now use `chat.*` keys instead of `group.*`
+  - room creation helper module moved to `src/matrix/room.ts` with `src/matrix/group.ts` shim for compatibility
+  - `chat.roomNameFallback` key introduced; `groupNameFallback` kept for backward compatibility
 
 ## This Iteration (In Progress)
 - Continue replacing remaining user-facing "group/direct" copy with "room/chat room" copy.
