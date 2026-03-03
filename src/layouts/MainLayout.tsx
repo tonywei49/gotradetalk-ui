@@ -18,7 +18,7 @@ import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { CreateGroupModal } from "../features/groups/CreateGroupModal";
-import { GroupInviteList } from "../features/groups/GroupInviteList";
+import { RoomInviteList } from "../features/groups/RoomInviteList";
 // GroupDetailsPanel 將在 ChatRoom 中整合使用
 // import { GroupDetailsPanel, isGroupRoom } from "../features/groups/GroupDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
@@ -2185,9 +2185,9 @@ export const MainLayout: React.FC = () => {
                             )}
                         </div>
 
-                        {/* Group Invite List - 獨立組件，不影響私聊邏輯 */}
+                        {/* Room Invite List */}
                         {activeTab === "chat" && (
-                            <GroupInviteList
+                            <RoomInviteList
                                 client={matrixClient}
                                 onAccept={(roomId) => {
                                     setActiveRoomId(roomId);

@@ -5,7 +5,7 @@ import { UserGroupIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24
 import { useTranslation } from "react-i18next";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 
-export type GroupInvite = {
+export type RoomInvite = {
     roomId: string;
     room: Room;
     name: string;
@@ -14,7 +14,7 @@ export type GroupInvite = {
     memberCount: number;
 };
 
-export type GroupInviteListProps = {
+export type RoomInviteListProps = {
     client: MatrixClient | null;
     onAccept: (roomId: string) => void;
     onDecline: (roomId: string) => void;
@@ -24,13 +24,13 @@ export type GroupInviteListProps = {
  * 鐛ㄧ珛鐨勭兢绲勯個璜嬪垪琛ㄧ祫浠躲€?
  * 瀹屽叏鐛ㄧ珛鏂肩鑱婇倧杓紝涓嶅奖闊?RoomList銆?
  */
-export const GroupInviteList: React.FC<GroupInviteListProps> = ({
+export const RoomInviteList: React.FC<RoomInviteListProps> = ({
     client,
     onAccept,
     onDecline,
 }) => {
     const { t } = useTranslation();
-    const [invites, setInvites] = useState<GroupInvite[]>([]);
+    const [invites, setInvites] = useState<RoomInvite[]>([]);
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
     const [joinError, setJoinError] = useState<string | null>(null);
     const [suppressedInviteIds, setSuppressedInviteIds] = useState<Set<string>>(new Set());
@@ -47,7 +47,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
     };
 
     // Build pending room invitations list.
-    const buildGroupInvites = (): GroupInvite[] => {
+    const buildRoomInvites = (): RoomInvite[] => {
         if (!client) return [];
 
         const myUserId = client.getUserId();
@@ -80,7 +80,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
 
     // 鍒锋柊閭€璜嬪垪琛?
     const refresh = () => {
-        setInvites(buildGroupInvites());
+        setInvites(buildRoomInvites());
     };
 
     // 鐩ｈ伣浜嬩欢
