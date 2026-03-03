@@ -6,9 +6,11 @@ type TranslateContext = {
     translationBlocked: boolean;
     isMeMessage: boolean;
     isDirectRoom: boolean;
-    isGroupChat: boolean;
+    isGroupChat?: boolean;
+    isMultiMemberRoom?: boolean;
     directTranslationEnabled: boolean;
-    groupTranslationEnabled: boolean;
+    groupTranslationEnabled?: boolean;
+    roomTranslationEnabled?: boolean;
     messageBody?: string;
     messageType?: string;
     userType?: string | null;
@@ -71,8 +73,10 @@ export function shouldTranslateIncomingMessage(context: TranslateContext): boole
         isMeMessage,
         isDirectRoom,
         isGroupChat,
+        isMultiMemberRoom,
         directTranslationEnabled,
         groupTranslationEnabled,
+        roomTranslationEnabled,
         messageBody,
         messageType,
         userType,
@@ -88,11 +92,13 @@ export function shouldTranslateIncomingMessage(context: TranslateContext): boole
         if (!senderContact?.user_type) return false;
         if (senderContact.user_type === "client") return false;
     }
+    const isMultiMemberConversation = isMultiMemberRoom ?? isGroupChat ?? false;
+    const multiMemberTranslationEnabled = roomTranslationEnabled ?? groupTranslationEnabled ?? false;
     if (isDirectRoom && !directTranslationEnabled) return false;
-    if (isGroupChat && !groupTranslationEnabled) return false;
+    if (isMultiMemberConversation && !multiMemberTranslationEnabled) return false;
     if (!messageBody) return false;
     if (messageType && messageType !== MsgType.Text) return false;
-    if (!isGroupChat) return true;
+    if (!isMultiMemberConversation) return true;
 
     if (userType === "client") return true;
     if (userType === "staff" && isSameCompanyStaff(senderContact, companyName)) return false;

@@ -40,9 +40,11 @@ type Params = {
     translateHsUrl: string | null;
     translateMatrixUserId: string | null;
     isDirectRoom: boolean;
-    isGroupChat: boolean;
+    isGroupChat?: boolean;
+    isMultiMemberRoom?: boolean;
     directTranslationEnabled: boolean;
-    groupTranslationEnabled: boolean;
+    groupTranslationEnabled?: boolean;
+    roomTranslationEnabled?: boolean;
     userType: string | null;
     companyName?: string | null;
     resolveContactByMatrixUserId: (matrixUserId?: string | null) => ContactEntry | null;
@@ -64,8 +66,10 @@ export function useMessageTranslation(params: Params) {
         translateMatrixUserId,
         isDirectRoom,
         isGroupChat,
+        isMultiMemberRoom,
         directTranslationEnabled,
         groupTranslationEnabled,
+        roomTranslationEnabled,
         userType,
         companyName,
         resolveContactByMatrixUserId,
@@ -95,8 +99,10 @@ export function useMessageTranslation(params: Params) {
                 isMeMessage,
                 isDirectRoom,
                 isGroupChat,
+                isMultiMemberRoom,
                 directTranslationEnabled,
                 groupTranslationEnabled,
+                roomTranslationEnabled,
                 messageBody: content?.body,
                 messageType: content?.msgtype,
                 userType,
@@ -109,8 +115,10 @@ export function useMessageTranslation(params: Params) {
             translationBlocked,
             isDirectRoom,
             isGroupChat,
+            isMultiMemberRoom,
             directTranslationEnabled,
             groupTranslationEnabled,
+            roomTranslationEnabled,
             userType,
             companyName,
             resolveContactByMatrixUserId,
