@@ -2932,7 +2932,7 @@ export const ChatRoom: React.FC = () => {
                         <div className="max-h-[60vh] overflow-y-auto space-y-4">
                             <div>
                                 <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                    {t("group.joinedMembers")} ({memberCount})
+                                    {t("chat.joinedMembers", "Joined Members")} ({memberCount})
                                 </div>
                                 <div className="space-y-2">
                                     {memberEntries.map((member) => (
@@ -2948,7 +2948,7 @@ export const ChatRoom: React.FC = () => {
                                             <div className="flex items-center gap-2">
                                                 {member.powerLevel >= 50 && (
                                                     <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                                                        {t("chat.groupAdminTag")}
+                                                        {t("chat.roomAdminTag", t("chat.groupAdminTag"))}
                                                     </span>
                                                 )}
                                                 {canRemoveMembers && member.userId !== userId && (
@@ -2975,7 +2975,7 @@ export const ChatRoom: React.FC = () => {
                             </div>
                             <div>
                                 <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                    {t("group.invitedMembers")} ({invitedCount})
+                                    {t("chat.invitedMembers", "Invited")} ({invitedCount})
                                 </div>
                                 {invitedEntries.length === 0 ? (
                                     <div className="text-xs text-slate-400 dark:text-slate-500">
