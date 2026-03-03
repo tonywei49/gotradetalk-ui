@@ -268,7 +268,7 @@
             "country": "Country",
             "language": "Language"
         },
-        "groupChat": "Group chat"
+        "groupChat": "New room"
     },
     "profile": {
         "gender": {
@@ -283,7 +283,7 @@
             "chatRooms": "Chat rooms",
             "directMessages": "Chat list",
             "requests": "Requests",
-            "groupChats": "Group Chats"
+            "groupChats": "Chat Rooms"
         },
         "actions": {
             "addContact": "Add contact",
@@ -293,7 +293,7 @@
         },
         "empty": {
             "chatRooms": "No chat rooms yet.",
-            "directChats": "No direct chats yet.",
+            "directChats": "No chat rooms yet.",
             "contacts": "No contacts yet.",
             "results": "No results."
         },
@@ -345,7 +345,7 @@
         "recallMessage": "Recall",
         "recallMessageSuccess": "Message recalled.",
         "recallMessageFailed": "Failed to recall message.",
-        "leaveGroup": "Leave group",
+        "leaveGroup": "Leave room",
         "membersButton": "Members",
         "membersTitle": "Members",
         "inviteSettings": "Invite settings",
@@ -356,18 +356,18 @@
         "inviteMemberRequired": "Please enter a user ID.",
         "inviteMemberFailed": "Failed to invite member.",
         "inviteMemberAction": "Send invite",
-        "renameGroup": "Rename group",
-        "renameGroupPlaceholder": "Enter new group name...",
-        "renameGroupRequired": "Please enter a group name.",
-        "renameGroupFailed": "Failed to rename group.",
+        "renameGroup": "Rename room",
+        "renameGroupPlaceholder": "Enter new room name...",
+        "renameGroupRequired": "Please enter a room name.",
+        "renameGroupFailed": "Failed to rename room.",
         "renameRoom": "Rename room",
         "renameRoomPlaceholder": "Enter new room name...",
         "renameRoomRequired": "Please enter a room name.",
         "renameRoomFailed": "Failed to rename room.",
         "leaveRoom": "Leave room",
-        "leaveGroupConfirm": "Leave this group chat?",
+        "leaveGroupConfirm": "Leave this room?",
         "leaveRoomConfirm": "Do you want to leave this room?",
-        "groupNameFallback": "Group chat",
+        "groupNameFallback": "Room",
         "groupAdminTag": "Host",
         "roomId": "Room ID",
         "roomVersion": "Room version",
@@ -452,9 +452,9 @@
         }
     },
     "group": {
-        "createTitle": "Create Group",
-        "groupName": "Group Name",
-        "groupNamePlaceholder": "Enter group name...",
+        "createTitle": "Create Room",
+        "groupName": "Room Name",
+        "groupNamePlaceholder": "Enter room name...",
         "selectMembers": "Select Members",
         "selected": "selected",
         "searchContacts": "Search contacts...",
@@ -465,9 +465,9 @@
         "historySharedDesc": "New members can see all previous messages",
         "historyJoined": "New Messages Only",
         "historyJoinedDesc": "New members can only see messages after joining",
-        "create": "Create Group",
+        "create": "Create Room",
         "creating": "Creating...",
-        "unnamed": "Unnamed Group",
+        "unnamed": "Unnamed Room",
         "members": "members",
         "pending": "pending",
         "joinedMembers": "Joined Members",
@@ -477,15 +477,15 @@
         "memberLeft": "Left",
         "memberBanned": "Banned",
         "admin": "Admin",
-        "leaveGroup": "Leave Group",
-        "leaveConfirm": "Are you sure you want to leave this group?",
+        "leaveGroup": "Leave Room",
+        "leaveConfirm": "Are you sure you want to leave this room?",
         "leave": "Leave",
         "leaving": "Leaving...",
-        "inviteTitle": "Group Invitation",
+        "inviteTitle": "Room Invitations",
         "inviteFrom": "Invited by",
         "accept": "Accept",
         "decline": "Decline",
         "acceptFailed": "Failed to accept invite.",
-        "createFailed": "Failed to create group."
+        "createFailed": "Failed to create room."
     }
 }

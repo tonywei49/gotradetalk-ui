@@ -98,7 +98,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                 return {
                     roomId: room.roomId,
                     room,
-                    name: room.name || t("group.unnamed", "Group"),
+                    name: room.name || t("group.unnamed", "Room"),
                     inviterId,
                     inviterName: inviter?.name ?? inviterId,
                     memberCount: room.getJoinedMemberCount() ?? 0,
@@ -170,7 +170,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
                 next.delete(roomId);
                 return next;
             });
-            console.error("Failed to accept group invite:", err);
+            console.error("Failed to accept room invite:", err);
             const message = mapActionErrorToMessage(t, err, "group.acceptFailed");
             setJoinError(message);
         } finally {
@@ -190,7 +190,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
             onDecline(roomId);
             refresh();
         } catch (err) {
-            console.error("Failed to decline group invite:", err);
+            console.error("Failed to decline room invite:", err);
         } finally {
             setProcessingIds((prev) => {
                 const next = new Set(prev);
@@ -207,7 +207,7 @@ export const GroupInviteList: React.FC<GroupInviteListProps> = ({
         <div className="border-b border-gray-200 dark:border-slate-700 pb-2 mb-2">
             <div className="px-4 py-2">
                 <span className="text-xs uppercase tracking-[0.18em] text-amber-600 dark:text-amber-400 font-medium">
-                    {t("group.inviteTitle", "Group Invitations")} ({invites.length})
+                    {t("group.inviteTitle", "Room Invitations")} ({invites.length})
                 </span>
             </div>
             {joinError && (

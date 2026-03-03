@@ -113,7 +113,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             });
 
             // 等待 SDK 同步完成，確保房間可用
-            // 僅用於群組創建流程，不影響私聊邏輯
+            // 僅用於聊天室創建流程，不影響現有聊天邏輯
             await waitForRoomSync(matrixClient, roomId, 5000);
 
             onClose();
@@ -127,7 +127,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
 
     /**
      * 等待 SDK 同步房間完成。
-     * 僅用於群組創建後的跳轉，不影響私聊流程。
+     * 僅用於聊天室創建後的跳轉，不影響既有流程。
      */
     const waitForRoomSync = (client: MatrixClient, roomId: string, timeoutMs: number): Promise<void> => {
         return new Promise((resolve) => {
@@ -173,7 +173,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                             <UserGroupIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                            {t("group.createTitle", "Create Group")}
+                            {t("group.createTitle", "Create Room")}
                         </h2>
                     </div>
                     <button
@@ -187,16 +187,16 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                    {/* 群組名稱 */}
+                    {/* 聊天室名稱 */}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            {t("group.groupName", "Group Name")} <span className="text-rose-500">*</span>
+                            {t("group.groupName", "Room Name")} <span className="text-rose-500">*</span>
                         </label>
                         <input
                             type="text"
                             value={groupName}
                             onChange={(e) => setGroupName(e.target.value)}
-                            placeholder={t("group.groupNamePlaceholder", "Enter group name...")}
+                            placeholder={t("group.groupNamePlaceholder", "Enter room name...")}
                             className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                         />
                     </div>
@@ -358,7 +358,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                             : "bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed"
                             }`}
                     >
-                        {creating ? t("group.creating", "Creating...") : t("group.create", "Create Group")}
+                        {creating ? t("group.creating", "Creating...") : t("group.create", "Create Room")}
                     </button>
                 </div>
             </div>

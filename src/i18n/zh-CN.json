@@ -268,7 +268,7 @@
             "country": "国家",
             "language": "语言"
         },
-        "groupChat": "群聊"
+        "groupChat": "新建聊天室"
     },
     "profile": {
         "gender": {
@@ -283,7 +283,7 @@
             "chatRooms": "聊天室",
             "directMessages": "聊天列表",
             "requests": "请求",
-            "groupChats": "群聊"
+            "groupChats": "聊天室"
         },
         "actions": {
             "addContact": "添加好友",
@@ -293,7 +293,7 @@
         },
         "empty": {
             "chatRooms": "暂无聊天室。",
-            "directChats": "暂无私聊。",
+            "directChats": "暂无聊天室。",
             "contacts": "暂无联系人。",
             "results": "暂无结果。"
         },
@@ -345,7 +345,7 @@
         "recallMessage": "撤回",
         "recallMessageSuccess": "已撤回訊息。",
         "recallMessageFailed": "撤回訊息失敗。",
-        "leaveGroup": "退出群聊",
+        "leaveGroup": "退出聊天室",
         "membersButton": "人員名單",
         "membersTitle": "人員名單",
         "inviteSettings": "邀請設定",
@@ -356,10 +356,10 @@
         "inviteMemberRequired": "請輸入用戶 ID。",
         "inviteMemberFailed": "邀請失敗。",
         "inviteMemberAction": "發送邀請",
-        "renameGroup": "修改群組名稱",
-        "renameGroupPlaceholder": "輸入新的群組名稱...",
-        "renameGroupRequired": "請輸入群組名稱。",
-        "renameGroupFailed": "修改群組名稱失敗。",
+        "renameGroup": "修改聊天室名稱",
+        "renameGroupPlaceholder": "輸入新的聊天室名稱...",
+        "renameGroupRequired": "請輸入聊天室名稱。",
+        "renameGroupFailed": "修改聊天室名稱失敗。",
         "renameRoom": "修改聊天室名稱",
         "renameRoomPlaceholder": "輸入新的聊天室名稱...",
         "renameRoomRequired": "請輸入聊天室名稱。",
@@ -367,7 +367,7 @@
         "leaveRoom": "退出聊天室",
         "leaveGroupConfirm": "是否要退出聊天室？",
         "leaveRoomConfirm": "是否要退出此聊天室？",
-        "groupNameFallback": "群聊",
+        "groupNameFallback": "聊天室",
         "groupAdminTag": "《版主》",
         "roomId": "房间ID",
         "roomVersion": "房间版本",
@@ -452,9 +452,9 @@
         }
     },
     "group": {
-        "createTitle": "创建群聊",
-        "groupName": "群组名称",
-        "groupNamePlaceholder": "请输入群组名称...",
+        "createTitle": "创建聊天室",
+        "groupName": "聊天室名称",
+        "groupNamePlaceholder": "请输入聊天室名称...",
         "selectMembers": "选择成员",
         "selected": "已选",
         "searchContacts": "搜索联系人...",
@@ -465,9 +465,9 @@
         "historySharedDesc": "新成员可以查看所有之前的消息",
         "historyJoined": "仅显示新消息",
         "historyJoinedDesc": "新成员只能查看加入后的消息",
-        "create": "创建群聊",
+        "create": "创建聊天室",
         "creating": "创建中...",
-        "unnamed": "未命名群组",
+        "unnamed": "未命名聊天室",
         "members": "成员",
         "pending": "待加入",
         "joinedMembers": "已加入成员",
@@ -477,15 +477,15 @@
         "memberLeft": "已离开",
         "memberBanned": "已禁止",
         "admin": "管理员",
-        "leaveGroup": "退出群聊",
-        "leaveConfirm": "确定要退出这个群聊吗？",
+        "leaveGroup": "退出聊天室",
+        "leaveConfirm": "确定要退出这个聊天室吗？",
         "leave": "退出",
         "leaving": "退出中...",
-        "inviteTitle": "群聊邀请",
+        "inviteTitle": "聊天室邀请",
         "inviteFrom": "邀请者",
         "accept": "接受",
         "decline": "拒绝",
         "acceptFailed": "接受邀請失敗。",
-        "createFailed": "建立群聊失敗。"
+        "createFailed": "建立聊天室失敗。"
     }
 }
