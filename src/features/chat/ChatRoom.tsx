@@ -2232,7 +2232,7 @@ export const ChatRoom: React.FC = () => {
                                         {t("chat.leaveRoom", "Leave room")}
                                     </button>
                                 ) : null}
-                                {!isGroupChat && (
+                                {isDirectRoom && (
                                     <>
                                         <button
                                             type="button"
