@@ -180,15 +180,6 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
         .sort((a, b) => b.lastActive - a.lastActive);
 }
 
-/**
- * 私聊邀請不再單獨顯示，用戶通過「好友請求」流程來處理。
- * 當用戶接受好友請求時，會自動加入對應的聊天室。
- */
-function buildInviteRooms(_client: MatrixClient): ChatRoomEntry[] {
-    // 私聊邀請通過好友請求流程處理，不單獨顯示
-    return [];
-}
-
 export function RoomList({
     client,
     hubAccessToken,
@@ -292,9 +283,8 @@ export function RoomList({
             });
 
             const chatRooms = buildChatRooms(client);
-            const inviteRooms = buildInviteRooms(client);
             setRooms(
-                [...inviteRooms, ...chatRooms]
+                chatRooms
                     .filter((entry) => !hiddenDirectRoomIds.has(entry.roomId))
                     .sort((a, b) => b.lastActive - a.lastActive),
             );
