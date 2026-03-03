@@ -1197,6 +1197,20 @@ export const MainLayout: React.FC = () => {
         }
     };
 
+    const onLeaveActiveRoom = async (): Promise<void> => {
+        if (!matrixClient || !activeRoomId) return;
+        const room = matrixClient.getRoom(activeRoomId);
+        if (!room || room.isSpaceRoom()) return;
+        try {
+            await matrixClient.leave(activeRoomId);
+            setPinnedRoomIds((prev) => prev.filter((roomId) => roomId !== activeRoomId));
+            setActiveRoomId(null);
+            setMobileView("list");
+        } catch {
+            // ignore leave failures
+        }
+    };
+
     const onTogglePinActiveRoom = (): void => {
         if (!activeRoomId) return;
         setPinnedRoomIds((prev) => {
@@ -2946,6 +2960,7 @@ export const MainLayout: React.FC = () => {
                             activeRoomId,
                             onMobileBack: () => setMobileView("list"),
                             onHideRoom: () => void onHideActiveRoom(),
+                            onLeaveRoom: () => void onLeaveActiveRoom(),
                             onTogglePin: () => onTogglePinActiveRoom(),
                             isRoomPinned: isActiveRoomPinned,
                             chatReceiveLanguage,

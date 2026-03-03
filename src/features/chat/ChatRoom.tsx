@@ -552,6 +552,7 @@ type ChatRoomContext = {
     activeRoomId: string | null;
     onMobileBack?: () => void;
     onHideRoom?: () => void;
+    onLeaveRoom?: () => void;
     onTogglePin?: () => void;
     isRoomPinned?: boolean;
     chatReceiveLanguage?: string;
@@ -718,6 +719,7 @@ export const ChatRoom: React.FC = () => {
         activeRoomId,
         onMobileBack,
         onHideRoom,
+        onLeaveRoom,
         onTogglePin,
         isRoomPinned,
         chatReceiveLanguage,
@@ -1113,6 +1115,7 @@ export const ChatRoom: React.FC = () => {
     }, [isDirectByAccountData, isDirectByMembers, room, roomKind]);
     const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom && roomKind === ROOM_KIND_GROUP;
     const canManageRoom = Boolean(room) && !room?.isSpaceRoom();
+    const canLeaveRoom = canManageRoom;
     const directPeerUserId = useMemo(() => {
         if (!room || !isDirectRoom) return null;
         return resolveDirectPeerUserId(
@@ -1809,7 +1812,7 @@ export const ChatRoom: React.FC = () => {
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
     const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room?.name || t("chat.headerFallback");
-    const groupName = room?.name || t("chat.groupNameFallback");
+    const roomName = room?.name || t("chat.groupNameFallback");
     const roomDisplayName = room?.name || headerName || t("chat.headerFallback");
     const memberEntries = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;
@@ -2100,11 +2103,11 @@ export const ChatRoom: React.FC = () => {
                     {isGroupChat ? (
                         <>
                             <div className="w-11 h-11 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-300 text-sm font-semibold">
-                                {groupName.charAt(0).toUpperCase()}
+                                {roomName.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex flex-col">
                                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                                    {groupName}
+                                    {roomName}
                                 </h2>
                             </div>
                             <button
@@ -2217,7 +2220,7 @@ export const ChatRoom: React.FC = () => {
                                 >
                                     {t("chat.roomInfo")}
                                 </button>
-                                {isGroupChat ? (
+                                {canLeaveRoom ? (
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -2228,7 +2231,8 @@ export const ChatRoom: React.FC = () => {
                                     >
                                         {t("chat.leaveRoom", "Leave room")}
                                     </button>
-                                ) : (
+                                ) : null}
+                                {!isGroupChat && (
                                     <>
                                         <button
                                             type="button"
@@ -3235,7 +3239,7 @@ export const ChatRoom: React.FC = () => {
                 </div>
             )}
 
-            {showLeaveConfirm && isGroupChat && (
+            {showLeaveConfirm && canLeaveRoom && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-3">
@@ -3253,7 +3257,11 @@ export const ChatRoom: React.FC = () => {
                                 type="button"
                                 onClick={() => {
                                     setShowLeaveConfirm(false);
-                                    onHideRoom?.();
+                                    if (onLeaveRoom) {
+                                        onLeaveRoom();
+                                    } else {
+                                        onHideRoom?.();
+                                    }
                                 }}
                                 className="flex-1 rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600"
                             >
