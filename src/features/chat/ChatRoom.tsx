@@ -1112,6 +1112,7 @@ export const ChatRoom: React.FC = () => {
         });
     }, [isDirectByAccountData, isDirectByMembers, room, roomKind]);
     const isGroupChat = Boolean(room) && !room?.isSpaceRoom() && !isDirectRoom && roomKind === ROOM_KIND_GROUP;
+    const canManageRoom = Boolean(room) && !room?.isSpaceRoom();
     const directPeerUserId = useMemo(() => {
         if (!room || !isDirectRoom) return null;
         return resolveDirectPeerUserId(
@@ -1229,7 +1230,7 @@ export const ChatRoom: React.FC = () => {
     }, [inviteLevel, room?.roomId]);
 
     useEffect(() => {
-        if (!showInviteMembersModal || !isGroupChat) return;
+        if (!showInviteMembersModal || !canManageRoom) return;
         if (!inviteAccessToken) {
             setContactsError(t("chat.inviteContactsAuthMissing"));
             setContacts([]);
@@ -1248,7 +1249,7 @@ export const ChatRoom: React.FC = () => {
                 pushToast("error", message);
             })
             .finally(() => setContactsLoading(false));
-    }, [showInviteMembersModal, isGroupChat, inviteAccessToken, inviteHsUrl, pushToast, t]);
+    }, [showInviteMembersModal, canManageRoom, inviteAccessToken, inviteHsUrl, pushToast, t]);
 
     useEffect(() => {
         if (!canTranslate || translationContactsLoaded) return;
@@ -1809,6 +1810,7 @@ export const ChatRoom: React.FC = () => {
         : undefined;
     const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room?.name || t("chat.headerFallback");
     const groupName = room?.name || t("chat.groupNameFallback");
+    const roomDisplayName = room?.name || headerName || t("chat.headerFallback");
     const memberEntries = useMemo(() => {
         const defaultLevel = powerLevels?.users_default ?? 0;
         return groupMembers
@@ -2117,13 +2119,27 @@ export const ChatRoom: React.FC = () => {
                             </button>
                         </>
                     ) : (
-                        <div className="flex flex-col">
-                            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{headerName}</h2>
-                            <span className="text-xs text-green-600 flex items-center gap-1 dark:text-emerald-400">
-                                <span className="w-2 h-2 bg-green-500 rounded-full dark:bg-emerald-400"></span>
-                                {t("common.online")}
-                            </span>
-                        </div>
+                        <>
+                            <div className="flex flex-col">
+                                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{headerName}</h2>
+                                <span className="text-xs text-green-600 flex items-center gap-1 dark:text-emerald-400">
+                                    <span className="w-2 h-2 bg-green-500 rounded-full dark:bg-emerald-400"></span>
+                                    {t("common.online")}
+                                </span>
+                            </div>
+                            {canManageRoom && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMembersModal(true)}
+                                    className="ml-2 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                >
+                                    {t("chat.membersButton")}
+                                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-2 text-[10px] font-bold text-white">
+                                        {memberCount}
+                                    </span>
+                                </button>
+                            )}
+                        </>
                     )}
                 </div>
 
@@ -2151,81 +2167,69 @@ export const ChatRoom: React.FC = () => {
                                 ref={actionsMenuRef}
                                 className="absolute right-0 mt-2 w-40 rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-xl dark:border-slate-800 dark:bg-slate-900"
                             >
+                                {canManageInvites && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowActionsMenu(false);
+                                            setShowInviteSettingsModal(true);
+                                            setInviteError(null);
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        {t("chat.inviteSettings")}
+                                    </button>
+                                )}
+                                {canInviteMembers && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowActionsMenu(false);
+                                            setShowInviteMembersModal(true);
+                                            setInviteMemberError(null);
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        {t("chat.inviteMembers")}
+                                    </button>
+                                )}
+                                {canRenameGroup && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowActionsMenu(false);
+                                            setRenameValue(roomDisplayName);
+                                            setShowRenameModal(true);
+                                            setRenameError(null);
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        {t("chat.renameGroup")}
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowActionsMenu(false);
+                                        setShowRoomInfoModal(true);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                    {t("chat.roomInfo")}
+                                </button>
                                 {isGroupChat ? (
-                                    <>
-                                        {canManageInvites && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowActionsMenu(false);
-                                                    setShowInviteSettingsModal(true);
-                                                    setInviteError(null);
-                                                }}
-                                                className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                                            >
-                                                {t("chat.inviteSettings")}
-                                            </button>
-                                        )}
-                                        {canInviteMembers && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowActionsMenu(false);
-                                                    setShowInviteMembersModal(true);
-                                                    setInviteMemberError(null);
-                                                }}
-                                                className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                                            >
-                                                {t("chat.inviteMembers")}
-                                            </button>
-                                        )}
-                                        {canRenameGroup && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowActionsMenu(false);
-                                                    setRenameValue(groupName);
-                                                    setShowRenameModal(true);
-                                                    setRenameError(null);
-                                                }}
-                                                className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                                            >
-                                                {t("chat.renameGroup")}
-                                            </button>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setShowActionsMenu(false);
-                                                setShowRoomInfoModal(true);
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                                        >
-                                            {t("chat.roomInfo")}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setShowActionsMenu(false);
-                                                setShowLeaveConfirm(true);
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
-                                        >
-                                            {t("chat.leaveGroup")}
-                                        </button>
-                                    </>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowActionsMenu(false);
+                                            setShowLeaveConfirm(true);
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
+                                    >
+                                        {t("chat.leaveGroup")}
+                                    </button>
                                 ) : (
                                     <>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setShowActionsMenu(false);
-                                                setShowRoomInfoModal(true);
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                                        >
-                                            {t("chat.roomInfo")}
-                                        </button>
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -2905,7 +2909,7 @@ export const ChatRoom: React.FC = () => {
                 )}
             </div>
 
-            {showMembersModal && isGroupChat && (
+            {showMembersModal && canManageRoom && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
@@ -3014,7 +3018,7 @@ export const ChatRoom: React.FC = () => {
                 </div>
             )}
 
-            {showInviteSettingsModal && isGroupChat && (
+            {showInviteSettingsModal && canManageRoom && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
@@ -3067,7 +3071,7 @@ export const ChatRoom: React.FC = () => {
                 </div>
             )}
 
-            {showInviteMembersModal && isGroupChat && (
+            {showInviteMembersModal && canManageRoom && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
@@ -3166,7 +3170,7 @@ export const ChatRoom: React.FC = () => {
                 </div>
             )}
 
-            {showRenameModal && isGroupChat && (
+            {showRenameModal && canManageRoom && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
