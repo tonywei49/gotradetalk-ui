@@ -1196,7 +1196,7 @@ export const ChatRoom: React.FC = () => {
     const inviteLevel = roomPermissions.inviteLevel;
     const canManageInvites = roomPermissions.canManageInvites;
     const canInviteMembers = roomPermissions.canInviteMembers;
-    const canRenameGroup = roomPermissions.canRenameGroup;
+    const canRenameRoom = roomPermissions.canRenameRoom ?? roomPermissions.canRenameGroup;
     const canRemoveMembers = roomPermissions.canRemoveMembers;
     const memberIdSet = useMemo(() => new Set(groupMembers.map((member) => member.userId)), [groupMembers]);
     const filteredContacts = useMemo(() => {
@@ -2196,7 +2196,7 @@ export const ChatRoom: React.FC = () => {
                                         {t("chat.inviteMembers")}
                                     </button>
                                 )}
-                                {canRenameGroup && (
+                                {canRenameRoom && (
                                     <button
                                         type="button"
                                         onClick={() => {

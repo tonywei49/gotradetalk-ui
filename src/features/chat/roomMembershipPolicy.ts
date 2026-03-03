@@ -65,6 +65,7 @@ export function deriveRoomPermissions(
     inviteLevel: number;
     canManageInvites: boolean;
     canInviteMembers: boolean;
+    canRenameRoom: boolean;
     canRenameGroup: boolean;
     canRemoveMembers: boolean;
 } {
@@ -77,6 +78,7 @@ export function deriveRoomPermissions(
         inviteLevel,
         canManageInvites: userPowerLevel >= 100,
         canInviteMembers: userPowerLevel >= inviteLevel,
+        canRenameRoom: userPowerLevel >= 50,
         canRenameGroup: userPowerLevel >= 50,
         canRemoveMembers: userPowerLevel >= 50,
     };
