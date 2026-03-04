@@ -1124,6 +1124,7 @@ export const ChatRoom: React.FC = () => {
             userId,
         );
     }, [isDirectRoom, room, userId]);
+    const isDirectPeerAbsent = Boolean(isDirectRoom && !directPeerUserId);
     const directPeerContact = useMemo(() => {
         if (!directPeerUserId) return null;
         return resolveContactByMatrixUserId(directPeerUserId);
@@ -1577,6 +1578,10 @@ export const ChatRoom: React.FC = () => {
 
     const onSend = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
+        if (isDirectPeerAbsent) {
+            pushToast("warn", t("chat.directPeerLeftNotice"));
+            return;
+        }
         const trimmed = composerText.trim();
         const readyAttachments = pendingAttachments.filter((item) => item.status === "ready" && item.mxcUrl);
         traceEvent("chat.send_start", {
@@ -1848,6 +1853,10 @@ export const ChatRoom: React.FC = () => {
 
     const onPickAttachment = (): void => {
         if (isDeprecatedRoom) return;
+        if (isDirectPeerAbsent) {
+            pushToast("warn", t("chat.directPeerLeftNotice"));
+            return;
+        }
         setUploadError(null);
         fileInputRef.current?.click();
     };
@@ -2382,6 +2391,11 @@ export const ChatRoom: React.FC = () => {
                         {t("chat.deprecatedNotice")}
                     </div>
                 )}
+                {isDirectPeerAbsent && (
+                    <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                        {t("chat.directPeerLeftNotice")}
+                    </div>
+                )}
                 {scrollLoading && (
                     <div className="text-center text-xs text-slate-400 dark:text-slate-500 mb-4">
                         {t("common.loading")}
@@ -2389,7 +2403,7 @@ export const ChatRoom: React.FC = () => {
                 )}
                 {mergedEvents.map((event) => {
                     if (event.getType() === EventType.RoomMember) {
-                        if (!room || room.isSpaceRoom() || isDirectRoom) return null;
+                        if (!room || room.isSpaceRoom()) return null;
                         const content = (event.getContent() ?? {}) as { membership?: string };
                         const prevContent = (event.getPrevContent() ?? {}) as { membership?: string; displayname?: string };
                         if (content.membership !== "join" && content.membership !== "leave") return null;
@@ -2574,7 +2588,7 @@ export const ChatRoom: React.FC = () => {
                         type="button"
                         onClick={onPickAttachment}
                         className="hover:text-[#2F5C56] dark:hover:text-emerald-400"
-                        disabled={isDeprecatedRoom}
+                        disabled={isDeprecatedRoom || isDirectPeerAbsent}
                     >
                         <PaperClipIcon className="w-6 h-6" />
                     </button>
@@ -2817,16 +2831,27 @@ export const ChatRoom: React.FC = () => {
                             }
                         }}
                         className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 leading-5 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none min-h-12 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-slate-800"
-                        placeholder={isDeprecatedRoom ? t("chat.deprecatedPlaceholder") : t("chat.placeholder")}
+                        placeholder={
+                            isDeprecatedRoom
+                                ? t("chat.deprecatedPlaceholder")
+                                : isDirectPeerAbsent
+                                    ? t("chat.directPeerLeftPlaceholder")
+                                    : t("chat.placeholder")
+                        }
                         rows={1}
-                        disabled={isDeprecatedRoom}
+                        disabled={isDeprecatedRoom || isDirectPeerAbsent}
                     />
                     <button
                         data-testid="chat-send-button"
                         type="button"
                         onClick={() => void onSend()}
                         className="bg-[#2F5C56] hover:bg-[#244a45] text-white p-3 rounded-xl shadow-md transition-colors flex items-center justify-center dark:bg-emerald-500 dark:hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={isDeprecatedRoom || (composerText.trim().length === 0 && pendingAttachments.filter((item) => item.status === "ready").length === 0)}
+                        disabled={
+                            isDeprecatedRoom ||
+                            isDirectPeerAbsent ||
+                            (composerText.trim().length === 0 &&
+                                pendingAttachments.filter((item) => item.status === "ready").length === 0)
+                        }
                     >
                         <PaperAirplaneIcon className="w-5 h-5" />
                     </button>

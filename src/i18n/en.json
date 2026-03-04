@@ -416,6 +416,8 @@
         "deprecatedTag": "Deprecated",
         "deprecatedNotice": "This conversation has been deprecated. Please start a new chat.",
         "deprecatedPlaceholder": "This chat is deprecated.",
+        "directPeerLeftNotice": "The other member left this room. New messages will not be delivered.",
+        "directPeerLeftPlaceholder": "The other member left this room.",
         "notebook": {
             "useKnowledgeBase": "Use Knowledge Base",
             "retry": "Retry",

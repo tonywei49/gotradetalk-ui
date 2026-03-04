@@ -416,6 +416,8 @@
         "deprecatedTag": "已棄用",
         "deprecatedNotice": "此聊天室已棄用，請重新開始新的聊天。",
         "deprecatedPlaceholder": "此聊天室已棄用",
+        "directPeerLeftNotice": "对方已离开此聊天室，继续发送的新消息不会送达对方。",
+        "directPeerLeftPlaceholder": "对方已离开此聊天室",
         "notebook": {
             "useKnowledgeBase": "調用知識庫",
             "retry": "重試",
