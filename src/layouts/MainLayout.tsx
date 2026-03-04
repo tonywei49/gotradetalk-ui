@@ -2135,13 +2135,15 @@ export const MainLayout: React.FC = () => {
                                     placeholder={t("layout.searchPlaceholder")}
                                     className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
                                 />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateRoomModal(true)}
-                                    className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
-                                >
-                                    {t("layout.createRoomLabel", t("layout.groupChat", "New room"))}
-                                </button>
+                                {activeTab === "chat" && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCreateRoomModal(true)}
+                                        className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                    >
+                                        {t("layout.createRoomLabel", t("layout.groupChat", "New room"))}
+                                    </button>
+                                )}
                             </div>
                             {chatGlobalSearchOpen && (
                                 <div className="absolute left-3 right-3 top-[58px] z-30 max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
