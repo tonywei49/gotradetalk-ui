@@ -366,6 +366,7 @@
         "renameRoomPlaceholder": "Enter new room name...",
         "renameRoomRequired": "Please enter a room name.",
         "renameRoomFailed": "Failed to rename room.",
+        "roomRenamedNotice": "{{actor}} renamed room from {{oldName}} to {{newName}}.",
         "leaveRoom": "Leave room",
         "leaveGroupConfirm": "Leave this room?",
         "leaveRoomConfirm": "Do you want to leave this room?",

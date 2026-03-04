@@ -1325,6 +1325,11 @@ export const MainLayout: React.FC = () => {
 
     const onCreateContactRoom = async (): Promise<void> => {
         if (!matrixClient || !activeContact) return;
+        const currentUserId = matrixClient.getUserId();
+        if (!currentUserId) {
+            setContactRoomActionError(t("layout.sharedRoomsCreateFailed"));
+            return;
+        }
         const matrixUserId = resolveActiveContactMatrixUserId();
         if (!matrixUserId) {
             setContactRoomActionError(t("layout.sharedRoomsNoMatrixId"));
@@ -1336,6 +1341,19 @@ export const MainLayout: React.FC = () => {
             const result = await matrixClient.createRoom({
                 invite: [matrixUserId],
                 preset: Preset.PrivateChat,
+                power_level_content_override: {
+                    users: {
+                        [currentUserId]: 100,
+                        [matrixUserId]: 100,
+                    },
+                    users_default: 0,
+                    events_default: 0,
+                    state_default: 50,
+                    ban: 50,
+                    kick: 50,
+                    redact: 50,
+                    invite: 50,
+                },
             });
             setSelectedSharedRoomId(result.room_id);
             setActiveRoomId(result.room_id);

@@ -366,6 +366,7 @@
         "renameRoomPlaceholder": "輸入新的聊天室名稱...",
         "renameRoomRequired": "請輸入聊天室名稱。",
         "renameRoomFailed": "修改聊天室名稱失敗。",
+        "roomRenamedNotice": "{{actor}} 将房间名称从 {{oldName}} 改为 {{newName}}。",
         "leaveRoom": "退出聊天室",
         "leaveGroupConfirm": "是否要退出聊天室？",
         "leaveRoomConfirm": "是否要退出此聊天室？",

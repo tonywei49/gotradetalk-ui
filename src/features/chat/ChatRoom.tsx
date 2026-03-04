@@ -1817,7 +1817,7 @@ export const ChatRoom: React.FC = () => {
     const otherMember = room
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
-    const headerName = getUserLabel(otherMember?.userId, otherMember?.name) || room?.name || t("chat.headerFallback");
+    const headerName = room?.name || getUserLabel(otherMember?.userId, otherMember?.name) || t("chat.headerFallback");
     const roomName = room?.name || t("chat.roomNameFallback", t("chat.groupNameFallback"));
     const roomDisplayName = room?.name || headerName || t("chat.headerFallback");
     const memberEntries = useMemo(() => {
@@ -3249,19 +3249,32 @@ export const ChatRoom: React.FC = () => {
                                         setRenameError(t("chat.renameRoomRequired", "Please enter room name."));
                                         return;
                                     }
+                                    const prevName = room.name || t("chat.roomNameFallback", t("chat.groupNameFallback"));
+                                    const actorName = getUserLabel(userId, room.getMember(userId || "")?.name || matrixClient.getUser(userId || "")?.displayName);
                                     setRenameBusy(true);
                                     setRenameError(null);
-                                    void matrixClient
-                                        .setRoomName(room.roomId, nextName)
-                                        .then(() => {
+                                    void (async () => {
+                                        try {
+                                            await matrixClient.setRoomName(room.roomId, nextName);
+                                            await sendNoticeMessageEvent(
+                                                matrixClient,
+                                                room.roomId,
+                                                t("chat.roomRenamedNotice", {
+                                                    actor: actorName,
+                                                    oldName: prevName,
+                                                    newName: nextName,
+                                                    defaultValue: `${actorName} renamed room from ${prevName} to ${nextName}.`,
+                                                }),
+                                            );
                                             setShowRenameModal(false);
-                                        })
-                                        .catch((err) => {
+                                        } catch (err) {
                                             const message = mapActionErrorToMessage(t, err, "chat.renameRoomFailed");
                                             setRenameError(message);
                                             pushToast("error", message);
-                                        })
-                                        .finally(() => setRenameBusy(false));
+                                        } finally {
+                                            setRenameBusy(false);
+                                        }
+                                    })();
                                 }}
                                 className="flex-1 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
                             >
