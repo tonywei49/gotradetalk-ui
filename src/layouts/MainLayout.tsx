@@ -1414,6 +1414,7 @@ export const MainLayout: React.FC = () => {
                 accessToken: hubAccessToken,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
+                matrixAccessToken,
             });
             setSummaryJobs(Array.isArray(response.items) ? response.items : []);
         } catch (error) {
@@ -1422,7 +1423,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobsLoading(false);
         }
-    }, [hubAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
 
     const hasProcessingSummaryJob = useMemo(
         () => summaryJobs.some((job) => job.status === "processing"),
@@ -1509,6 +1510,7 @@ export const MainLayout: React.FC = () => {
                 messages,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
+                matrixAccessToken,
             });
             await loadSummaryJobs();
         } catch (error) {
@@ -1541,6 +1543,7 @@ export const MainLayout: React.FC = () => {
                 id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
+                matrixAccessToken,
             });
             await loadSummaryJobs();
         } catch (error) {
@@ -1548,7 +1551,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, loadSummaryJobs, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
 
     const onDownloadSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken) return;
@@ -1559,6 +1562,7 @@ export const MainLayout: React.FC = () => {
                 id: job.id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
+                matrixAccessToken,
             });
             const compactStart = toCompactDateTime(job.from_date);
             const compactEnd = toCompactDateTime(job.to_date);
@@ -1577,7 +1581,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
 
     const onPreviewSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken || !job?.id) return;
@@ -1589,6 +1593,7 @@ export const MainLayout: React.FC = () => {
                 id: job.id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
+                matrixAccessToken,
             });
             setSummaryPreviewJob(detail);
         } catch (error) {
@@ -1602,6 +1607,7 @@ export const MainLayout: React.FC = () => {
                         id: job.id,
                         hsUrl: matrixHsUrl,
                         matrixUserId: matrixCredentials?.user_id ?? null,
+                        matrixAccessToken,
                     });
                     const summaryText = await blob.text();
                     setSummaryPreviewJob({
@@ -1626,7 +1632,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryPreviewLoading(false);
         }
-    }, [hubAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
 
     useEffect(() => {
         if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;

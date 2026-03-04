@@ -47,12 +47,18 @@ async function readResponseMessage(response: Response): Promise<string> {
     return text || `Request failed (${response.status})`;
 }
 
-async function postJson<T>(url: string, body: Record<string, unknown>, accessToken?: string): Promise<T> {
+async function postJson<T>(
+    url: string,
+    body: Record<string, unknown>,
+    accessToken?: string,
+    extraHeaders?: Record<string, string>,
+): Promise<T> {
     const response = await fetch(url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            ...(extraHeaders || {}),
         },
         body: JSON.stringify(body),
     });
@@ -404,6 +410,7 @@ export async function createChatSummaryJob(params: {
     messages: Array<{ sender?: string; ts?: string | null; text: string }>;
     hsUrl?: string | null;
     matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
 }): Promise<{ id: string; status: string; target_label: string; from_date: string; to_date: string; created_at: string }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     const query: Record<string, string> = {};
@@ -418,20 +425,21 @@ export async function createChatSummaryJob(params: {
         from_date: fromDate,
         to_date: toDate,
         messages: params.messages,
-    }, params.accessToken);
+    }, params.accessToken, params.matrixAccessToken ? { "X-Matrix-Access-Token": params.matrixAccessToken } : undefined);
 }
 
 export async function listChatSummaryJobs(params: {
     accessToken: string;
     hsUrl?: string | null;
     matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
 }): Promise<{ items: ChatSummaryJobItem[] }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     const query: Record<string, string> = {};
     if (params.hsUrl) query.hs_url = params.hsUrl;
     if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
     const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/chat/summary/jobs"), query) : joinUrl(hubBaseUrl, "/chat/summary/jobs");
-    return getJson<{ items: ChatSummaryJobItem[] }>(url, params.accessToken);
+    return getJson<{ items: ChatSummaryJobItem[] }>(url, params.accessToken, params.matrixAccessToken ? { "X-Matrix-Access-Token": params.matrixAccessToken } : undefined);
 }
 
 export async function deleteChatSummaryJob(params: {
@@ -439,6 +447,7 @@ export async function deleteChatSummaryJob(params: {
     id: string;
     hsUrl?: string | null;
     matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
 }): Promise<{ ok: boolean }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     const query: Record<string, string> = {};
@@ -448,7 +457,10 @@ export async function deleteChatSummaryJob(params: {
     const url = Object.keys(query).length ? withQuery(base, query) : base;
     const response = await fetch(url, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${params.accessToken}` },
+        headers: {
+            Authorization: `Bearer ${params.accessToken}`,
+            ...(params.matrixAccessToken ? { "X-Matrix-Access-Token": params.matrixAccessToken } : {}),
+        },
     });
     if (!response.ok) {
         throw new Error(await readResponseMessage(response));
@@ -461,6 +473,7 @@ export async function getChatSummaryJob(params: {
     id: string;
     hsUrl?: string | null;
     matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
 }): Promise<ChatSummaryJobDetail> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     const query: Record<string, string> = {};
@@ -468,7 +481,7 @@ export async function getChatSummaryJob(params: {
     if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
     const base = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(params.id)}`);
     const url = Object.keys(query).length ? withQuery(base, query) : base;
-    return getJson<ChatSummaryJobDetail>(url, params.accessToken);
+    return getJson<ChatSummaryJobDetail>(url, params.accessToken, params.matrixAccessToken ? { "X-Matrix-Access-Token": params.matrixAccessToken } : undefined);
 }
 
 export async function downloadChatSummaryJob(params: {
@@ -476,6 +489,7 @@ export async function downloadChatSummaryJob(params: {
     id: string;
     hsUrl?: string | null;
     matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
 }): Promise<Blob> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     const query: Record<string, string> = {};
@@ -485,7 +499,10 @@ export async function downloadChatSummaryJob(params: {
     const url = Object.keys(query).length ? withQuery(base, query) : base;
     const response = await fetch(url, {
         method: "GET",
-        headers: { Authorization: `Bearer ${params.accessToken}` },
+        headers: {
+            Authorization: `Bearer ${params.accessToken}`,
+            ...(params.matrixAccessToken ? { "X-Matrix-Access-Token": params.matrixAccessToken } : {}),
+        },
     });
     if (!response.ok) {
         throw new Error(await readResponseMessage(response));
@@ -493,12 +510,13 @@ export async function downloadChatSummaryJob(params: {
     return response.blob();
 }
 
-async function getJson<T>(url: string, accessToken?: string): Promise<T> {
+async function getJson<T>(url: string, accessToken?: string, extraHeaders?: Record<string, string>): Promise<T> {
     const response = await fetch(url, {
         method: "GET",
         cache: "no-store",
         headers: {
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            ...(extraHeaders || {}),
         },
     });
 
