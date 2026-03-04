@@ -77,6 +77,12 @@ export function mapActionErrorToMessage(
     ) {
         return t("common.errors.network");
     }
+    if (
+        normalized.includes("FAILED TO PARSE LOGIC TREE") ||
+        normalized.includes("PARSE LOGIC TREE")
+    ) {
+        return t("common.errors.invalidSearchQuery");
+    }
     if (errcode || statusCode !== null) {
         return t(fallbackKey);
     }

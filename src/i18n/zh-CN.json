@@ -158,7 +158,8 @@
             "network": "网络异常，请稍后重试。",
             "timeout": "请求超时，请稍后重试。",
             "noPermission": "你没有权限执行此操作。",
-            "quotaExceeded": "存储空间已达上限，请删除旧文件后重试。"
+            "quotaExceeded": "存储空间已达上限，请删除旧文件后重试。",
+            "invalidSearchQuery": "搜索格式不正确，请检查输入后重试。"
         }
     },
     "layout": {
@@ -416,6 +417,7 @@
         "deprecatedTag": "已棄用",
         "deprecatedNotice": "此聊天室已棄用，請重新開始新的聊天。",
         "deprecatedPlaceholder": "此聊天室已棄用",
+        "singleMemberNotice": "此房间就剩你一人，发的讯息都是在和空气聊天哦",
         "directPeerLeftNotice": "对方已离开此聊天室，继续发送的新消息不会送达对方。",
         "directPeerLeftPlaceholder": "对方已离开此聊天室",
         "notebook": {

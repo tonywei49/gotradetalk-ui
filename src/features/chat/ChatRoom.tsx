@@ -1182,6 +1182,7 @@ export const ChatRoom: React.FC = () => {
     const invitedMembers = room?.getMembersWithMembership("invite") ?? [];
     const memberCount = joinedMembers.length;
     const invitedCount = invitedMembers.length;
+    const isSoloInRoom = Boolean(isMultiMemberRoom && memberCount === 1);
     const powerLevels = useMemo((): PowerLevelContent | null => {
         if (!room) return null;
         const event = room.currentState.getStateEvents("m.room.power_levels", "");
@@ -2179,10 +2180,11 @@ export const ChatRoom: React.FC = () => {
                                 ref={actionsMenuRef}
                                 className="absolute right-0 mt-2 w-40 rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-xl dark:border-slate-800 dark:bg-slate-900"
                             >
-                                {canManageInvites && (
+                                {canManageInvites && !isDeprecatedRoom && (
                                     <button
                                         type="button"
                                         onClick={() => {
+                                            if (isDeprecatedRoom) return;
                                             setShowActionsMenu(false);
                                             setShowInviteSettingsModal(true);
                                             setInviteError(null);
@@ -2192,10 +2194,11 @@ export const ChatRoom: React.FC = () => {
                                         {t("chat.inviteSettings")}
                                     </button>
                                 )}
-                                {canInviteMembers && (
+                                {canInviteMembers && !isDeprecatedRoom && (
                                     <button
                                         type="button"
                                         onClick={() => {
+                                            if (isDeprecatedRoom) return;
                                             setShowActionsMenu(false);
                                             setShowInviteMembersModal(true);
                                             setInviteMemberError(null);
@@ -2547,6 +2550,11 @@ export const ChatRoom: React.FC = () => {
                 {isDirectPeerAbsent && (
                     <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
                         {t("chat.directPeerLeftNotice")}
+                    </div>
+                )}
+                {isSoloInRoom && (
+                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+                        {t("chat.singleMemberNotice", "此房间就剩你一人，发的讯息都是在和空气聊天哦")}
                     </div>
                 )}
                 {notebookCapabilityError && (
@@ -3047,7 +3055,7 @@ export const ChatRoom: React.FC = () => {
                 </div>
             )}
 
-            {showInviteSettingsModal && canManageRoom && (
+            {showInviteSettingsModal && canManageRoom && !isDeprecatedRoom && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">
@@ -3100,7 +3108,7 @@ export const ChatRoom: React.FC = () => {
                 </div>
             )}
 
-            {showInviteMembersModal && canManageRoom && (
+            {showInviteMembersModal && canManageRoom && !isDeprecatedRoom && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                         <div className="flex items-center justify-between mb-4">

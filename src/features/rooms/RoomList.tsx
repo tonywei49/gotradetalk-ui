@@ -22,6 +22,7 @@ import {
 } from "../../matrix/direct";
 import { playNotificationSound, type NotificationSoundMode } from "../../utils/notificationSound";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
+import { mapActionErrorToMessage } from "../../utils/errorMessages";
 
 type ChatRoomEntry = {
     userId?: string;
@@ -568,7 +569,7 @@ export function RoomList({
                         })),
                     );
                 } catch (error) {
-                    setSearchError(error instanceof Error ? error.message : t("roomList.errors.searchFailed"));
+                    setSearchError(mapActionErrorToMessage(t, error, "roomList.errors.searchFailed"));
                     setSearchResults([]);
                 } finally {
                     setSearchBusy(false);
@@ -775,7 +776,7 @@ export function RoomList({
             setStaffCompanyDomain("");
             setStaffPersonId("");
         } catch (error) {
-            setSearchError(error instanceof Error ? error.message : t("roomList.errors.requestFailed"));
+            setSearchError(mapActionErrorToMessage(t, error, "roomList.errors.requestFailed"));
         } finally {
             setSendingRequest(false);
         }
@@ -936,7 +937,7 @@ export function RoomList({
                 }
             }
         } catch (error) {
-            setSearchError(error instanceof Error ? error.message : t("roomList.errors.acceptFailed"));
+            setSearchError(mapActionErrorToMessage(t, error, "roomList.errors.acceptFailed"));
         }
     };
 
@@ -947,7 +948,7 @@ export function RoomList({
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
             await refreshContacts();
         } catch (error) {
-            setSearchError(error instanceof Error ? error.message : t("roomList.errors.rejectFailed"));
+            setSearchError(mapActionErrorToMessage(t, error, "roomList.errors.rejectFailed"));
         }
     };
 

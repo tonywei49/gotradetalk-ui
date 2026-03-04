@@ -18,7 +18,6 @@ import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { CreateRoomModal } from "../features/groups/CreateRoomModal";
-import { RoomInviteList } from "../features/groups/RoomInviteList";
 // RoomDetailsPanel 將在 ChatRoom 中整合使用
 // import { RoomDetailsPanel, isRoomWithMultipleMembers } from "../features/groups/RoomDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
@@ -2198,20 +2197,6 @@ export const MainLayout: React.FC = () => {
                                 </div>
                             )}
                         </div>
-
-                        {/* Room Invite List */}
-                        {activeTab === "chat" && (
-                            <RoomInviteList
-                                client={matrixClient}
-                                onAccept={(roomId) => {
-                                    setActiveRoomId(roomId);
-                                    setMobileView("detail");
-                                }}
-                                onDecline={() => {
-                                    // 拒絕後不需要特殊處理
-                                }}
-                            />
-                        )}
 
                         {/* Room List Content (Placeholder) */}
                         <RoomList

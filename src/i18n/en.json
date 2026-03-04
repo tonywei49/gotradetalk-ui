@@ -158,7 +158,8 @@
             "network": "Network error. Please try again.",
             "timeout": "Request timed out. Please try again.",
             "noPermission": "You don't have permission to perform this action.",
-            "quotaExceeded": "Storage limit reached. Please clear old files and retry."
+            "quotaExceeded": "Storage limit reached. Please clear old files and retry.",
+            "invalidSearchQuery": "Invalid search format. Please check your input and try again."
         }
     },
     "layout": {
@@ -416,6 +417,7 @@
         "deprecatedTag": "Deprecated",
         "deprecatedNotice": "This conversation has been deprecated. Please start a new chat.",
         "deprecatedPlaceholder": "This chat is deprecated.",
+        "singleMemberNotice": "You're the only person left in this room. New messages won't reach anyone else yet.",
         "directPeerLeftNotice": "The other member left this room. New messages will not be delivered.",
         "directPeerLeftPlaceholder": "The other member left this room.",
         "notebook": {
