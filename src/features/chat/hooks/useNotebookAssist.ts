@@ -79,6 +79,31 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
     const [assistDraft, setAssistDraft] = useState(initialCache?.assistDraft ?? "");
     const [assistCitationsExpanded, setAssistCitationsExpanded] = useState(Boolean(initialCache?.assistCitationsExpanded));
     const [lastAssistTrigger, setLastAssistTrigger] = useState<AssistTrigger | null>(initialCache?.lastAssistTrigger ?? null);
+    const hydratedStorageKeyRef = useRef<string>(storageKey);
+
+    /* eslint-disable react-hooks/set-state-in-effect */
+    useEffect(() => {
+        if (!storageKey || hydratedStorageKeyRef.current === storageKey) return;
+        hydratedStorageKeyRef.current = storageKey;
+        resumeInFlightRef.current = false;
+        const cached = readAssistCache(storageKey);
+        if (!cached) {
+            setAssistState("idle");
+            setAssistError(null);
+            setAssistOutput(null);
+            setAssistDraft("");
+            setAssistCitationsExpanded(false);
+            setLastAssistTrigger(null);
+            return;
+        }
+        setAssistState(cached.assistState);
+        setAssistError(cached.assistError);
+        setAssistOutput(cached.assistOutput);
+        setAssistDraft(cached.assistDraft);
+        setAssistCitationsExpanded(cached.assistCitationsExpanded);
+        setLastAssistTrigger(cached.lastAssistTrigger);
+    }, [storageKey]);
+    /* eslint-enable react-hooks/set-state-in-effect */
 
     const applyAssistOutput = useCallback((result: NotebookAssistResponse): void => {
         setAssistOutput(result);
