@@ -259,6 +259,54 @@ function parseDateTimeInputToIso(value: string): string | null {
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function mapChatSummaryErrorMessage(
+    message: string,
+    t: (key: string, defaultValue: string, options?: Record<string, unknown>) => string,
+): string {
+    const raw = String(message || "").trim();
+    const normalized = raw.toLowerCase();
+    const extractLimit = (input: string): string | null => {
+        const match = input.match(/\((\d+)(?:\/day)?\)/i);
+        return match?.[1] || null;
+    };
+
+    if (normalized.includes("daily summary limit reached")) {
+        const limit = extractLimit(raw);
+        return t(
+            "layout.notebook.summaryDailyLimitReached",
+            "Daily summary limit reached ({{limit}}/day).",
+            { limit: limit || "0" },
+        );
+    }
+    if (normalized.includes("too many running summary jobs")) {
+        const limit = extractLimit(raw);
+        return t(
+            "layout.notebook.summaryProcessingLimitReached",
+            "Too many running summary jobs (max {{limit}}).",
+            { limit: limit || "1" },
+        );
+    }
+    if (normalized.includes("date range cannot exceed 3 days")) {
+        return t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days.");
+    }
+    if (normalized.includes("no valid chat content for summary after filtering")) {
+        return t(
+            "layout.notebook.summaryNoValidChatContent",
+            "No valid chat content after filtering. Please widen the time range and try again.",
+        );
+    }
+    if (normalized.includes("only room members can generate summary")) {
+        return t("layout.notebook.summaryOnlyRoomMembers", "Only room members can generate summary.");
+    }
+    if (normalized.includes("missing hs_url") || normalized.includes("matrix access token")) {
+        return t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching.");
+    }
+    if (normalized.includes("failed to create summary job")) {
+        return t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.");
+    }
+    return raw || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.");
+}
+
 const SUMMARY_MAX_RANGE_MS = 72 * 60 * 60 * 1000;
 
 function isSummaryRangeExceeded(startValue: string, endValue: string): boolean {
@@ -377,6 +425,7 @@ export const MainLayout: React.FC = () => {
     const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
     const [summaryJobActionBusy, setSummaryJobActionBusy] = useState(false);
     const [summaryGenerationNotice, setSummaryGenerationNotice] = useState<string | null>(null);
+    const [summaryGenerationNoticeTone, setSummaryGenerationNoticeTone] = useState<"info" | "error">("info");
     const [summaryPreviewJob, setSummaryPreviewJob] = useState<ChatSummaryJobDetail | null>(null);
     const [summaryPreviewLoading, setSummaryPreviewLoading] = useState(false);
     const [summaryPreviewError, setSummaryPreviewError] = useState<string | null>(null);
@@ -1515,6 +1564,7 @@ export const MainLayout: React.FC = () => {
         if (summaryGenerationNotice !== generatingText) return;
         const timer = window.setTimeout(() => {
             setSummaryGenerationNotice(null);
+            setSummaryGenerationNoticeTone("info");
         }, 1500);
         return () => window.clearTimeout(timer);
     }, [hasProcessingSummaryJob, summaryGenerationNotice, t]);
@@ -1533,29 +1583,35 @@ export const MainLayout: React.FC = () => {
         if (!hubAccessToken || !summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
         if (summaryStartDate > summaryEndDate) {
             setSummaryGenerationNotice(t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date."));
+            setSummaryGenerationNoticeTone("error");
             return;
         }
         if (isSummaryRangeExceeded(summaryStartDate, summaryEndDate)) {
             setSummaryGenerationNotice(t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days."));
+            setSummaryGenerationNoticeTone("error");
             return;
         }
         if (hasProcessingSummaryJob || summaryJobActionBusy) {
             setSummaryGenerationNotice(t("layout.notebook.summaryAlreadyGenerating", "A summary is already generating. Please wait."));
+            setSummaryGenerationNoticeTone("error");
             return;
         }
         const roomId = resolveSummaryTargetRoomId(summarySelectedTarget);
         if (!roomId) {
             setSummaryGenerationNotice(t("layout.notebook.summaryRoomResolveFailed", "No shared room found for this target."));
+            setSummaryGenerationNoticeTone("error");
             return;
         }
         if (!matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
             setSummaryGenerationNotice(t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching."));
+            setSummaryGenerationNoticeTone("error");
             return;
         }
 
         setSummaryContentLoading(true);
         setSummaryJobActionBusy(true);
         setSummaryGenerationNotice(t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait."));
+        setSummaryGenerationNoticeTone("info");
         try {
             const searchResponse = await chatSearchRoom({
                 accessToken: hubAccessToken,
@@ -1578,6 +1634,7 @@ export const MainLayout: React.FC = () => {
                 .filter((item) => item.text);
             if (messages.length === 0) {
                 setSummaryGenerationNotice(t("layout.notebook.summaryNoChatContent", "No chat content in the selected range."));
+                setSummaryGenerationNoticeTone("error");
                 return;
             }
             const safeTargetLabel = summarySelectedTarget.label.trim() || roomId;
@@ -1594,7 +1651,11 @@ export const MainLayout: React.FC = () => {
             });
             await loadSummaryJobs();
         } catch (error) {
-            setSummaryGenerationNotice(error instanceof Error ? error.message : t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation."));
+            const message = error instanceof Error
+                ? mapChatSummaryErrorMessage(error.message, t)
+                : t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.");
+            setSummaryGenerationNotice(message);
+            setSummaryGenerationNoticeTone("error");
         } finally {
             setSummaryContentLoading(false);
             setSummaryJobActionBusy(false);
@@ -2278,7 +2339,11 @@ export const MainLayout: React.FC = () => {
             </div>
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-950">
                 {summaryGenerationNotice ? (
-                    <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+                    <div className={`mb-3 rounded-lg px-3 py-2 text-xs ${
+                        summaryGenerationNoticeTone === "error"
+                            ? "border border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200"
+                            : "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200"
+                    }`}>
                         {summaryGenerationNotice}
                     </div>
                 ) : null}
