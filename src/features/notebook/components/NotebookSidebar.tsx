@@ -121,7 +121,8 @@ export function NotebookSidebar({
             : filter === "note"
                 ? "note"
                 : "allSources";
-    const hasSummaryResults = summaryPeopleResults.length > 0 || summaryRoomResults.length > 0;
+    void summaryPeopleResults;
+    const hasSummaryResults = summaryRoomResults.length > 0;
     const hasInvalidDateRange = Boolean(summaryStartDate && summaryEndDate && summaryStartDate > summaryEndDate);
     const [pickerTarget, setPickerTarget] = useState<"start" | "end" | null>(null);
     const [pickerYear, setPickerYear] = useState<number>(new Date().getFullYear());
@@ -363,35 +364,6 @@ export function NotebookSidebar({
                                 {!summaryLoading && !summaryError && !hasSummaryResults ? (
                                     <div className="rounded-lg border border-dashed border-gray-200 px-3 py-2 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
                                         {t("layout.notebook.summaryResultEmpty", "No matched result.")}
-                                    </div>
-                                ) : null}
-                                {summaryPeopleResults.length > 0 ? (
-                                    <div>
-                                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                                            {t("layout.notebook.summaryTypePerson", "Person")}
-                                        </div>
-                                        <div className="space-y-1">
-                                            {summaryPeopleResults.map((item) => {
-                                                const active = summarySelectedTarget?.type === "person" && summarySelectedTarget.id === item.id;
-                                                return (
-                                                    <button
-                                                        key={`person-${item.id}`}
-                                                        type="button"
-                                                        onClick={() => onSummarySelectTarget({ type: "person", id: item.id, label: item.label })}
-                                                        className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                                                            active
-                                                                ? "border-emerald-400 bg-emerald-50 text-emerald-900 dark:border-emerald-500/60 dark:bg-emerald-900/30 dark:text-emerald-100"
-                                                                : "border-gray-200 bg-white text-slate-700 hover:border-emerald-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                                        }`}
-                                                    >
-                                                        <div className="truncate text-sm font-semibold">{item.label}</div>
-                                                        {item.meta ? (
-                                                            <div className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{item.meta}</div>
-                                                        ) : null}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
                                     </div>
                                 ) : null}
                                 {summaryRoomResults.length > 0 ? (
