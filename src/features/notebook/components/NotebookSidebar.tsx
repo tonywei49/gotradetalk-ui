@@ -58,6 +58,7 @@ type NotebookSidebarProps = {
     onSummaryEndDateChange: (value: string) => void;
     onSummaryConfirm: () => void;
     summaryConfirmLoading?: boolean;
+    summaryConfirmHint?: string | null;
 };
 
 function indexStateChip(status: NotebookItem["indexStatus"]): string {
@@ -107,6 +108,7 @@ export function NotebookSidebar({
     onSummaryEndDateChange,
     onSummaryConfirm,
     summaryConfirmLoading = false,
+    summaryConfirmHint = null,
 }: NotebookSidebarProps) {
     const { t } = useTranslation();
     const quickFilter: NotebookQuickFilter = showCompanyFilter && sourceScope === "company"
@@ -236,6 +238,10 @@ export function NotebookSidebar({
                                 type="text"
                                 value={summaryQuery}
                                 onChange={(event) => onSummaryQueryChange(event.target.value)}
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
                                 onKeyDown={(event) => {
                                     if (event.key === "Enter") {
                                         event.preventDefault();
@@ -327,10 +333,10 @@ export function NotebookSidebar({
                         <div className="grid grid-cols-1 gap-3">
                             <label className="block">
                                 <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
-                                    {t("layout.notebook.summaryStartDate", "Start date")}
+                                    {t("layout.notebook.summaryStartDate", "Start time")}
                                 </div>
                                 <input
-                                    type="date"
+                                    type="datetime-local"
                                     value={summaryStartDate}
                                     onChange={(event) => onSummaryStartDateChange(event.target.value)}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -338,10 +344,10 @@ export function NotebookSidebar({
                             </label>
                             <label className="block">
                                 <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
-                                    {t("layout.notebook.summaryEndDate", "End date")}
+                                    {t("layout.notebook.summaryEndDate", "End time")}
                                 </div>
                                 <input
-                                    type="date"
+                                    type="datetime-local"
                                     value={summaryEndDate}
                                     onChange={(event) => onSummaryEndDateChange(event.target.value)}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -353,6 +359,9 @@ export function NotebookSidebar({
                                 {t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date.")}
                             </div>
                         )}
+                        {!hasInvalidDateRange && summaryConfirmHint ? (
+                            <div className="text-xs text-slate-500 dark:text-slate-400">{summaryConfirmHint}</div>
+                        ) : null}
                         <button
                             type="button"
                             disabled={summaryConfirmLoading || !summarySelectedTarget || !summaryStartDate || !summaryEndDate || hasInvalidDateRange}

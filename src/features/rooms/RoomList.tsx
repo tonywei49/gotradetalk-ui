@@ -134,6 +134,12 @@ function getLastMessagePreview(room: Room): string {
     return "";
 }
 
+function resolveExplicitRoomName(room: Room): string | null {
+    const nameEvent = room.currentState.getStateEvents(EventType.RoomName, "");
+    const explicit = String((nameEvent?.getContent() as { name?: string } | undefined)?.name || "").trim();
+    return explicit || null;
+}
+
 function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
     const directContent = (client.getAccountData(EventType.Direct)?.getContent() ?? {}) as Record<string, string[]>;
     const directUserByRoomId = new Map<string, string>();
@@ -153,6 +159,7 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
             return (membership === "join" || membership === "invite") && !room.isSpaceRoom();
         })
         .map((room) => {
+            const explicitRoomName = resolveExplicitRoomName(room);
             const mappedDirectUserId = directUserByRoomId.get(room.roomId);
             const fallbackPeerUserId =
                 room.getJoinedMembers().length === 2
@@ -160,6 +167,7 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
                     : undefined;
             const userId = mappedDirectUserId || fallbackPeerUserId;
             const displayName =
+                explicitRoomName ||
                 (userId ? room.getMember(userId)?.name : null) ||
                 room.name ||
                 userId ||

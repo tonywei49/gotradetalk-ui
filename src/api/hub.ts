@@ -370,6 +370,31 @@ export type ChatSummaryJobItem = {
     has_content: boolean;
 };
 
+export type ChatSummaryJobDetail = {
+    id: string;
+    target_label: string;
+    room_id: string | null;
+    from_date: string;
+    to_date: string;
+    status: "processing" | "completed" | "failed";
+    created_at: string;
+    updated_at: string;
+    summary_text: string;
+};
+
+function toSummaryApiDate(value: string): string {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return "";
+    const datePart = trimmed.split("T")[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return "";
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
 export async function createChatSummaryJob(params: {
     accessToken: string;
     targetLabel: string;
@@ -377,30 +402,53 @@ export async function createChatSummaryJob(params: {
     fromDate: string;
     toDate: string;
     messages: Array<{ sender?: string; ts?: string | null; text: string }>;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
 }): Promise<{ id: string; status: string; target_label: string; from_date: string; to_date: string; created_at: string }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = joinUrl(hubBaseUrl, "/chat/summary/jobs");
+    const query: Record<string, string> = {};
+    if (params.hsUrl) query.hs_url = params.hsUrl;
+    if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
+    const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/chat/summary/jobs"), query) : joinUrl(hubBaseUrl, "/chat/summary/jobs");
+    const fromDate = toSummaryApiDate(params.fromDate);
+    const toDate = toSummaryApiDate(params.toDate);
     return postJson(url, {
         target_label: params.targetLabel,
         room_id: params.roomId || null,
-        from_date: params.fromDate,
-        to_date: params.toDate,
+        from_date: fromDate,
+        to_date: toDate,
         messages: params.messages,
     }, params.accessToken);
 }
 
-export async function listChatSummaryJobs(accessToken: string): Promise<{ items: ChatSummaryJobItem[] }> {
+export async function listChatSummaryJobs(params: {
+    accessToken: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+}): Promise<{ items: ChatSummaryJobItem[] }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = joinUrl(hubBaseUrl, "/chat/summary/jobs");
-    return getJson<{ items: ChatSummaryJobItem[] }>(url, accessToken);
+    const query: Record<string, string> = {};
+    if (params.hsUrl) query.hs_url = params.hsUrl;
+    if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
+    const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/chat/summary/jobs"), query) : joinUrl(hubBaseUrl, "/chat/summary/jobs");
+    return getJson<{ items: ChatSummaryJobItem[] }>(url, params.accessToken);
 }
 
-export async function deleteChatSummaryJob(accessToken: string, id: string): Promise<{ ok: boolean }> {
+export async function deleteChatSummaryJob(params: {
+    accessToken: string;
+    id: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+}): Promise<{ ok: boolean }> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(id)}`);
+    const query: Record<string, string> = {};
+    if (params.hsUrl) query.hs_url = params.hsUrl;
+    if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
+    const base = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(params.id)}`);
+    const url = Object.keys(query).length ? withQuery(base, query) : base;
     const response = await fetch(url, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${params.accessToken}` },
     });
     if (!response.ok) {
         throw new Error(await readResponseMessage(response));
@@ -408,12 +456,36 @@ export async function deleteChatSummaryJob(accessToken: string, id: string): Pro
     return (await response.json()) as { ok: boolean };
 }
 
-export async function downloadChatSummaryJob(accessToken: string, id: string): Promise<Blob> {
+export async function getChatSummaryJob(params: {
+    accessToken: string;
+    id: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+}): Promise<ChatSummaryJobDetail> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
-    const url = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(id)}/download`);
+    const query: Record<string, string> = {};
+    if (params.hsUrl) query.hs_url = params.hsUrl;
+    if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
+    const base = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(params.id)}`);
+    const url = Object.keys(query).length ? withQuery(base, query) : base;
+    return getJson<ChatSummaryJobDetail>(url, params.accessToken);
+}
+
+export async function downloadChatSummaryJob(params: {
+    accessToken: string;
+    id: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+}): Promise<Blob> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query: Record<string, string> = {};
+    if (params.hsUrl) query.hs_url = params.hsUrl;
+    if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
+    const base = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(params.id)}/download`);
+    const url = Object.keys(query).length ? withQuery(base, query) : base;
     const response = await fetch(url, {
         method: "GET",
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${params.accessToken}` },
     });
     if (!response.ok) {
         throw new Error(await readResponseMessage(response));

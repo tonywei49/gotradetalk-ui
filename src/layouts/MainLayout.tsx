@@ -17,11 +17,13 @@ import {
     createChatSummaryJob,
     deleteChatSummaryJob,
     downloadChatSummaryJob,
+    getChatSummaryJob,
     hubGetMe,
     hubMeUpdateLocale,
     hubMeUpdateTranslationLocale,
     hubTranslate,
     listChatSummaryJobs,
+    type ChatSummaryJobDetail,
     type ChatSummaryJobItem,
 } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
@@ -224,6 +226,9 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
 
 function resolveRoomListDisplayName(room: Room, myUserId: string | null): string {
     const fallback = room.name || room.getCanonicalAlias() || room.roomId;
+    const explicitNameEvent = room.currentState.getStateEvents(EventType.RoomName, "");
+    const explicitName = String((explicitNameEvent?.getContent() as { name?: string } | undefined)?.name || "").trim();
+    if (explicitName) return explicitName;
     const normalizedMyUserId = myUserId || null;
     const joinedMembers = room.getJoinedMembers();
     if (normalizedMyUserId && joinedMembers.length === 2) {
@@ -256,18 +261,17 @@ function resolveRoomCreatedAt(room: Room): number | null {
     return Number.isFinite(ts) && ts > 0 ? ts : null;
 }
 
-function buildDateRangeIsoStart(dateValue: string): string | null {
-    const trimmed = String(dateValue || "").trim();
+function parseDateTimeInputToIso(value: string): string | null {
+    const trimmed = String(value || "").trim();
     if (!trimmed) return null;
-    const date = new Date(`${trimmed}T00:00:00`);
+    const date = new Date(trimmed);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function buildDateRangeIsoEnd(dateValue: string): string | null {
-    const trimmed = String(dateValue || "").trim();
-    if (!trimmed) return null;
-    const date = new Date(`${trimmed}T23:59:59.999`);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+function toCompactDateTime(value: string): string {
+    const iso = parseDateTimeInputToIso(value);
+    if (!iso) return "";
+    return iso.slice(0, 16).replace(/[-:T]/g, "");
 }
 
 function parseJwtSub(token: string | null | undefined): string | null {
@@ -371,6 +375,9 @@ export const MainLayout: React.FC = () => {
     const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
     const [summaryJobActionBusy, setSummaryJobActionBusy] = useState(false);
     const [summaryGenerationNotice, setSummaryGenerationNotice] = useState<string | null>(null);
+    const [summaryPreviewJob, setSummaryPreviewJob] = useState<ChatSummaryJobDetail | null>(null);
+    const [summaryPreviewLoading, setSummaryPreviewLoading] = useState(false);
+    const [summaryPreviewError, setSummaryPreviewError] = useState<string | null>(null);
     const [selectedSharedRoomId, setSelectedSharedRoomId] = useState<string | null>(null);
     const [creatingContactRoom, setCreatingContactRoom] = useState(false);
     const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
@@ -1015,6 +1022,13 @@ export const MainLayout: React.FC = () => {
     }, [summarySelectedTarget, summaryStartDate, summaryEndDate]);
 
     useEffect(() => {
+        if (summaryDetailTab !== "summaryList") {
+            setSummaryPreviewJob(null);
+            setSummaryPreviewError(null);
+        }
+    }, [summaryDetailTab]);
+
+    useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) {
             setAccountAvatarUrl(null);
             return;
@@ -1282,25 +1296,62 @@ export const MainLayout: React.FC = () => {
                         meta: hit.company_name || matrixUserId,
                     };
                 });
-            const roomHits: SummarySearchRoomItem[] = response.room_hits.map((hit) => {
-                const room = matrixClient?.getRoom(hit.room_id) ?? null;
-                const label = room
-                    ? resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null)
-                    : (hit.room_name || hit.room_id);
-                const createdAtTs = room ? resolveRoomCreatedAt(room) : null;
-                const fallbackTs = hit.last_ts ? Date.parse(hit.last_ts) : NaN;
-                const displayTs = createdAtTs ?? (Number.isFinite(fallbackTs) ? fallbackTs : null);
-                return {
+            const queryLower = q.toLowerCase();
+            let roomHits: SummarySearchRoomItem[] = [];
+            if (matrixClient) {
+                const allJoinedRooms = matrixClient
+                    .getRooms()
+                    .filter((room) => room.getMyMembership() === "join" && !room.isSpaceRoom())
+                    .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp());
+
+                const personIds = new Set(peopleHits.map((item) => item.id));
+                const sharedRooms = personIds.size > 0
+                    ? allJoinedRooms.filter((room) =>
+                        room
+                            .getMembers()
+                            .some((member) => member.membership === "join" && personIds.has(member.userId)),
+                    )
+                    : [];
+
+                const fuzzyNameRooms = allJoinedRooms.filter((room) => {
+                    const displayName = resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
+                    return displayName.toLowerCase().includes(queryLower);
+                });
+
+                const dedupedRooms: Room[] = [];
+                const seen = new Set<string>();
+                for (const room of [...sharedRooms, ...fuzzyNameRooms]) {
+                    if (seen.has(room.roomId)) continue;
+                    seen.add(room.roomId);
+                    dedupedRooms.push(room);
+                }
+
+                roomHits = dedupedRooms.map((room) => {
+                    const createdAtTs = resolveRoomCreatedAt(room);
+                    const resolvedName = resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null).trim();
+                    return {
+                        id: room.roomId,
+                        label: resolvedName || room.roomId,
+                        meta: createdAtTs
+                            ? t("layout.notebook.summaryCreatedDate", {
+                                date: new Date(createdAtTs).toLocaleString(),
+                                defaultValue: "Created at: {{date}}",
+                            })
+                            : null,
+                    };
+                });
+            } else {
+                roomHits = response.room_hits.map((hit) => ({
                     id: hit.room_id,
-                    label,
-                    meta: displayTs
+                    label: hit.room_name || hit.room_id,
+                    meta: hit.last_ts
                         ? t("layout.notebook.summaryCreatedDate", {
-                            date: new Date(displayTs).toLocaleString(),
+                            date: new Date(hit.last_ts).toLocaleString(),
                             defaultValue: "Created at: {{date}}",
                         })
                         : null,
-                };
-            });
+                }));
+            }
 
             setSummaryPeopleResults(peopleHits);
             setSummaryRoomResults(roomHits);
@@ -1393,8 +1444,8 @@ export const MainLayout: React.FC = () => {
                 roomId,
                 type: "messages",
                 limit: 40,
-                fromTs: buildDateRangeIsoStart(summaryStartDate) ?? undefined,
-                toTs: buildDateRangeIsoEnd(summaryEndDate) ?? undefined,
+                fromTs: parseDateTimeInputToIso(summaryStartDate) ?? undefined,
+                toTs: parseDateTimeInputToIso(summaryEndDate) ?? undefined,
             });
 
             const messages: SummaryChatMessage[] = [];
@@ -1455,7 +1506,11 @@ export const MainLayout: React.FC = () => {
         setSummaryJobsLoading(true);
         setSummaryJobsError(null);
         try {
-            const response = await listChatSummaryJobs(hubAccessToken);
+            const response = await listChatSummaryJobs({
+                accessToken: hubAccessToken,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
+            });
             setSummaryJobs(Array.isArray(response.items) ? response.items : []);
         } catch (error) {
             setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list."));
@@ -1463,12 +1518,18 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobsLoading(false);
         }
-    }, [hubAccessToken, t]);
+    }, [hubAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
 
     const hasProcessingSummaryJob = useMemo(
         () => summaryJobs.some((job) => job.status === "processing"),
         [summaryJobs],
     );
+    const summaryConfirmHint = useMemo(() => {
+        if (!summarySelectedTarget) return t("layout.notebook.summaryHintSelectTarget", "Please select a person or room first.");
+        if (!summaryStartDate || !summaryEndDate) return t("layout.notebook.summaryHintSelectTimeRange", "Please select start and end time.");
+        if (summaryStartDate > summaryEndDate) return t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date.");
+        return null;
+    }, [summaryEndDate, summarySelectedTarget, summaryStartDate, t]);
 
     const onStartGenerateSummary = useCallback(async () => {
         if (!hubAccessToken || !summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
@@ -1489,9 +1550,10 @@ export const MainLayout: React.FC = () => {
         setSummaryJobActionBusy(true);
         setSummaryGenerationNotice(t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait."));
         try {
+            const safeTargetLabel = summarySelectedTarget.label.trim() || roomId;
             await createChatSummaryJob({
                 accessToken: hubAccessToken,
-                targetLabel: summarySelectedTarget.label,
+                targetLabel: safeTargetLabel,
                 roomId,
                 fromDate: summaryStartDate,
                 toDate: summaryEndDate,
@@ -1500,6 +1562,8 @@ export const MainLayout: React.FC = () => {
                     ts: item.ts,
                     text: item.translatedText || item.text,
                 })),
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
             });
             await loadSummaryJobs();
             setSummaryDetailTab("summaryList");
@@ -1512,6 +1576,8 @@ export const MainLayout: React.FC = () => {
         hasProcessingSummaryJob,
         hubAccessToken,
         loadSummaryJobs,
+        matrixCredentials?.user_id,
+        matrixHsUrl,
         resolveSummaryTargetRoomId,
         summaryChatMessages,
         summaryEndDate,
@@ -1525,22 +1591,32 @@ export const MainLayout: React.FC = () => {
         if (!hubAccessToken || !id) return;
         setSummaryJobActionBusy(true);
         try {
-            await deleteChatSummaryJob(hubAccessToken, id);
+            await deleteChatSummaryJob({
+                accessToken: hubAccessToken,
+                id,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
+            });
             await loadSummaryJobs();
         } catch (error) {
             setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryDeleteFailed", "Failed to delete summary."));
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, loadSummaryJobs, t]);
+    }, [hubAccessToken, loadSummaryJobs, matrixCredentials?.user_id, matrixHsUrl, t]);
 
     const onDownloadSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken) return;
         setSummaryJobActionBusy(true);
         try {
-            const blob = await downloadChatSummaryJob(hubAccessToken, job.id);
-            const compactStart = String(job.from_date || "").replace(/-/g, "");
-            const compactEnd = String(job.to_date || "").replace(/-/g, "");
+            const blob = await downloadChatSummaryJob({
+                accessToken: hubAccessToken,
+                id: job.id,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
+            });
+            const compactStart = toCompactDateTime(job.from_date);
+            const compactEnd = toCompactDateTime(job.to_date);
             const fileBase = `${job.target_label}聊天室总结${compactStart}${compactEnd}`.replace(/[\\/:*?"<>|]/g, "_");
             const url = URL.createObjectURL(blob);
             const anchor = document.createElement("a");
@@ -1556,7 +1632,56 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, t]);
+    }, [hubAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+
+    const onPreviewSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
+        if (!hubAccessToken || !job?.id) return;
+        setSummaryPreviewLoading(true);
+        setSummaryPreviewError(null);
+        try {
+            const detail = await getChatSummaryJob({
+                accessToken: hubAccessToken,
+                id: job.id,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
+            });
+            setSummaryPreviewJob(detail);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "";
+            const shouldFallbackToDownload = /Cannot GET \/chat\/summary\/jobs\//i.test(message)
+                || /404/.test(message);
+            if (shouldFallbackToDownload) {
+                try {
+                    const blob = await downloadChatSummaryJob({
+                        accessToken: hubAccessToken,
+                        id: job.id,
+                        hsUrl: matrixHsUrl,
+                        matrixUserId: matrixCredentials?.user_id ?? null,
+                    });
+                    const summaryText = await blob.text();
+                    setSummaryPreviewJob({
+                        id: job.id,
+                        target_label: job.target_label,
+                        room_id: job.room_id,
+                        from_date: job.from_date,
+                        to_date: job.to_date,
+                        status: job.status,
+                        created_at: job.created_at,
+                        updated_at: job.updated_at,
+                        summary_text: summaryText,
+                    });
+                } catch (fallbackError) {
+                    setSummaryPreviewError(fallbackError instanceof Error ? fallbackError.message : t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview."));
+                    setSummaryPreviewJob(null);
+                }
+            } else {
+                setSummaryPreviewError(message || t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview."));
+                setSummaryPreviewJob(null);
+            }
+        } finally {
+            setSummaryPreviewLoading(false);
+        }
+    }, [hubAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
 
     useEffect(() => {
         if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
@@ -2463,6 +2588,7 @@ export const MainLayout: React.FC = () => {
                             void loadSummaryChatContent();
                         }}
                         summaryConfirmLoading={summaryContentLoading}
+                        summaryConfirmHint={summaryConfirmHint}
                     />
                 ) : activeTab === "files" ? (
                     <>
@@ -3285,7 +3411,28 @@ export const MainLayout: React.FC = () => {
                                                     {summaryJobsError}
                                                 </div>
                                             ) : null}
-                                            {summaryJobsLoading ? (
+                                            {summaryPreviewJob ? (
+                                                <div className="space-y-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSummaryPreviewJob(null)}
+                                                        className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                                    >
+                                                        {t("layout.notebook.summaryBackToList", "Back to summary list")}
+                                                    </button>
+                                                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
+                                                        <div className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                            {`${summaryPreviewJob.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
+                                                        </div>
+                                                        <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                                                            {`${summaryPreviewJob.from_date} ~ ${summaryPreviewJob.to_date}`}
+                                                        </div>
+                                                        <pre className="max-h-[56vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                                                            {summaryPreviewJob.summary_text || ""}
+                                                        </pre>
+                                                    </div>
+                                                </div>
+                                            ) : summaryJobsLoading ? (
                                                 <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
                                                     {t("layout.notebook.summaryJobsLoading", "Loading summary list...")}
                                                 </div>
@@ -3295,6 +3442,11 @@ export const MainLayout: React.FC = () => {
                                                 </div>
                                             ) : (
                                                 <div className="space-y-2">
+                                                    {summaryPreviewError ? (
+                                                        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                                                            {summaryPreviewError}
+                                                        </div>
+                                                    ) : null}
                                                     {summaryJobs.map((job) => (
                                                         <div
                                                             key={job.id}
@@ -3318,6 +3470,14 @@ export const MainLayout: React.FC = () => {
                                                                 {`${job.from_date} ~ ${job.to_date}`}
                                                             </div>
                                                             <div className="mt-2 flex items-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={summaryPreviewLoading || job.status !== "completed" || !job.has_content}
+                                                                    onClick={() => void onPreviewSummaryJob(job)}
+                                                                    className="rounded-md border border-slate-400 px-2 py-1 text-xs font-semibold text-slate-600 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-500 dark:text-slate-200 dark:enabled:hover:bg-slate-800"
+                                                                >
+                                                                    {t("layout.notebook.summaryPreview", "Preview")}
+                                                                </button>
                                                                 <button
                                                                     type="button"
                                                                     disabled={summaryJobActionBusy || job.status !== "completed" || !job.has_content}
