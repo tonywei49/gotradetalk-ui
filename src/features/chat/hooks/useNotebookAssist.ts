@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import type { NotebookAdapter } from "../../notebook/adapters/types";
 import type { NotebookAssistResponse, NotebookAuthContext } from "../../notebook/types";
@@ -19,13 +19,66 @@ type AssistTrigger =
     | { type: "query"; query: string }
     | { type: "context"; anchorEventId: string; windowSize: number };
 
+type AssistCachePayload = {
+    assistState: "idle" | "loading" | "success" | "error";
+    assistError: string | null;
+    assistOutput: NotebookAssistResponse | null;
+    assistDraft: string;
+    assistCitationsExpanded: boolean;
+    lastAssistTrigger: AssistTrigger | null;
+};
+
+const ASSIST_CACHE_KEY_PREFIX = "gtt_chat_notebook_assist_v1";
+
+function readAssistCache(storageKey: string): AssistCachePayload | null {
+    if (!storageKey || typeof window === "undefined") return null;
+    try {
+        const raw = window.sessionStorage.getItem(storageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<AssistCachePayload>;
+        if (!parsed || typeof parsed !== "object") return null;
+        return {
+            assistState: parsed.assistState === "loading" || parsed.assistState === "success" || parsed.assistState === "error"
+                ? parsed.assistState
+                : "idle",
+            assistError: typeof parsed.assistError === "string" ? parsed.assistError : null,
+            assistOutput: parsed.assistOutput ?? null,
+            assistDraft: typeof parsed.assistDraft === "string" ? parsed.assistDraft : "",
+            assistCitationsExpanded: Boolean(parsed.assistCitationsExpanded),
+            lastAssistTrigger: parsed.lastAssistTrigger ?? null,
+        };
+    } catch {
+        return null;
+    }
+}
+
+function writeAssistCache(storageKey: string, payload: AssistCachePayload): void {
+    if (!storageKey || typeof window === "undefined") return;
+    const isEmpty = payload.assistState === "idle"
+        && !payload.assistError
+        && !payload.assistOutput
+        && !payload.assistDraft
+        && !payload.lastAssistTrigger;
+    if (isEmpty) {
+        window.sessionStorage.removeItem(storageKey);
+        return;
+    }
+    window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
+}
+
 export function useNotebookAssist(params: UseNotebookAssistParams) {
-    const [assistState, setAssistState] = useState<"idle" | "loading" | "success" | "error">("idle");
-    const [assistError, setAssistError] = useState<string | null>(null);
-    const [assistOutput, setAssistOutput] = useState<NotebookAssistResponse | null>(null);
-    const [assistDraft, setAssistDraft] = useState("");
-    const [assistCitationsExpanded, setAssistCitationsExpanded] = useState(false);
-    const [lastAssistTrigger, setLastAssistTrigger] = useState<AssistTrigger | null>(null);
+    const storageKey = useMemo(
+        () => (params.activeRoomId ? `${ASSIST_CACHE_KEY_PREFIX}:${params.activeRoomId}` : ""),
+        [params.activeRoomId],
+    );
+    const resumeInFlightRef = useRef(false);
+    const initialCache = readAssistCache(storageKey);
+    const [assistState, setAssistState] = useState<"idle" | "loading" | "success" | "error">(initialCache?.assistState ?? "idle");
+    const [assistError, setAssistError] = useState<string | null>(initialCache?.assistError ?? null);
+    const [assistOutput, setAssistOutput] = useState<NotebookAssistResponse | null>(initialCache?.assistOutput ?? null);
+    const [assistDraft, setAssistDraft] = useState(initialCache?.assistDraft ?? "");
+    const [assistCitationsExpanded, setAssistCitationsExpanded] = useState(Boolean(initialCache?.assistCitationsExpanded));
+    const [lastAssistTrigger, setLastAssistTrigger] = useState<AssistTrigger | null>(initialCache?.lastAssistTrigger ?? null);
 
     const applyAssistOutput = useCallback((result: NotebookAssistResponse): void => {
         setAssistOutput(result);
@@ -107,6 +160,40 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
         setAssistDraft("");
         setAssistCitationsExpanded(false);
     }, []);
+
+    useEffect(() => {
+        writeAssistCache(storageKey, {
+            assistState,
+            assistError,
+            assistOutput,
+            assistDraft,
+            assistCitationsExpanded,
+            lastAssistTrigger,
+        });
+    }, [assistState, assistError, assistOutput, assistDraft, assistCitationsExpanded, lastAssistTrigger, storageKey]);
+
+    useEffect(() => {
+        if (assistState !== "loading" || !lastAssistTrigger) return;
+        if (resumeInFlightRef.current) return;
+        if (!params.canUseNotebookAssist || !params.notebookAuth || !params.activeRoomId) return;
+        resumeInFlightRef.current = true;
+        const resume = async (): Promise<void> => {
+            if (lastAssistTrigger.type === "query") {
+                await runAssistQuery(lastAssistTrigger.query);
+                return;
+            }
+            await runAssistFromContext(lastAssistTrigger.anchorEventId);
+        };
+        void resume();
+    }, [
+        assistState,
+        lastAssistTrigger,
+        params.canUseNotebookAssist,
+        params.notebookAuth,
+        params.activeRoomId,
+        runAssistQuery,
+        runAssistFromContext,
+    ]);
 
     const assistLowConfidence = useMemo(() => (assistOutput?.confidence ?? 1) < 0.6, [assistOutput?.confidence]);
 

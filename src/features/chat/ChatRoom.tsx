@@ -109,6 +109,7 @@ type MessageBubbleProps = {
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
+const CHAT_COMPOSER_DRAFT_KEY_PREFIX = "gtt_chat_composer_draft_v1";
 const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
 const ROOM_SEARCH_DEBOUNCE_MS = 350;
@@ -745,6 +746,7 @@ export const ChatRoom: React.FC = () => {
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const roomStickBottomRef = useRef<Record<string, boolean>>({});
     const previousRoomIdRef = useRef<string | null>(null);
+    const skipRoomResetOnFirstMountRef = useRef(true);
     const lastReadReceiptEventByRoomRef = useRef<Record<string, string>>({});
     const [composerText, setComposerText] = useState("");
     const [scrollLoading, setScrollLoading] = useState(false);
@@ -807,6 +809,10 @@ export const ChatRoom: React.FC = () => {
     const [assistSending, setAssistSending] = useState(false);
     const [assistEditorRows, setAssistEditorRows] = useState(5);
     const [assistEditorFullscreen, setAssistEditorFullscreen] = useState(false);
+    const composerDraftStorageKey = useMemo(
+        () => (activeRoomId ? `${CHAT_COMPOSER_DRAFT_KEY_PREFIX}:${activeRoomId}` : ""),
+        [activeRoomId],
+    );
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -1004,6 +1010,10 @@ export const ChatRoom: React.FC = () => {
     }, [showActionsMenu]);
 
     useEffect(() => {
+        if (skipRoomResetOnFirstMountRef.current) {
+            skipRoomResetOnFirstMountRef.current = false;
+            return;
+        }
         resetAssist();
         setLastAssistTrigger(null);
         setAssistEditorRows(5);
@@ -1034,6 +1044,33 @@ export const ChatRoom: React.FC = () => {
         document.addEventListener("click", onClickOutside);
         return () => document.removeEventListener("click", onClickOutside);
     }, [showEmojiBoard]);
+
+    useEffect(() => {
+        if (!composerDraftStorageKey) {
+            setComposerText("");
+            return;
+        }
+        try {
+            const cached = window.sessionStorage.getItem(composerDraftStorageKey) || "";
+            setComposerText(cached);
+        } catch {
+            setComposerText("");
+        }
+    }, [composerDraftStorageKey]);
+
+    useEffect(() => {
+        if (!composerDraftStorageKey) return;
+        try {
+            const trimmed = composerText.trim();
+            if (!trimmed) {
+                window.sessionStorage.removeItem(composerDraftStorageKey);
+                return;
+            }
+            window.sessionStorage.setItem(composerDraftStorageKey, composerText);
+        } catch {
+            // ignore storage errors
+        }
+    }, [composerDraftStorageKey, composerText]);
 
     const mergedEvents = useMemo(() => {
         if (!room) return [];
