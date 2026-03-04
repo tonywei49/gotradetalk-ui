@@ -2391,11 +2391,6 @@ export const ChatRoom: React.FC = () => {
                         {t("chat.deprecatedNotice")}
                     </div>
                 )}
-                {isDirectPeerAbsent && (
-                    <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-                        {t("chat.directPeerLeftNotice")}
-                    </div>
-                )}
                 {scrollLoading && (
                     <div className="text-center text-xs text-slate-400 dark:text-slate-500 mb-4">
                         {t("common.loading")}
@@ -2549,6 +2544,11 @@ export const ChatRoom: React.FC = () => {
 
             {/* Composer */}
             <div data-testid="chat-composer" className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800 relative">
+                {isDirectPeerAbsent && (
+                    <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                        {t("chat.directPeerLeftNotice")}
+                    </div>
+                )}
                 {notebookCapabilityError && (
                     <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         <div>{notebookCapabilityError}</div>
