@@ -13,7 +13,7 @@ import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
 import type { ContactSummary } from "../features/rooms/RoomList";
-import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale } from "../api/hub";
+import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale, hubTranslate } from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
@@ -45,6 +45,7 @@ import {
 import {
     chatSearchGlobal,
     ChatSearchError,
+    chatSearchRoom,
     type ChatSearchGlobalResponse,
     type ChatSearchMessageHit,
     type ChatSearchPersonHit,
@@ -81,6 +82,14 @@ type SharedContactRoomEntry = {
     displayName: string;
     memberCount: number;
     lastActive: number;
+};
+
+type SummaryChatMessage = {
+    eventId: string;
+    sender: string;
+    ts: string | null;
+    text: string;
+    translatedText: string;
 };
 
 const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "" }: NavBarItemProps) => (
@@ -237,6 +246,20 @@ function resolveRoomCreatedAt(room: Room): number | null {
     return Number.isFinite(ts) && ts > 0 ? ts : null;
 }
 
+function buildDateRangeIsoStart(dateValue: string): string | null {
+    const trimmed = String(dateValue || "").trim();
+    if (!trimmed) return null;
+    const date = new Date(`${trimmed}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function buildDateRangeIsoEnd(dateValue: string): string | null {
+    const trimmed = String(dateValue || "").trim();
+    if (!trimmed) return null;
+    const date = new Date(`${trimmed}T23:59:59.999`);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function parseJwtSub(token: string | null | undefined): string | null {
     const raw = String(token || "").trim();
     if (!raw) return null;
@@ -328,6 +351,11 @@ export const MainLayout: React.FC = () => {
     const [summaryPeopleResults, setSummaryPeopleResults] = useState<SummarySearchPersonItem[]>([]);
     const [summaryRoomResults, setSummaryRoomResults] = useState<SummarySearchRoomItem[]>([]);
     const [summarySelectedTarget, setSummarySelectedTarget] = useState<SummarySearchTarget | null>(null);
+    const [summaryStartDate, setSummaryStartDate] = useState("");
+    const [summaryEndDate, setSummaryEndDate] = useState("");
+    const [summaryContentLoading, setSummaryContentLoading] = useState(false);
+    const [summaryContentError, setSummaryContentError] = useState<string | null>(null);
+    const [summaryChatMessages, setSummaryChatMessages] = useState<SummaryChatMessage[]>([]);
     const [selectedSharedRoomId, setSelectedSharedRoomId] = useState<string | null>(null);
     const [creatingContactRoom, setCreatingContactRoom] = useState(false);
     const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
@@ -967,6 +995,11 @@ export const MainLayout: React.FC = () => {
     }, [notebookSidebarMode]);
 
     useEffect(() => {
+        setSummaryContentError(null);
+        setSummaryChatMessages([]);
+    }, [summarySelectedTarget, summaryStartDate, summaryEndDate]);
+
+    useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) {
             setAccountAvatarUrl(null);
             return;
@@ -1302,6 +1335,105 @@ export const MainLayout: React.FC = () => {
         }
         void runSummarySearch();
     }, [activeTab, notebookSidebarMode, debouncedSummarySearchQuery, runSummarySearch]);
+
+    const resolveSummaryTargetRoomId = useCallback((target: SummarySearchTarget): string | null => {
+        if (!matrixClient) return null;
+        if (target.type === "room") return target.id;
+        const candidates = matrixClient
+            .getRooms()
+            .filter((room) => {
+                if (room.getMyMembership() !== "join" || room.isSpaceRoom()) return false;
+                const member = room.getMember(target.id);
+                return member?.membership === "join";
+            })
+            .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp());
+        return candidates[0]?.roomId ?? null;
+    }, [matrixClient]);
+
+    const loadSummaryChatContent = useCallback(async () => {
+        if (!summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
+        if (summaryStartDate > summaryEndDate) {
+            setSummaryContentError(t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date."));
+            return;
+        }
+        if (!hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
+            setSummaryContentError(t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching."));
+            return;
+        }
+        const roomId = resolveSummaryTargetRoomId(summarySelectedTarget);
+        if (!roomId) {
+            setSummaryContentError(t("layout.notebook.summaryRoomResolveFailed", "No shared room found for this target."));
+            return;
+        }
+
+        setSummaryContentLoading(true);
+        setSummaryContentError(null);
+        try {
+            const response = await chatSearchRoom({
+                accessToken: hubAccessToken,
+                matrixAccessToken,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials.user_id,
+            }, {
+                roomId,
+                type: "messages",
+                limit: 40,
+                fromTs: buildDateRangeIsoStart(summaryStartDate) ?? undefined,
+                toTs: buildDateRangeIsoEnd(summaryEndDate) ?? undefined,
+            });
+
+            const messages: SummaryChatMessage[] = [];
+            for (const hit of response.message_hits) {
+                const sourceText = String(hit.preview || "").trim();
+                if (!sourceText) continue;
+                let translatedText = sourceText;
+                try {
+                    const translated = await hubTranslate({
+                        accessToken: hubAccessToken,
+                        text: sourceText,
+                        targetLang: chatReceiveLanguage,
+                        roomId,
+                        messageId: hit.event_id,
+                        sourceMatrixUserId: hit.sender || undefined,
+                        hsUrl: matrixHsUrl,
+                        matrixUserId: matrixCredentials.user_id,
+                    });
+                    translatedText = String(translated.translation || "").trim() || sourceText;
+                } catch {
+                    translatedText = sourceText;
+                }
+                messages.push({
+                    eventId: hit.event_id,
+                    sender: formatMatrixUserLocalId(hit.sender) || (hit.sender || "unknown"),
+                    ts: hit.ts || null,
+                    text: sourceText,
+                    translatedText,
+                });
+            }
+            setSummaryChatMessages(messages);
+            setSummaryDetailTab("chatContent");
+        } catch (error) {
+            if (error instanceof ChatSearchError) {
+                setSummaryContentError(error.message || t("layout.notebook.summarySearchFailed", "Chat search failed."));
+            } else {
+                setSummaryContentError(error instanceof Error ? error.message : t("layout.notebook.summarySearchFailed", "Chat search failed."));
+            }
+            setSummaryChatMessages([]);
+        } finally {
+            setSummaryContentLoading(false);
+        }
+    }, [
+        chatReceiveLanguage,
+        hubAccessToken,
+        matrixAccessToken,
+        matrixCredentials?.user_id,
+        matrixHsUrl,
+        resolveSummaryTargetRoomId,
+        summaryEndDate,
+        summarySelectedTarget,
+        summaryStartDate,
+        t,
+    ]);
 
     const openRoomWithOptionalJump = useCallback((roomId: string, eventId?: string | null) => {
         setActiveTab("chat");
@@ -2186,6 +2318,14 @@ export const MainLayout: React.FC = () => {
                         summaryRoomResults={summaryRoomResults}
                         summarySelectedTarget={summarySelectedTarget}
                         onSummarySelectTarget={setSummarySelectedTarget}
+                        summaryStartDate={summaryStartDate}
+                        summaryEndDate={summaryEndDate}
+                        onSummaryStartDateChange={setSummaryStartDate}
+                        onSummaryEndDateChange={setSummaryEndDate}
+                        onSummaryConfirm={() => {
+                            void loadSummaryChatContent();
+                        }}
+                        summaryConfirmLoading={summaryContentLoading}
                     />
                 ) : activeTab === "files" ? (
                     <>
@@ -2948,8 +3088,41 @@ export const MainLayout: React.FC = () => {
                                             {t("layout.notebook.summaryWorkspaceEmpty", "請先在左側選擇人員或聊天室。")}
                                         </div>
                                     ) : summaryDetailTab === "chatContent" ? (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                            {t("layout.notebook.summaryChatContentPlaceholder", "聊天內容區（待開發）")}
+                                        <div className="space-y-3">
+                                            {summaryContentLoading ? (
+                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                                    {t("layout.notebook.summaryLoadingContent", "Loading chat content...")}
+                                                </div>
+                                            ) : summaryContentError ? (
+                                                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                                                    {summaryContentError}
+                                                </div>
+                                            ) : summaryChatMessages.length === 0 ? (
+                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                                    {t("layout.notebook.summaryNoChatContent", "No chat content in the selected range.")}
+                                                </div>
+                                            ) : (
+                                                <div className="max-h-[62vh] overflow-y-auto space-y-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                                                    {summaryChatMessages.map((message) => (
+                                                        <div
+                                                            key={message.eventId}
+                                                            className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950"
+                                                        >
+                                                            <div className="mb-1 flex items-center justify-between gap-2">
+                                                                <div className="truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                                                    {message.sender}
+                                                                </div>
+                                                                <div className="text-[11px] text-slate-400">
+                                                                    {message.ts ? new Date(message.ts).toLocaleString() : ""}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-sm text-slate-800 dark:text-slate-100">
+                                                                {message.translatedText || message.text}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">

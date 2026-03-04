@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { NotebookItem, NotebookListState } from "../types";
 import type { NotebookSourceScope, NotebookViewFilter } from "../useNotebookModule";
 import { useTranslation } from "react-i18next";
@@ -53,6 +52,12 @@ type NotebookSidebarProps = {
     summaryRoomResults: SummarySearchRoomItem[];
     summarySelectedTarget: SummarySearchTarget | null;
     onSummarySelectTarget: (target: SummarySearchTarget) => void;
+    summaryStartDate: string;
+    summaryEndDate: string;
+    onSummaryStartDateChange: (value: string) => void;
+    onSummaryEndDateChange: (value: string) => void;
+    onSummaryConfirm: () => void;
+    summaryConfirmLoading?: boolean;
 };
 
 function indexStateChip(status: NotebookItem["indexStatus"]): string {
@@ -96,10 +101,14 @@ export function NotebookSidebar({
     summaryRoomResults,
     summarySelectedTarget,
     onSummarySelectTarget,
+    summaryStartDate,
+    summaryEndDate,
+    onSummaryStartDateChange,
+    onSummaryEndDateChange,
+    onSummaryConfirm,
+    summaryConfirmLoading = false,
 }: NotebookSidebarProps) {
     const { t } = useTranslation();
-    const [summaryStartDate, setSummaryStartDate] = useState("");
-    const [summaryEndDate, setSummaryEndDate] = useState("");
     const quickFilter: NotebookQuickFilter = showCompanyFilter && sourceScope === "company"
         ? "company"
         : filter === "knowledge"
@@ -323,7 +332,7 @@ export function NotebookSidebar({
                                 <input
                                     type="date"
                                     value={summaryStartDate}
-                                    onChange={(event) => setSummaryStartDate(event.target.value)}
+                                    onChange={(event) => onSummaryStartDateChange(event.target.value)}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                 />
                             </label>
@@ -334,7 +343,7 @@ export function NotebookSidebar({
                                 <input
                                     type="date"
                                     value={summaryEndDate}
-                                    onChange={(event) => setSummaryEndDate(event.target.value)}
+                                    onChange={(event) => onSummaryEndDateChange(event.target.value)}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                 />
                             </label>
@@ -346,18 +355,11 @@ export function NotebookSidebar({
                         )}
                         <button
                             type="button"
-                            disabled={!summarySelectedTarget || !summaryStartDate || !summaryEndDate || hasInvalidDateRange}
-                            onClick={() => {
-                                // Placeholder only: summary task implementation is out of scope.
-                                console.info("[AI Summary Placeholder]", {
-                                    target: summarySelectedTarget,
-                                    startDate: summaryStartDate,
-                                    endDate: summaryEndDate,
-                                });
-                            }}
+                            disabled={summaryConfirmLoading || !summarySelectedTarget || !summaryStartDate || !summaryEndDate || hasInvalidDateRange}
+                            onClick={onSummaryConfirm}
                             className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500"
                         >
-                            {t("layout.notebook.summaryConfirm", "Confirm")}
+                            {summaryConfirmLoading ? t("common.loading", "Loading...") : t("layout.notebook.summaryConfirm", "Confirm")}
                         </button>
                     </div>
                 )}
