@@ -1,3 +1,4 @@
+import { useMemo, useState, type ReactNode } from "react";
 import type { NotebookItem, NotebookListState } from "../types";
 import type { NotebookSourceScope, NotebookViewFilter } from "../useNotebookModule";
 import { useTranslation } from "react-i18next";
@@ -59,6 +60,7 @@ type NotebookSidebarProps = {
     onSummaryConfirm: () => void;
     summaryConfirmLoading?: boolean;
     summaryConfirmHint?: string | null;
+    summaryMobilePanel?: ReactNode;
 };
 
 function indexStateChip(status: NotebookItem["indexStatus"]): string {
@@ -109,6 +111,7 @@ export function NotebookSidebar({
     onSummaryConfirm,
     summaryConfirmLoading = false,
     summaryConfirmHint = null,
+    summaryMobilePanel,
 }: NotebookSidebarProps) {
     const { t } = useTranslation();
     const quickFilter: NotebookQuickFilter = showCompanyFilter && sourceScope === "company"
@@ -120,6 +123,98 @@ export function NotebookSidebar({
                 : "allSources";
     const hasSummaryResults = summaryPeopleResults.length > 0 || summaryRoomResults.length > 0;
     const hasInvalidDateRange = Boolean(summaryStartDate && summaryEndDate && summaryStartDate > summaryEndDate);
+    const [pickerTarget, setPickerTarget] = useState<"start" | "end" | null>(null);
+    const [pickerYear, setPickerYear] = useState<number>(new Date().getFullYear());
+    const [pickerMonth, setPickerMonth] = useState<number>(new Date().getMonth() + 1);
+    const [pickerDay, setPickerDay] = useState<number>(new Date().getDate());
+    const [pickerHour, setPickerHour] = useState<number>(new Date().getHours());
+    const hasSummaryRangeExceeded = (() => {
+        if (!summaryStartDate || !summaryEndDate) return false;
+        const start = new Date(summaryStartDate).getTime();
+        const end = new Date(summaryEndDate).getTime();
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return false;
+        return end - start > 72 * 60 * 60 * 1000;
+    })();
+    const normalizeToHour = (value: string): string => {
+        const trimmed = String(value || "").trim();
+        if (!trimmed) return "";
+        const parsed = new Date(trimmed);
+        if (Number.isNaN(parsed.getTime())) return "";
+        const year = parsed.getFullYear();
+        const month = String(parsed.getMonth() + 1).padStart(2, "0");
+        const day = String(parsed.getDate()).padStart(2, "0");
+        const hour = String(parsed.getHours()).padStart(2, "0");
+        return `${year}-${month}-${day}T${hour}:00`;
+    };
+    const parseDateTimeValue = (value: string): { year: number; month: number; day: number; hour: number } | null => {
+        const normalized = normalizeToHour(value);
+        if (!normalized) return null;
+        const [datePart, timePart] = normalized.split("T");
+        if (!datePart || !timePart) return null;
+        const [yearText, monthText, dayText] = datePart.split("-");
+        const hourText = timePart.slice(0, 2);
+        const year = Number(yearText);
+        const month = Number(monthText);
+        const day = Number(dayText);
+        const hour = Number(hourText);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(hour)) return null;
+        return { year, month, day, hour };
+    };
+    const formatSummaryDateTime = (value: string): string => {
+        const parsed = parseDateTimeValue(value);
+        if (!parsed) return t("layout.notebook.summaryDateTimePlaceholder", "Tap to pick date/time");
+        const year = String(parsed.year);
+        const month = String(parsed.month).padStart(2, "0");
+        const day = String(parsed.day).padStart(2, "0");
+        const hour = String(parsed.hour).padStart(2, "0");
+        return `${year}/${month}/${day} ${hour}:00`;
+    };
+    const daysInMonth = (year: number, month: number): number => {
+        return new Date(year, month, 0).getDate();
+    };
+    const pickerYears = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 7 }, (_, index) => currentYear - 2 + index);
+    }, []);
+    const pickerMonths = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), []);
+    const pickerHours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
+    const pickerDays = useMemo(
+        () => Array.from({ length: daysInMonth(pickerYear, pickerMonth) }, (_, i) => i + 1),
+        [pickerYear, pickerMonth],
+    );
+    const openPicker = (target: "start" | "end"): void => {
+        const source = target === "start" ? summaryStartDate : summaryEndDate;
+        const parsed = parseDateTimeValue(source);
+        const base = parsed ?? (() => {
+            const now = new Date();
+            return {
+                year: now.getFullYear(),
+                month: now.getMonth() + 1,
+                day: now.getDate(),
+                hour: now.getHours(),
+            };
+        })();
+        setPickerYear(base.year);
+        setPickerMonth(base.month);
+        setPickerDay(base.day);
+        setPickerHour(base.hour);
+        setPickerTarget(target);
+    };
+    const confirmPicker = (): void => {
+        if (!pickerTarget) return;
+        const safeDay = Math.min(pickerDay, daysInMonth(pickerYear, pickerMonth));
+        const year = String(pickerYear).padStart(4, "0");
+        const month = String(pickerMonth).padStart(2, "0");
+        const day = String(safeDay).padStart(2, "0");
+        const hour = String(pickerHour).padStart(2, "0");
+        const value = `${year}-${month}-${day}T${hour}:00`;
+        if (pickerTarget === "start") {
+            onSummaryStartDateChange(value);
+        } else {
+            onSummaryEndDateChange(value);
+        }
+        setPickerTarget(null);
+    };
 
     const applyQuickFilter = (next: NotebookQuickFilter): void => {
         if (next === "allSources") {
@@ -335,23 +430,25 @@ export function NotebookSidebar({
                                 <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
                                     {t("layout.notebook.summaryStartDate", "Start time")}
                                 </div>
-                                <input
-                                    type="datetime-local"
-                                    value={summaryStartDate}
-                                    onChange={(event) => onSummaryStartDateChange(event.target.value)}
-                                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                />
+                                <button
+                                    type="button"
+                                    onClick={() => openPicker("start")}
+                                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-base font-semibold leading-tight text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                >
+                                    {formatSummaryDateTime(summaryStartDate)}
+                                </button>
                             </label>
                             <label className="block">
                                 <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
                                     {t("layout.notebook.summaryEndDate", "End time")}
                                 </div>
-                                <input
-                                    type="datetime-local"
-                                    value={summaryEndDate}
-                                    onChange={(event) => onSummaryEndDateChange(event.target.value)}
-                                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                />
+                                <button
+                                    type="button"
+                                    onClick={() => openPicker("end")}
+                                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-base font-semibold leading-tight text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                >
+                                    {formatSummaryDateTime(summaryEndDate)}
+                                </button>
                             </label>
                         </div>
                         {hasInvalidDateRange && (
@@ -359,17 +456,124 @@ export function NotebookSidebar({
                                 {t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date.")}
                             </div>
                         )}
-                        {!hasInvalidDateRange && summaryConfirmHint ? (
+                        {!hasInvalidDateRange && hasSummaryRangeExceeded && (
+                            <div className="text-xs text-rose-500">
+                                {t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days.")}
+                            </div>
+                        )}
+                        {!hasInvalidDateRange && !hasSummaryRangeExceeded && summaryConfirmHint ? (
                             <div className="text-xs text-slate-500 dark:text-slate-400">{summaryConfirmHint}</div>
                         ) : null}
-                        <button
-                            type="button"
-                            disabled={summaryConfirmLoading || !summarySelectedTarget || !summaryStartDate || !summaryEndDate || hasInvalidDateRange}
-                            onClick={onSummaryConfirm}
-                            className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500"
-                        >
-                            {summaryConfirmLoading ? t("common.loading", "Loading...") : t("layout.notebook.summaryConfirm", "Confirm")}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                disabled={summaryConfirmLoading || !summarySelectedTarget || !summaryStartDate || !summaryEndDate || hasInvalidDateRange || hasSummaryRangeExceeded}
+                                onClick={onSummaryConfirm}
+                                className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500"
+                            >
+                                {summaryConfirmLoading ? t("common.loading", "Loading...") : t("layout.notebook.summaryConfirm", "Confirm")}
+                            </button>
+                            <button
+                                type="button"
+                                aria-label={t("layout.notebook.summaryRangeHelp", "Summary range limit: up to 3 days.")}
+                                title={t("layout.notebook.summaryRangeHelp", "Summary range limit: up to 3 days.")}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                                ?
+                            </button>
+                        </div>
+                        {summaryMobilePanel ? (
+                            <div className="pt-2 lg:hidden">
+                                {summaryMobilePanel}
+                            </div>
+                        ) : null}
+                        {pickerTarget ? (
+                            <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-3 sm:items-center sm:justify-center">
+                                <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-4 text-slate-100 shadow-2xl">
+                                    <div className="mb-3 text-sm font-semibold">
+                                        {pickerTarget === "start"
+                                            ? t("layout.notebook.summaryStartDate", "Start time")
+                                            : t("layout.notebook.summaryEndDate", "End time")}
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        <div className="max-h-48 overflow-y-auto gt-visible-scrollbar rounded-lg border border-slate-700 bg-slate-950 p-1">
+                                            {pickerYears.map((year) => (
+                                                <button
+                                                    key={`year-${year}`}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nextYear = year;
+                                                        const maxDay = daysInMonth(nextYear, pickerMonth);
+                                                        setPickerYear(nextYear);
+                                                        setPickerDay((prev) => Math.min(prev, maxDay));
+                                                    }}
+                                                    className={`block w-full rounded-md px-2 py-1 text-sm ${year === pickerYear ? "bg-emerald-500 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+                                                >
+                                                    {year}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto gt-visible-scrollbar rounded-lg border border-slate-700 bg-slate-950 p-1">
+                                            {pickerMonths.map((month) => (
+                                                <button
+                                                    key={`month-${month}`}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nextMonth = month;
+                                                        const maxDay = daysInMonth(pickerYear, nextMonth);
+                                                        setPickerMonth(nextMonth);
+                                                        setPickerDay((prev) => Math.min(prev, maxDay));
+                                                    }}
+                                                    className={`block w-full rounded-md px-2 py-1 text-sm ${month === pickerMonth ? "bg-emerald-500 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+                                                >
+                                                    {String(month).padStart(2, "0")}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto gt-visible-scrollbar rounded-lg border border-slate-700 bg-slate-950 p-1">
+                                            {pickerDays.map((day) => (
+                                                <button
+                                                    key={`day-${day}`}
+                                                    type="button"
+                                                    onClick={() => setPickerDay(day)}
+                                                    className={`block w-full rounded-md px-2 py-1 text-sm ${day === pickerDay ? "bg-emerald-500 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+                                                >
+                                                    {String(day).padStart(2, "0")}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto gt-visible-scrollbar rounded-lg border border-slate-700 bg-slate-950 p-1">
+                                            {pickerHours.map((hour) => (
+                                                <button
+                                                    key={`hour-${hour}`}
+                                                    type="button"
+                                                    onClick={() => setPickerHour(hour)}
+                                                    className={`block w-full rounded-md px-2 py-1 text-sm ${hour === pickerHour ? "bg-emerald-500 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+                                                >
+                                                    {`${String(hour).padStart(2, "0")}:00`}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 flex justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPickerTarget(null)}
+                                            className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+                                        >
+                                            {t("common.cancel", "Cancel")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={confirmPicker}
+                                            className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400"
+                                        >
+                                            {t("common.confirm", "Confirm")}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
                     </div>
                 )}
                 {mode === "notebook" && listState === "loading" && (

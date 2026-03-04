@@ -62,3 +62,13 @@ input {
     background-color: #475569;
     border-color: #0f172a;
 }
+
+/* Increase native datetime picker footprint on Chromium-based desktop/webview. */
+.summary-datetime-input {
+    zoom: 1.1;
+}
+
+.summary-datetime-input::-webkit-calendar-picker-indicator {
+    transform: scale(1.25);
+    transform-origin: center;
+}

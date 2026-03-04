@@ -21,7 +21,6 @@ import {
     hubGetMe,
     hubMeUpdateLocale,
     hubMeUpdateTranslationLocale,
-    hubTranslate,
     listChatSummaryJobs,
     type ChatSummaryJobDetail,
     type ChatSummaryJobItem,
@@ -94,14 +93,6 @@ type SharedContactRoomEntry = {
     displayName: string;
     memberCount: number;
     lastActive: number;
-};
-
-type SummaryChatMessage = {
-    eventId: string;
-    sender: string;
-    ts: string | null;
-    text: string;
-    translatedText: string;
 };
 
 const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "" }: NavBarItemProps) => (
@@ -268,6 +259,19 @@ function parseDateTimeInputToIso(value: string): string | null {
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+const SUMMARY_MAX_RANGE_MS = 72 * 60 * 60 * 1000;
+
+function isSummaryRangeExceeded(startValue: string, endValue: string): boolean {
+    const startIso = parseDateTimeInputToIso(startValue);
+    const endIso = parseDateTimeInputToIso(endValue);
+    if (!startIso || !endIso) return false;
+    const startMs = Date.parse(startIso);
+    const endMs = Date.parse(endIso);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
+    if (endMs < startMs) return false;
+    return endMs - startMs > SUMMARY_MAX_RANGE_MS;
+}
+
 function toCompactDateTime(value: string): string {
     const iso = parseDateTimeInputToIso(value);
     if (!iso) return "";
@@ -368,8 +372,6 @@ export const MainLayout: React.FC = () => {
     const [summaryStartDate, setSummaryStartDate] = useState("");
     const [summaryEndDate, setSummaryEndDate] = useState("");
     const [summaryContentLoading, setSummaryContentLoading] = useState(false);
-    const [summaryContentError, setSummaryContentError] = useState<string | null>(null);
-    const [summaryChatMessages, setSummaryChatMessages] = useState<SummaryChatMessage[]>([]);
     const [summaryJobs, setSummaryJobs] = useState<ChatSummaryJobItem[]>([]);
     const [summaryJobsLoading, setSummaryJobsLoading] = useState(false);
     const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
@@ -386,7 +388,6 @@ export const MainLayout: React.FC = () => {
         "none" | "chat-language" | "translation-default"
     >("none");
     const [notebookSidebarMode, setNotebookSidebarMode] = useState<"notebook" | "chatSummary">("notebook");
-    const [summaryDetailTab, setSummaryDetailTab] = useState<"chatContent" | "summaryList">("chatContent");
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
@@ -1012,21 +1013,9 @@ export const MainLayout: React.FC = () => {
     }, [activeTab]);
 
     useEffect(() => {
-        if (notebookSidebarMode !== "chatSummary") return;
-        setSummaryDetailTab("chatContent");
-    }, [notebookSidebarMode]);
-
-    useEffect(() => {
-        setSummaryContentError(null);
-        setSummaryChatMessages([]);
+        setSummaryPreviewJob(null);
+        setSummaryPreviewError(null);
     }, [summarySelectedTarget, summaryStartDate, summaryEndDate]);
-
-    useEffect(() => {
-        if (summaryDetailTab !== "summaryList") {
-            setSummaryPreviewJob(null);
-            setSummaryPreviewError(null);
-        }
-    }, [summaryDetailTab]);
 
     useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) {
@@ -1416,91 +1405,6 @@ export const MainLayout: React.FC = () => {
         return candidates[0]?.roomId ?? null;
     }, [matrixClient]);
 
-    const loadSummaryChatContent = useCallback(async () => {
-        if (!summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
-        if (summaryStartDate > summaryEndDate) {
-            setSummaryContentError(t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date."));
-            return;
-        }
-        if (!hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
-            setSummaryContentError(t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching."));
-            return;
-        }
-        const roomId = resolveSummaryTargetRoomId(summarySelectedTarget);
-        if (!roomId) {
-            setSummaryContentError(t("layout.notebook.summaryRoomResolveFailed", "No shared room found for this target."));
-            return;
-        }
-
-        setSummaryContentLoading(true);
-        setSummaryContentError(null);
-        try {
-            const response = await chatSearchRoom({
-                accessToken: hubAccessToken,
-                matrixAccessToken,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials.user_id,
-            }, {
-                roomId,
-                type: "messages",
-                limit: 40,
-                fromTs: parseDateTimeInputToIso(summaryStartDate) ?? undefined,
-                toTs: parseDateTimeInputToIso(summaryEndDate) ?? undefined,
-            });
-
-            const messages: SummaryChatMessage[] = [];
-            for (const hit of response.message_hits) {
-                const sourceText = String(hit.preview || "").trim();
-                if (!sourceText) continue;
-                let translatedText = sourceText;
-                try {
-                    const translated = await hubTranslate({
-                        accessToken: hubAccessToken,
-                        text: sourceText,
-                        targetLang: chatReceiveLanguage,
-                        roomId,
-                        messageId: hit.event_id,
-                        sourceMatrixUserId: hit.sender || undefined,
-                        hsUrl: matrixHsUrl,
-                        matrixUserId: matrixCredentials.user_id,
-                    });
-                    translatedText = String(translated.translation || "").trim() || sourceText;
-                } catch {
-                    translatedText = sourceText;
-                }
-                messages.push({
-                    eventId: hit.event_id,
-                    sender: formatMatrixUserLocalId(hit.sender) || (hit.sender || "unknown"),
-                    ts: hit.ts || null,
-                    text: sourceText,
-                    translatedText,
-                });
-            }
-            setSummaryChatMessages(messages);
-            setSummaryDetailTab("chatContent");
-        } catch (error) {
-            if (error instanceof ChatSearchError) {
-                setSummaryContentError(error.message || t("layout.notebook.summarySearchFailed", "Chat search failed."));
-            } else {
-                setSummaryContentError(error instanceof Error ? error.message : t("layout.notebook.summarySearchFailed", "Chat search failed."));
-            }
-            setSummaryChatMessages([]);
-        } finally {
-            setSummaryContentLoading(false);
-        }
-    }, [
-        chatReceiveLanguage,
-        hubAccessToken,
-        matrixAccessToken,
-        matrixCredentials?.user_id,
-        matrixHsUrl,
-        resolveSummaryTargetRoomId,
-        summaryEndDate,
-        summarySelectedTarget,
-        summaryStartDate,
-        t,
-    ]);
-
     const loadSummaryJobs = useCallback(async () => {
         if (!hubAccessToken) return;
         setSummaryJobsLoading(true);
@@ -1524,21 +1428,38 @@ export const MainLayout: React.FC = () => {
         () => summaryJobs.some((job) => job.status === "processing"),
         [summaryJobs],
     );
+    useEffect(() => {
+        const generatingText = t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait.");
+        if (hasProcessingSummaryJob) return;
+        if (summaryGenerationNotice !== generatingText) return;
+        const timer = window.setTimeout(() => {
+            setSummaryGenerationNotice(null);
+        }, 1500);
+        return () => window.clearTimeout(timer);
+    }, [hasProcessingSummaryJob, summaryGenerationNotice, t]);
+
     const summaryConfirmHint = useMemo(() => {
         if (!summarySelectedTarget) return t("layout.notebook.summaryHintSelectTarget", "Please select a person or room first.");
         if (!summaryStartDate || !summaryEndDate) return t("layout.notebook.summaryHintSelectTimeRange", "Please select start and end time.");
         if (summaryStartDate > summaryEndDate) return t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date.");
+        if (isSummaryRangeExceeded(summaryStartDate, summaryEndDate)) {
+            return t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days.");
+        }
         return null;
     }, [summaryEndDate, summarySelectedTarget, summaryStartDate, t]);
 
     const onStartGenerateSummary = useCallback(async () => {
         if (!hubAccessToken || !summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
-        if (hasProcessingSummaryJob || summaryJobActionBusy) {
-            setSummaryGenerationNotice(t("layout.notebook.summaryAlreadyGenerating", "A summary is already generating. Please wait."));
+        if (summaryStartDate > summaryEndDate) {
+            setSummaryGenerationNotice(t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date."));
             return;
         }
-        if (summaryChatMessages.length === 0) {
-            setSummaryGenerationNotice(t("layout.notebook.summaryNoChatContent", "No chat content in the selected range."));
+        if (isSummaryRangeExceeded(summaryStartDate, summaryEndDate)) {
+            setSummaryGenerationNotice(t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days."));
+            return;
+        }
+        if (hasProcessingSummaryJob || summaryJobActionBusy) {
+            setSummaryGenerationNotice(t("layout.notebook.summaryAlreadyGenerating", "A summary is already generating. Please wait."));
             return;
         }
         const roomId = resolveSummaryTargetRoomId(summarySelectedTarget);
@@ -1546,10 +1467,38 @@ export const MainLayout: React.FC = () => {
             setSummaryGenerationNotice(t("layout.notebook.summaryRoomResolveFailed", "No shared room found for this target."));
             return;
         }
+        if (!matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
+            setSummaryGenerationNotice(t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching."));
+            return;
+        }
 
+        setSummaryContentLoading(true);
         setSummaryJobActionBusy(true);
         setSummaryGenerationNotice(t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait."));
         try {
+            const searchResponse = await chatSearchRoom({
+                accessToken: hubAccessToken,
+                matrixAccessToken,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials.user_id,
+            }, {
+                roomId,
+                type: "messages",
+                limit: 120,
+                fromTs: parseDateTimeInputToIso(summaryStartDate) ?? undefined,
+                toTs: parseDateTimeInputToIso(summaryEndDate) ?? undefined,
+            });
+            const messages = searchResponse.message_hits
+                .map((item) => ({
+                    sender: formatMatrixUserLocalId(item.sender) || (item.sender || "unknown"),
+                    ts: item.ts || null,
+                    text: String(item.preview || "").trim(),
+                }))
+                .filter((item) => item.text);
+            if (messages.length === 0) {
+                setSummaryGenerationNotice(t("layout.notebook.summaryNoChatContent", "No chat content in the selected range."));
+                return;
+            }
             const safeTargetLabel = summarySelectedTarget.label.trim() || roomId;
             await createChatSummaryJob({
                 accessToken: hubAccessToken,
@@ -1557,33 +1506,29 @@ export const MainLayout: React.FC = () => {
                 roomId,
                 fromDate: summaryStartDate,
                 toDate: summaryEndDate,
-                messages: summaryChatMessages.map((item) => ({
-                    sender: item.sender,
-                    ts: item.ts,
-                    text: item.translatedText || item.text,
-                })),
+                messages,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
             });
             await loadSummaryJobs();
-            setSummaryDetailTab("summaryList");
         } catch (error) {
             setSummaryGenerationNotice(error instanceof Error ? error.message : t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation."));
         } finally {
+            setSummaryContentLoading(false);
             setSummaryJobActionBusy(false);
         }
     }, [
-        hasProcessingSummaryJob,
         hubAccessToken,
-        loadSummaryJobs,
-        matrixCredentials?.user_id,
-        matrixHsUrl,
-        resolveSummaryTargetRoomId,
-        summaryChatMessages,
-        summaryEndDate,
-        summaryJobActionBusy,
         summarySelectedTarget,
         summaryStartDate,
+        summaryEndDate,
+        hasProcessingSummaryJob,
+        summaryJobActionBusy,
+        resolveSummaryTargetRoomId,
+        matrixAccessToken,
+        matrixHsUrl,
+        matrixCredentials?.user_id,
+        loadSummaryJobs,
         t,
     ]);
 
@@ -2240,6 +2185,114 @@ export const MainLayout: React.FC = () => {
         setFileBatchDeleteProgress({ done: 0, total: 0 });
     };
 
+    const summaryWorkspacePanel = (
+        <div className="mx-auto w-full max-w-5xl">
+            <div className="mb-4 text-base font-semibold text-slate-800 dark:text-slate-100">
+                {t("layout.notebook.summaryWorkspaceTitle", "AI Chat Summary")}
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-950">
+                {summaryGenerationNotice ? (
+                    <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+                        {summaryGenerationNotice}
+                    </div>
+                ) : null}
+                {summaryJobsError ? (
+                    <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                        {summaryJobsError}
+                    </div>
+                ) : null}
+                {summaryPreviewJob ? (
+                    <div className="space-y-2">
+                        <button
+                            type="button"
+                            onClick={() => setSummaryPreviewJob(null)}
+                            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                        >
+                            {t("layout.notebook.summaryBackToList", "Back to summary list")}
+                        </button>
+                        <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
+                            <div className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                {`${summaryPreviewJob.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
+                            </div>
+                            <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                                {`${summaryPreviewJob.from_date} ~ ${summaryPreviewJob.to_date}`}
+                            </div>
+                            <pre className="max-h-[56vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                                {summaryPreviewJob.summary_text || ""}
+                            </pre>
+                        </div>
+                    </div>
+                ) : summaryJobsLoading ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                        {t("layout.notebook.summaryJobsLoading", "Loading summary list...")}
+                    </div>
+                ) : summaryJobs.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                        {t("layout.notebook.summaryJobsEmpty", "No generated summary yet.")}
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {summaryPreviewError ? (
+                            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                                {summaryPreviewError}
+                            </div>
+                        ) : null}
+                        {summaryJobs.map((job) => (
+                            <div
+                                key={job.id}
+                                className="rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900"
+                            >
+                                <div className="mb-1 flex items-center justify-between gap-3">
+                                    <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                        {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
+                                    </div>
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                        job.status === "completed"
+                                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                            : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+                                    }`}>
+                                        {job.status === "completed"
+                                            ? t("layout.notebook.summaryStatusCompleted", "Completed")
+                                            : t("layout.notebook.summaryStatusProcessing", "Processing")}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                                    {`${job.from_date} ~ ${job.to_date}`}
+                                </div>
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={summaryPreviewLoading || job.status !== "completed" || !job.has_content}
+                                        onClick={() => void onPreviewSummaryJob(job)}
+                                        className="rounded-md border border-slate-400 px-2 py-1 text-xs font-semibold text-slate-600 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-500 dark:text-slate-200 dark:enabled:hover:bg-slate-800"
+                                    >
+                                        {t("layout.notebook.summaryPreview", "Preview")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={summaryJobActionBusy || job.status !== "completed" || !job.has_content}
+                                        onClick={() => void onDownloadSummaryJob(job)}
+                                        className="rounded-md border border-emerald-500 px-2 py-1 text-xs font-semibold text-emerald-700 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400 dark:text-emerald-300 dark:enabled:hover:bg-emerald-900/20"
+                                    >
+                                        {t("layout.notebook.summaryDownload", "Download")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={summaryJobActionBusy}
+                                        onClick={() => void onDeleteSummaryJob(job.id)}
+                                        className="rounded-md border border-rose-400 px-2 py-1 text-xs font-semibold text-rose-600 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400 dark:text-rose-300 dark:enabled:hover:bg-rose-900/20"
+                                    >
+                                        {t("layout.notebook.summaryDelete", "Delete")}
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+
     return (
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
             {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
@@ -2585,10 +2638,11 @@ export const MainLayout: React.FC = () => {
                         onSummaryStartDateChange={setSummaryStartDate}
                         onSummaryEndDateChange={setSummaryEndDate}
                         onSummaryConfirm={() => {
-                            void loadSummaryChatContent();
+                            void onStartGenerateSummary();
                         }}
                         summaryConfirmLoading={summaryContentLoading}
                         summaryConfirmHint={summaryConfirmHint}
+                        summaryMobilePanel={notebookSidebarMode === "chatSummary" ? summaryWorkspacePanel : null}
                     />
                 ) : activeTab === "files" ? (
                     <>
@@ -3316,192 +3370,8 @@ export const MainLayout: React.FC = () => {
                 ) : activeTab === "notebook" ? (
                     notebookSidebarMode === "chatSummary" ? (
                         <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar bg-white p-6 dark:bg-slate-900">
-                            <div className="mx-auto w-full max-w-5xl">
-                                <div className="mb-4 text-base font-semibold text-slate-800 dark:text-slate-100">
-                                    {t("layout.notebook.summaryWorkspaceTitle", "AI Chat Summary")}
-                                </div>
-                                <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2 dark:border-slate-700 dark:bg-slate-950">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSummaryDetailTab("chatContent")}
-                                        className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                                            summaryDetailTab === "chatContent"
-                                                ? "bg-[#2F5C56] text-white dark:bg-emerald-500"
-                                                : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"
-                                        }`}
-                                    >
-                                        {t("layout.notebook.summaryDetailTabChatContent", "聊天內容")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setSummaryDetailTab("summaryList")}
-                                        className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                                            summaryDetailTab === "summaryList"
-                                                ? "bg-[#2F5C56] text-white dark:bg-emerald-500"
-                                                : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"
-                                        }`}
-                                    >
-                                        {t("layout.notebook.summaryDetailTabSummaryList", "總結清單")}
-                                    </button>
-                                </div>
-
-                                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-950">
-                                    {!summarySelectedTarget ? (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                            {t("layout.notebook.summaryWorkspaceEmpty", "請先在左側選擇人員或聊天室。")}
-                                        </div>
-                                    ) : summaryDetailTab === "chatContent" ? (
-                                        <div className="space-y-3">
-                                            {summaryGenerationNotice ? (
-                                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-                                                    {summaryGenerationNotice}
-                                                </div>
-                                            ) : null}
-                                            {summaryContentLoading ? (
-                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                                    {t("layout.notebook.summaryLoadingContent", "Loading chat content...")}
-                                                </div>
-                                            ) : summaryContentError ? (
-                                                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                                                    {summaryContentError}
-                                                </div>
-                                            ) : summaryChatMessages.length === 0 ? (
-                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                                    {t("layout.notebook.summaryNoChatContent", "No chat content in the selected range.")}
-                                                </div>
-                                            ) : (
-                                                <div className="max-h-[62vh] overflow-y-auto space-y-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                                                    {summaryChatMessages.map((message) => (
-                                                        <div
-                                                            key={message.eventId}
-                                                            className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950"
-                                                        >
-                                                            <div className="mb-1 flex items-center justify-between gap-2">
-                                                                <div className="truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                                                    {message.sender}
-                                                                </div>
-                                                                <div className="text-[11px] text-slate-400">
-                                                                    {message.ts ? new Date(message.ts).toLocaleString() : ""}
-                                                                </div>
-                                                            </div>
-                                                            <div className="text-sm text-slate-800 dark:text-slate-100">
-                                                                {message.translatedText || message.text}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            <div className="flex justify-end">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => void onStartGenerateSummary()}
-                                                    disabled={summaryJobActionBusy || summaryContentLoading || summaryChatMessages.length === 0 || hasProcessingSummaryJob}
-                                                    className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white shadow-sm enabled:hover:bg-[#244a45] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500 dark:enabled:hover:bg-emerald-400"
-                                                >
-                                                    {hasProcessingSummaryJob
-                                                        ? t("layout.notebook.summaryGenerating", "Generating...")
-                                                        : t("layout.notebook.summaryStartGenerate", "Start generate summary")}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {summaryJobsError ? (
-                                                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-                                                    {summaryJobsError}
-                                                </div>
-                                            ) : null}
-                                            {summaryPreviewJob ? (
-                                                <div className="space-y-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setSummaryPreviewJob(null)}
-                                                        className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
-                                                    >
-                                                        {t("layout.notebook.summaryBackToList", "Back to summary list")}
-                                                    </button>
-                                                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
-                                                        <div className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                            {`${summaryPreviewJob.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
-                                                        </div>
-                                                        <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-                                                            {`${summaryPreviewJob.from_date} ~ ${summaryPreviewJob.to_date}`}
-                                                        </div>
-                                                        <pre className="max-h-[56vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                                                            {summaryPreviewJob.summary_text || ""}
-                                                        </pre>
-                                                    </div>
-                                                </div>
-                                            ) : summaryJobsLoading ? (
-                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                                    {t("layout.notebook.summaryJobsLoading", "Loading summary list...")}
-                                                </div>
-                                            ) : summaryJobs.length === 0 ? (
-                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                                    {t("layout.notebook.summaryJobsEmpty", "No generated summary yet.")}
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    {summaryPreviewError ? (
-                                                        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-                                                            {summaryPreviewError}
-                                                        </div>
-                                                    ) : null}
-                                                    {summaryJobs.map((job) => (
-                                                        <div
-                                                            key={job.id}
-                                                            className="rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900"
-                                                        >
-                                                            <div className="mb-1 flex items-center justify-between gap-3">
-                                                                <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                                    {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
-                                                                </div>
-                                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                                                    job.status === "completed"
-                                                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                                                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                                                                }`}>
-                                                                    {job.status === "completed"
-                                                                        ? t("layout.notebook.summaryStatusCompleted", "Completed")
-                                                                        : t("layout.notebook.summaryStatusProcessing", "Processing")}
-                                                                </span>
-                                                            </div>
-                                                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                                {`${job.from_date} ~ ${job.to_date}`}
-                                                            </div>
-                                                            <div className="mt-2 flex items-center gap-2">
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={summaryPreviewLoading || job.status !== "completed" || !job.has_content}
-                                                                    onClick={() => void onPreviewSummaryJob(job)}
-                                                                    className="rounded-md border border-slate-400 px-2 py-1 text-xs font-semibold text-slate-600 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-500 dark:text-slate-200 dark:enabled:hover:bg-slate-800"
-                                                                >
-                                                                    {t("layout.notebook.summaryPreview", "Preview")}
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={summaryJobActionBusy || job.status !== "completed" || !job.has_content}
-                                                                    onClick={() => void onDownloadSummaryJob(job)}
-                                                                    className="rounded-md border border-emerald-500 px-2 py-1 text-xs font-semibold text-emerald-700 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400 dark:text-emerald-300 dark:enabled:hover:bg-emerald-900/20"
-                                                                >
-                                                                    {t("layout.notebook.summaryDownload", "Download")}
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={summaryJobActionBusy}
-                                                                    onClick={() => void onDeleteSummaryJob(job.id)}
-                                                                    className="rounded-md border border-rose-400 px-2 py-1 text-xs font-semibold text-rose-600 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400 dark:text-rose-300 dark:enabled:hover:bg-rose-900/20"
-                                                                >
-                                                                    {t("layout.notebook.summaryDelete", "Delete")}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
+                            <div className="hidden lg:block">
+                                {summaryWorkspacePanel}
                             </div>
                         </div>
                     ) : (
