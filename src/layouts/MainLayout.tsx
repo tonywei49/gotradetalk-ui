@@ -1275,7 +1275,37 @@ export const MainLayout: React.FC = () => {
                 q,
                 limit: 20,
             });
-            const peopleHits: SummarySearchPersonItem[] = response.people_hits
+            const normalizedQuery = q.trim().toLowerCase();
+            const normalizedQueryNoAt = normalizedQuery.startsWith("@") ? normalizedQuery.slice(1) : normalizedQuery;
+            const queryLocalId = normalizedQueryNoAt.split(":")[0] || normalizedQueryNoAt;
+
+            const scorePersonMatch = (candidate: {
+                id: string;
+                label?: string | null;
+                userLocalId?: string | null;
+                matrixUserId?: string | null;
+            }): number => {
+                const matrixUserId = String(candidate.matrixUserId || candidate.id || "").toLowerCase();
+                const matrixUserIdNoAt = matrixUserId.startsWith("@") ? matrixUserId.slice(1) : matrixUserId;
+                const localId = String(candidate.userLocalId || formatMatrixUserLocalId(candidate.matrixUserId || candidate.id) || "").toLowerCase();
+                const label = String(candidate.label || "").toLowerCase();
+
+                if (matrixUserId === normalizedQuery || matrixUserIdNoAt === normalizedQueryNoAt || localId === queryLocalId) {
+                    return 3;
+                }
+                if (label === normalizedQuery) return 2;
+                if (
+                    localId.includes(queryLocalId)
+                    || matrixUserId.includes(normalizedQuery)
+                    || matrixUserIdNoAt.includes(normalizedQueryNoAt)
+                    || label.includes(normalizedQuery)
+                ) {
+                    return 1;
+                }
+                return 0;
+            };
+
+            const apiPeopleHits: SummarySearchPersonItem[] = response.people_hits
                 .filter((hit) => Boolean(hit.matrix_user_id))
                 .map((hit) => {
                     const matrixUserId = hit.matrix_user_id as string;
@@ -1285,7 +1315,57 @@ export const MainLayout: React.FC = () => {
                         meta: hit.company_name || matrixUserId,
                     };
                 });
-            const queryLower = q.toLowerCase();
+
+            const mergedPeopleMap = new Map<string, SummarySearchPersonItem>();
+            for (const item of apiPeopleHits) {
+                mergedPeopleMap.set(item.id, item);
+            }
+
+            if (matrixClient) {
+                const myUserId = matrixCredentials?.user_id || null;
+                const rooms = matrixClient.getRooms().filter((room) => room.getMyMembership() === "join" && !room.isSpaceRoom());
+                for (const room of rooms) {
+                    const members = room.getMembers().filter((member) => member.membership === "join");
+                    for (const member of members) {
+                        const matrixUserId = String(member.userId || "").trim();
+                        if (!matrixUserId || (myUserId && matrixUserId === myUserId)) continue;
+                        const localId = formatMatrixUserLocalId(matrixUserId);
+                        const displayName = String(member.name || "").trim();
+                        const score = scorePersonMatch({
+                            id: matrixUserId,
+                            label: displayName || localId || matrixUserId,
+                            userLocalId: localId,
+                            matrixUserId,
+                        });
+                        if (score <= 0) continue;
+                        if (!mergedPeopleMap.has(matrixUserId)) {
+                            mergedPeopleMap.set(matrixUserId, {
+                                id: matrixUserId,
+                                label: displayName || localId || matrixUserId,
+                                meta: matrixUserId,
+                            });
+                        }
+                    }
+                }
+            }
+
+            const peopleHits = Array.from(mergedPeopleMap.values()).sort((a, b) => {
+                const aScore = scorePersonMatch({
+                    id: a.id,
+                    label: a.label,
+                    matrixUserId: a.id,
+                    userLocalId: formatMatrixUserLocalId(a.id),
+                });
+                const bScore = scorePersonMatch({
+                    id: b.id,
+                    label: b.label,
+                    matrixUserId: b.id,
+                    userLocalId: formatMatrixUserLocalId(b.id),
+                });
+                if (aScore !== bScore) return bScore - aScore;
+                return a.label.localeCompare(b.label);
+            });
+
             let roomHits: SummarySearchRoomItem[] = [];
             if (matrixClient) {
                 const allJoinedRooms = matrixClient
@@ -1304,7 +1384,7 @@ export const MainLayout: React.FC = () => {
 
                 const fuzzyNameRooms = allJoinedRooms.filter((room) => {
                     const displayName = resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
-                    return displayName.toLowerCase().includes(queryLower);
+                    return displayName.toLowerCase().includes(normalizedQuery);
                 });
 
                 const dedupedRooms: Room[] = [];
