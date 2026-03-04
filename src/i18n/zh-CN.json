@@ -268,7 +268,8 @@
             "country": "国家",
             "language": "语言"
         },
-        "groupChat": "新建聊天室"
+        "groupChat": "新建聊天室",
+        "createRoomLabel": "新建聊天室"
     },
     "profile": {
         "gender": {
@@ -454,6 +455,43 @@
                 "invalidContext": "422 INVALID_CONTEXT：錨點事件或上下文範圍無效。"
             }
         }
+    },
+    "room": {
+        "createTitle": "创建聊天室",
+        "roomName": "聊天室名称",
+        "roomNamePlaceholder": "请输入聊天室名称...",
+        "selectMembers": "选择成员",
+        "selected": "已选",
+        "searchContacts": "搜索联系人...",
+        "loadingContacts": "加载联系人中...",
+        "noContacts": "未找到联系人",
+        "historySettings": "历史消息可见性",
+        "historyShared": "共享完整历史",
+        "historySharedDesc": "新成员可以查看所有之前的消息",
+        "historyJoined": "仅显示新消息",
+        "historyJoinedDesc": "新成员只能查看加入后的消息",
+        "create": "创建聊天室",
+        "creating": "创建中...",
+        "unnamed": "未命名聊天室",
+        "members": "成员",
+        "pending": "待加入",
+        "joinedMembers": "已加入成员",
+        "invitedMembers": "已邀请",
+        "memberJoined": "已加入",
+        "memberInvited": "已邀请",
+        "memberLeft": "已离开",
+        "memberBanned": "已禁止",
+        "admin": "管理员",
+        "leaveGroup": "退出聊天室",
+        "leaveConfirm": "确定要退出这个聊天室吗？",
+        "leave": "退出",
+        "leaving": "退出中...",
+        "inviteTitle": "聊天室邀请",
+        "inviteFrom": "邀请者",
+        "accept": "接受",
+        "decline": "拒绝",
+        "acceptFailed": "接受邀請失敗。",
+        "createFailed": "建立聊天室失敗。"
     },
     "group": {
         "createTitle": "创建聊天室",

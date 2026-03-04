@@ -32,7 +32,7 @@ import {
 } from "./translationPolicy";
 import {
     pretranslateDirectToClient,
-    pretranslateGroupToClients,
+    pretranslateRoomToClients,
     sendReadyAttachments,
     sendTextMessage,
     type ReadyAttachment,
@@ -1622,7 +1622,7 @@ export const ChatRoom: React.FC = () => {
             isMultiMemberRoom &&
             translationContactsLoaded &&
             Boolean(translateAccessToken && sentEventId);
-        pretranslateGroupToClients({
+        pretranslateRoomToClients({
             enabled: shouldPretranslateForRoomClients,
             text: trimmed,
             messageId: sentEventId,

@@ -268,7 +268,8 @@
             "country": "Country",
             "language": "Language"
         },
-        "groupChat": "New room"
+        "groupChat": "New room",
+        "createRoomLabel": "New room"
     },
     "profile": {
         "gender": {
@@ -454,6 +455,43 @@
                 "invalidContext": "422 INVALID_CONTEXT: invalid anchor event or context window."
             }
         }
+    },
+    "room": {
+        "createTitle": "Create Room",
+        "roomName": "Room Name",
+        "roomNamePlaceholder": "Enter room name...",
+        "selectMembers": "Select Members",
+        "selected": "selected",
+        "searchContacts": "Search contacts...",
+        "loadingContacts": "Loading contacts...",
+        "noContacts": "No contacts found",
+        "historySettings": "History Visibility",
+        "historyShared": "Share Full History",
+        "historySharedDesc": "New members can see all previous messages",
+        "historyJoined": "New Messages Only",
+        "historyJoinedDesc": "New members can only see messages after joining",
+        "create": "Create Room",
+        "creating": "Creating...",
+        "unnamed": "Unnamed Room",
+        "members": "members",
+        "pending": "pending",
+        "joinedMembers": "Joined Members",
+        "invitedMembers": "Invited",
+        "memberJoined": "Joined",
+        "memberInvited": "Invited",
+        "memberLeft": "Left",
+        "memberBanned": "Banned",
+        "admin": "Admin",
+        "leaveGroup": "Leave Room",
+        "leaveConfirm": "Are you sure you want to leave this room?",
+        "leave": "Leave",
+        "leaving": "Leaving...",
+        "inviteTitle": "Room Invitations",
+        "inviteFrom": "Invited by",
+        "accept": "Accept",
+        "decline": "Decline",
+        "acceptFailed": "Failed to accept invite.",
+        "createFailed": "Failed to create room."
     },
     "group": {
         "createTitle": "Create Room",

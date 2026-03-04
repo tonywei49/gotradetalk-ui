@@ -124,3 +124,5 @@ export function collectGroupClientTargetLanguages(params: {
 
     return Array.from(targetLangs);
 }
+
+export const collectRoomClientTargetLanguages = collectGroupClientTargetLanguages;

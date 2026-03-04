@@ -26,7 +26,7 @@ interface MemberInfo {
 
 /**
  * 獨立的聊天室詳情面板組件。
- * 當前仍沿用 group 命名，後續可重命名為 room 詳情面板。
+ * 保留 group 舊導出別名以兼容歷史引用。
  */
 export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
     room,
@@ -88,13 +88,13 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
     const getMembershipLabel = (membership: MemberStatus) => {
         switch (membership) {
             case "join":
-                return t("group.memberJoined", "Joined");
+                return t("room.memberJoined", t("group.memberJoined", "Joined"));
             case "invite":
-                return t("group.memberInvited", "Invited");
+                return t("room.memberInvited", t("group.memberInvited", "Invited"));
             case "leave":
-                return t("group.memberLeft", "Left");
+                return t("room.memberLeft", t("group.memberLeft", "Left"));
             case "ban":
-                return t("group.memberBanned", "Banned");
+                return t("room.memberBanned", t("group.memberBanned", "Banned"));
             default:
                 return "";
         }
@@ -110,13 +110,13 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
                     </div>
                     <div className="flex-1 min-w-0">
                         <h2 className="font-semibold text-slate-800 dark:text-slate-100 truncate">
-                            {room.name || t("group.unnamed", "Unnamed Room")}
+                            {room.name || t("room.unnamed", t("group.unnamed", "Unnamed Room"))}
                         </h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {joinedMembers.length} {t("group.members", "members")}
+                            {joinedMembers.length} {t("room.members", t("group.members", "members"))}
                             {invitedMembers.length > 0 && (
                                 <span className="ml-2 text-amber-500">
-                                    (+{invitedMembers.length} {t("group.pending", "pending")})
+                                    (+{invitedMembers.length} {t("room.pending", t("group.pending", "pending"))})
                                 </span>
                             )}
                         </p>
@@ -130,7 +130,7 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
                 {joinedMembers.length > 0 && (
                     <div className="p-4">
                         <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-3">
-                            {t("group.joinedMembers", "Joined Members")} ({joinedMembers.length})
+                            {t("room.joinedMembers", t("group.joinedMembers", "Joined Members"))} ({joinedMembers.length})
                         </h3>
                         <div className="space-y-2">
                             {joinedMembers.map((member) => (
@@ -147,7 +147,7 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
                                         </div>
                                         {member.powerLevel >= 100 && (
                                             <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                                                {t("group.admin", "Admin")}
+                                                {t("room.admin", t("group.admin", "Admin"))}
                                             </span>
                                         )}
                                     </div>
@@ -162,7 +162,7 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
                 {invitedMembers.length > 0 && (
                     <div className="p-4 border-t border-gray-100 dark:border-slate-800">
                         <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-3">
-                            {t("group.invitedMembers", "Invited")} ({invitedMembers.length})
+                            {t("room.invitedMembers", t("group.invitedMembers", "Invited"))} ({invitedMembers.length})
                         </h3>
                         <div className="space-y-2">
                             {invitedMembers.map((member) => (
@@ -194,7 +194,7 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
                 {showConfirm ? (
                     <div className="space-y-3">
                         <p className="text-sm text-slate-600 dark:text-slate-400 text-center">
-                            {t("group.leaveConfirm", "Are you sure you want to leave this room?")}
+                            {t("room.leaveConfirm", t("group.leaveConfirm", "Are you sure you want to leave this room?"))}
                         </p>
                         <div className="flex gap-2">
                             <button
@@ -210,7 +210,7 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
                                 disabled={leaving}
                                 className="flex-1 px-3 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 disabled:opacity-50"
                             >
-                                {leaving ? t("group.leaving", "Leaving...") : t("group.leave", "Leave")}
+                                {leaving ? t("room.leaving", t("group.leaving", "Leaving...")) : t("room.leave", t("group.leave", "Leave"))}
                             </button>
                         </div>
                     </div>
@@ -221,7 +221,7 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
                         className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 font-medium hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
                     >
                         <ArrowRightOnRectangleIcon className="w-5 h-5" />
-                        {t("group.leaveGroup", "Leave Room")}
+                        {t("room.leaveGroup", t("group.leaveGroup", "Leave Room"))}
                     </button>
                 )}
             </div>
@@ -230,11 +230,9 @@ export const RoomDetailsPanel: React.FC<RoomDetailsPanelProps> = ({
 };
 
 /**
- * 判斷房間是否為群組聊天（非 1對1 私聊）
+ * 判斷房間是否為多人聊天室。
  */
 export function isRoomWithMultipleMembers(room: Room): boolean {
-    // 檢查房間是否在 m.direct 帳戶數據中
-    // 如果不在，或成員數 > 2，則為群組
     const members = room.getJoinedMembers();
     return members.length > 2 || !room.isSpaceRoom();
 }

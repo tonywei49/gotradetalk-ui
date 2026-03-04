@@ -1,7 +1,7 @@
 import { MsgType, type MatrixClient } from "matrix-js-sdk";
 import { hubTranslate } from "../../api/hub";
 import {
-    collectGroupClientTargetLanguages,
+    collectRoomClientTargetLanguages,
     normalizeHubLanguage,
     resolveSourceLangHint,
 } from "./translationPolicy";
@@ -80,7 +80,7 @@ export function pretranslateDirectToClient(params: {
     }).catch(() => undefined);
 }
 
-export function pretranslateGroupToClients(params: {
+export function pretranslateRoomToClients(params: {
     enabled: boolean;
     text: string;
     messageId?: string;
@@ -102,7 +102,7 @@ export function pretranslateGroupToClients(params: {
     } = params;
 
     if (!enabled || !messageId || !translate.accessToken) return;
-    const targetLangs = collectGroupClientTargetLanguages({
+    const targetLangs = collectRoomClientTargetLanguages({
         memberIds,
         selfUserId,
         resolveContactByMatrixUserId,
@@ -124,3 +124,5 @@ export function pretranslateGroupToClients(params: {
         }).catch(() => undefined);
     });
 }
+
+export const pretranslateGroupToClients = pretranslateRoomToClients;

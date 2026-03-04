@@ -66,7 +66,7 @@ export const RoomInviteList: React.FC<RoomInviteListProps> = ({
                 const inviteEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
                 const inviterId = inviteEvent?.getSender() ?? null;
                 const inviter = inviterId ? room.getMember(inviterId) : null;
-                const fallbackName = inviter?.name || inviterId || t("group.unnamed", "Room");
+                const fallbackName = inviter?.name || inviterId || t("room.unnamed", t("group.unnamed", "Room"));
                 return {
                     roomId: room.roomId,
                     room,
@@ -143,7 +143,7 @@ export const RoomInviteList: React.FC<RoomInviteListProps> = ({
                 return next;
             });
             console.error("Failed to accept room invite:", err);
-            const message = mapActionErrorToMessage(t, err, "group.acceptFailed");
+            const message = mapActionErrorToMessage(t, err, "room.acceptFailed");
             setJoinError(message);
         } finally {
             setProcessingIds((prev) => {
@@ -179,7 +179,7 @@ export const RoomInviteList: React.FC<RoomInviteListProps> = ({
         <div className="border-b border-gray-200 dark:border-slate-700 pb-2 mb-2">
             <div className="px-4 py-2">
                 <span className="text-xs uppercase tracking-[0.18em] text-amber-600 dark:text-amber-400 font-medium">
-                    {t("group.inviteTitle", "Room Invitations")} ({invites.length})
+                    {t("room.inviteTitle", t("group.inviteTitle", "Room Invitations"))} ({invites.length})
                 </span>
             </div>
             {joinError && (
@@ -207,7 +207,7 @@ export const RoomInviteList: React.FC<RoomInviteListProps> = ({
                                 </div>
                                 {invite.inviterName && (
                                     <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                        {t("group.inviteFrom", "Invited by")} {invite.inviterName}
+                                        {t("room.inviteFrom", t("group.inviteFrom", "Invited by"))} {invite.inviterName}
                                     </div>
                                 )}
                             </div>
@@ -219,7 +219,7 @@ export const RoomInviteList: React.FC<RoomInviteListProps> = ({
                                     onClick={() => handleDecline(invite.roomId)}
                                     disabled={isProcessing}
                                     className="p-1.5 rounded-full text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/30 disabled:opacity-50"
-                                    title={t("group.decline", "Decline")}
+                                    title={t("room.decline", t("group.decline", "Decline"))}
                                 >
                                     <XCircleIcon className="w-5 h-5" />
                                 </button>
@@ -228,7 +228,7 @@ export const RoomInviteList: React.FC<RoomInviteListProps> = ({
                                     onClick={() => handleAccept(invite.roomId)}
                                     disabled={isProcessing}
                                     className="p-1.5 rounded-full text-emerald-500 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 disabled:opacity-50"
-                                    title={t("group.accept", "Accept")}
+                                    title={t("room.accept", t("group.accept", "Accept"))}
                                 >
                                     <CheckCircleIcon className="w-5 h-5" />
                                 </button>

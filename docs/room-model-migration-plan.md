@@ -52,21 +52,17 @@
   - room creation helper module moved to `src/matrix/room.ts` with `src/matrix/group.ts` shim for compatibility
   - `chat.roomNameFallback` key introduced; `groupNameFallback` kept for backward compatibility
 
-## This Iteration (In Progress)
-- Continue replacing remaining user-facing "group/direct" copy with "room/chat room" copy.
-- Keep old i18n keys for backward compatibility, but update displayed values.
-- Clean up old inline comments that still describe direct/group product logic.
+## This Iteration (Completed)
+- Replaced remaining user-facing "group/direct" copy in key chat/contact flows with "room/chat room".
+- Kept old i18n keys for backward compatibility while switching active usage to room-first keys.
+- Cleaned up legacy inline comments and naming in room-related components.
 
-## Next Iteration
-- Frontend model cleanup:
-  - reduce legacy `ROOM_KIND_DIRECT/GROUP` branching where not required
-  - centralize room display-name fallback strategy
-- Backend compatibility prep:
-  - evaluate making `matrix_room_id` optional in contact relation API (not implemented yet)
+## Remaining Items
+- Backend compatibility prep (deferred by current decision):
+  - evaluate making `matrix_room_id` optional in contact relation API
   - add migration path for old records and API response fallback
-- UX polish:
-  - room invite list naming/component rename (`GroupInviteList` -> `RoomInviteList`)
-  - entry-point consistency in nav/search/empty states
+- QA hardening:
+  - run full end-to-end regression checklist across friend flow, room creation/invite flow, and responsive single-pane scrolling
 
 ## Risks
 - Legacy clients may still depend on direct/group key naming.

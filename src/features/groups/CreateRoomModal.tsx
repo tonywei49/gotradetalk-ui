@@ -25,7 +25,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     hsUrl,
 }) => {
     const { t } = useTranslation();
-    const [groupName, setGroupName] = useState("");
+    const [roomName, setRoomName] = useState("");
     const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
     const [historyVisibility, setHistoryVisibility] = useState<HistoryVisibility>("shared");
     const [contacts, setContacts] = useState<ContactEntry[]>([]);
@@ -79,7 +79,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     // 重置表單
     useEffect(() => {
         if (isOpen) {
-            setGroupName("");
+            setRoomName("");
             setSelectedMembers(new Set());
             setHistoryVisibility("shared");
             setSearchQuery("");
@@ -100,14 +100,14 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     };
 
     const handleCreate = async () => {
-        if (!matrixClient || !groupName.trim() || selectedMembers.size === 0) return;
+        if (!matrixClient || !roomName.trim() || selectedMembers.size === 0) return;
         setCreating(true);
         setError(null);
         try {
             const inviteesList = Array.from(selectedMembers);
             devLog("[CreateRoomModal] Creating room with invitees", inviteesList);
             const roomId = await createRoomWithInvite(matrixClient, {
-                name: groupName.trim(),
+                name: roomName.trim(),
                 invitees: inviteesList,
                 historyVisibility,
             });
@@ -119,7 +119,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
             onClose();
             onSuccess(roomId);
         } catch (err) {
-            setError(mapActionErrorToMessage(t, err, "group.createFailed"));
+            setError(mapActionErrorToMessage(t, err, "room.createFailed"));
         } finally {
             setCreating(false);
         }
@@ -161,7 +161,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
     if (!isOpen) return null;
 
-    const canCreate = groupName.trim().length > 0 && selectedMembers.size > 0 && !creating;
+    const canCreate = roomName.trim().length > 0 && selectedMembers.size > 0 && !creating;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -173,7 +173,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                             <UserGroupIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                            {t("group.createTitle", "Create Room")}
+                            {t("room.createTitle", t("group.createTitle", "Create Room"))}
                         </h2>
                     </div>
                     <button
@@ -190,13 +190,13 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                     {/* 聊天室名稱 */}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            {t("group.groupName", "Room Name")} <span className="text-rose-500">*</span>
+                            {t("room.roomName", t("group.groupName", "Room Name"))} <span className="text-rose-500">*</span>
                         </label>
                         <input
                             type="text"
-                            value={groupName}
-                            onChange={(e) => setGroupName(e.target.value)}
-                            placeholder={t("group.groupNamePlaceholder", "Enter room name...")}
+                            value={roomName}
+                            onChange={(e) => setRoomName(e.target.value)}
+                            placeholder={t("room.roomNamePlaceholder", t("group.groupNamePlaceholder", "Enter room name..."))}
                             className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                         />
                     </div>
@@ -204,10 +204,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                     {/* 選擇成員 */}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            {t("group.selectMembers", "Select Members")} <span className="text-rose-500">*</span>
+                            {t("room.selectMembers", t("group.selectMembers", "Select Members"))} <span className="text-rose-500">*</span>
                             {selectedMembers.size > 0 && (
                                 <span className="ml-2 text-emerald-600 dark:text-emerald-400">
-                                    ({selectedMembers.size} {t("group.selected", "selected")})
+                                    ({selectedMembers.size} {t("room.selected", t("group.selected", "selected"))})
                                 </span>
                             )}
                         </label>
@@ -217,7 +217,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder={t("group.searchContacts", "Search contacts...")}
+                            placeholder={t("room.searchContacts", t("group.searchContacts", "Search contacts..."))}
                             className="w-full px-4 py-2 mb-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
 
@@ -225,11 +225,11 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                         <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-xl">
                             {loading ? (
                                 <div className="p-4 text-center text-slate-500">
-                                    {t("group.loadingContacts", "Loading contacts...")}
+                                    {t("room.loadingContacts", t("group.loadingContacts", "Loading contacts..."))}
                                 </div>
                             ) : filteredContacts.length === 0 ? (
                                 <div className="p-4 text-center text-slate-500">
-                                    {t("group.noContacts", "No contacts found")}
+                                    {t("room.noContacts", t("group.noContacts", "No contacts found"))}
                                 </div>
                             ) : (
                                 filteredContacts.map((contact) => {
@@ -279,7 +279,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                     {/* 歷史紀錄設定 */}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                            {t("group.historySettings", "History Visibility")}
+                            {t("room.historySettings", t("group.historySettings", "History Visibility"))}
                         </label>
                         <div className="space-y-2">
                             <label
@@ -298,10 +298,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                                 />
                                 <div>
                                     <div className="font-medium text-slate-800 dark:text-slate-100">
-                                        {t("group.historyShared", "Share Full History")}
+                                        {t("room.historyShared", t("group.historyShared", "Share Full History"))}
                                     </div>
                                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                                        {t("group.historySharedDesc", "New members can see all previous messages")}
+                                        {t("room.historySharedDesc", t("group.historySharedDesc", "New members can see all previous messages"))}
                                     </div>
                                 </div>
                             </label>
@@ -322,10 +322,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                                 />
                                 <div>
                                     <div className="font-medium text-slate-800 dark:text-slate-100">
-                                        {t("group.historyJoined", "New Messages Only")}
+                                        {t("room.historyJoined", t("group.historyJoined", "New Messages Only"))}
                                     </div>
                                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                                        {t("group.historyJoinedDesc", "New members can only see messages after joining")}
+                                        {t("room.historyJoinedDesc", t("group.historyJoinedDesc", "New members can only see messages after joining"))}
                                     </div>
                                 </div>
                             </label>
@@ -358,7 +358,9 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                             : "bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed"
                             }`}
                     >
-                        {creating ? t("group.creating", "Creating...") : t("group.create", "Create Room")}
+                        {creating
+                            ? t("room.creating", t("group.creating", "Creating..."))
+                            : t("room.create", t("group.create", "Create Room"))}
                     </button>
                 </div>
             </div>
