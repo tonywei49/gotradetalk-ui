@@ -301,6 +301,27 @@ function mapChatSummaryErrorMessage(
     if (normalized.includes("missing hs_url") || normalized.includes("matrix access token")) {
         return t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching.");
     }
+    if (normalized === "unauthorized" || normalized.includes("missing auth token") || normalized.includes("invalid auth token")) {
+        return t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again.");
+    }
+    if (normalized.includes("failed to load summary jobs")) {
+        return t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
+    }
+    if (normalized.includes("failed to delete summary job")) {
+        return t("layout.notebook.summaryDeleteFailed", "Failed to delete summary.");
+    }
+    if (normalized.includes("failed to download summary")) {
+        return t("layout.notebook.summaryDownloadFailed", "Failed to download summary.");
+    }
+    if (normalized.includes("failed to load summary detail")) {
+        return t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview.");
+    }
+    if (normalized.includes("summary job not found")) {
+        return t("layout.notebook.summaryJobNotFound", "Summary record not found.");
+    }
+    if (normalized.includes("summary is not ready")) {
+        return t("layout.notebook.summaryNotReady", "Summary is still generating. Please try again later.");
+    }
     if (normalized.includes("failed to create summary job")) {
         return t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.");
     }
@@ -1547,7 +1568,10 @@ export const MainLayout: React.FC = () => {
             });
             setSummaryJobs(Array.isArray(response.items) ? response.items : []);
         } catch (error) {
-            setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list."));
+            const message = error instanceof Error
+                ? mapChatSummaryErrorMessage(error.message, t)
+                : t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
+            setSummaryJobsError(message);
             setSummaryJobs([]);
         } finally {
             setSummaryJobsLoading(false);
@@ -1688,7 +1712,10 @@ export const MainLayout: React.FC = () => {
             });
             await loadSummaryJobs();
         } catch (error) {
-            setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryDeleteFailed", "Failed to delete summary."));
+            const message = error instanceof Error
+                ? mapChatSummaryErrorMessage(error.message, t)
+                : t("layout.notebook.summaryDeleteFailed", "Failed to delete summary.");
+            setSummaryJobsError(message);
         } finally {
             setSummaryJobActionBusy(false);
         }
@@ -1718,7 +1745,10 @@ export const MainLayout: React.FC = () => {
             document.body.removeChild(anchor);
             URL.revokeObjectURL(url);
         } catch (error) {
-            setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryDownloadFailed", "Failed to download summary."));
+            const message = error instanceof Error
+                ? mapChatSummaryErrorMessage(error.message, t)
+                : t("layout.notebook.summaryDownloadFailed", "Failed to download summary.");
+            setSummaryJobsError(message);
         } finally {
             setSummaryJobActionBusy(false);
         }
@@ -1763,11 +1793,19 @@ export const MainLayout: React.FC = () => {
                         summary_text: summaryText,
                     });
                 } catch (fallbackError) {
-                    setSummaryPreviewError(fallbackError instanceof Error ? fallbackError.message : t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview."));
+                    const fallbackMessage = fallbackError instanceof Error
+                        ? mapChatSummaryErrorMessage(fallbackError.message, t)
+                        : t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview.");
+                    setSummaryPreviewError(fallbackMessage);
                     setSummaryPreviewJob(null);
                 }
             } else {
-                setSummaryPreviewError(message || t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview."));
+                setSummaryPreviewError(
+                    mapChatSummaryErrorMessage(
+                        message || t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview."),
+                        t,
+                    ),
+                );
                 setSummaryPreviewJob(null);
             }
         } finally {

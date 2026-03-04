@@ -296,6 +296,8 @@
             "summaryProcessingLimitReached": "Too many running summary jobs (max {{limit}}).",
             "summaryNoValidChatContent": "No valid chat content after filtering. Please widen the time range and try again.",
             "summaryOnlyRoomMembers": "Only room members can generate summary.",
+            "summaryJobNotFound": "Summary record not found.",
+            "summaryNotReady": "Summary is still generating. Please try again later.",
             "summaryJobsLoading": "Loading summary list...",
             "summaryJobsEmpty": "No generated summary yet.",
             "summaryJobsLoadFailed": "Failed to load summary list.",
