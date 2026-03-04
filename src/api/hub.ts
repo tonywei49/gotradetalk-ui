@@ -358,6 +358,69 @@ export async function hubTranslate(params: {
     );
 }
 
+export type ChatSummaryJobItem = {
+    id: string;
+    target_label: string;
+    room_id: string | null;
+    from_date: string;
+    to_date: string;
+    status: "processing" | "completed" | "failed";
+    created_at: string;
+    updated_at: string;
+    has_content: boolean;
+};
+
+export async function createChatSummaryJob(params: {
+    accessToken: string;
+    targetLabel: string;
+    roomId?: string | null;
+    fromDate: string;
+    toDate: string;
+    messages: Array<{ sender?: string; ts?: string | null; text: string }>;
+}): Promise<{ id: string; status: string; target_label: string; from_date: string; to_date: string; created_at: string }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = joinUrl(hubBaseUrl, "/chat/summary/jobs");
+    return postJson(url, {
+        target_label: params.targetLabel,
+        room_id: params.roomId || null,
+        from_date: params.fromDate,
+        to_date: params.toDate,
+        messages: params.messages,
+    }, params.accessToken);
+}
+
+export async function listChatSummaryJobs(accessToken: string): Promise<{ items: ChatSummaryJobItem[] }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = joinUrl(hubBaseUrl, "/chat/summary/jobs");
+    return getJson<{ items: ChatSummaryJobItem[] }>(url, accessToken);
+}
+
+export async function deleteChatSummaryJob(accessToken: string, id: string): Promise<{ ok: boolean }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(id)}`);
+    const response = await fetch(url, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+        throw new Error(await readResponseMessage(response));
+    }
+    return (await response.json()) as { ok: boolean };
+}
+
+export async function downloadChatSummaryJob(accessToken: string, id: string): Promise<Blob> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const url = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(id)}/download`);
+    const response = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+        throw new Error(await readResponseMessage(response));
+    }
+    return response.blob();
+}
+
 async function getJson<T>(url: string, accessToken?: string): Promise<T> {
     const response = await fetch(url, {
         method: "GET",

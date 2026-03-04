@@ -13,7 +13,17 @@ import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import { RoomList } from "../features/rooms";
 import type { ContactSummary } from "../features/rooms/RoomList";
-import { hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale, hubTranslate } from "../api/hub";
+import {
+    createChatSummaryJob,
+    deleteChatSummaryJob,
+    downloadChatSummaryJob,
+    hubGetMe,
+    hubMeUpdateLocale,
+    hubMeUpdateTranslationLocale,
+    hubTranslate,
+    listChatSummaryJobs,
+    type ChatSummaryJobItem,
+} from "../api/hub";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
@@ -356,6 +366,11 @@ export const MainLayout: React.FC = () => {
     const [summaryContentLoading, setSummaryContentLoading] = useState(false);
     const [summaryContentError, setSummaryContentError] = useState<string | null>(null);
     const [summaryChatMessages, setSummaryChatMessages] = useState<SummaryChatMessage[]>([]);
+    const [summaryJobs, setSummaryJobs] = useState<ChatSummaryJobItem[]>([]);
+    const [summaryJobsLoading, setSummaryJobsLoading] = useState(false);
+    const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
+    const [summaryJobActionBusy, setSummaryJobActionBusy] = useState(false);
+    const [summaryGenerationNotice, setSummaryGenerationNotice] = useState<string | null>(null);
     const [selectedSharedRoomId, setSelectedSharedRoomId] = useState<string | null>(null);
     const [creatingContactRoom, setCreatingContactRoom] = useState(false);
     const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
@@ -1434,6 +1449,128 @@ export const MainLayout: React.FC = () => {
         summaryStartDate,
         t,
     ]);
+
+    const loadSummaryJobs = useCallback(async () => {
+        if (!hubAccessToken) return;
+        setSummaryJobsLoading(true);
+        setSummaryJobsError(null);
+        try {
+            const response = await listChatSummaryJobs(hubAccessToken);
+            setSummaryJobs(Array.isArray(response.items) ? response.items : []);
+        } catch (error) {
+            setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list."));
+            setSummaryJobs([]);
+        } finally {
+            setSummaryJobsLoading(false);
+        }
+    }, [hubAccessToken, t]);
+
+    const hasProcessingSummaryJob = useMemo(
+        () => summaryJobs.some((job) => job.status === "processing"),
+        [summaryJobs],
+    );
+
+    const onStartGenerateSummary = useCallback(async () => {
+        if (!hubAccessToken || !summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
+        if (hasProcessingSummaryJob || summaryJobActionBusy) {
+            setSummaryGenerationNotice(t("layout.notebook.summaryAlreadyGenerating", "A summary is already generating. Please wait."));
+            return;
+        }
+        if (summaryChatMessages.length === 0) {
+            setSummaryGenerationNotice(t("layout.notebook.summaryNoChatContent", "No chat content in the selected range."));
+            return;
+        }
+        const roomId = resolveSummaryTargetRoomId(summarySelectedTarget);
+        if (!roomId) {
+            setSummaryGenerationNotice(t("layout.notebook.summaryRoomResolveFailed", "No shared room found for this target."));
+            return;
+        }
+
+        setSummaryJobActionBusy(true);
+        setSummaryGenerationNotice(t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait."));
+        try {
+            await createChatSummaryJob({
+                accessToken: hubAccessToken,
+                targetLabel: summarySelectedTarget.label,
+                roomId,
+                fromDate: summaryStartDate,
+                toDate: summaryEndDate,
+                messages: summaryChatMessages.map((item) => ({
+                    sender: item.sender,
+                    ts: item.ts,
+                    text: item.translatedText || item.text,
+                })),
+            });
+            await loadSummaryJobs();
+            setSummaryDetailTab("summaryList");
+        } catch (error) {
+            setSummaryGenerationNotice(error instanceof Error ? error.message : t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation."));
+        } finally {
+            setSummaryJobActionBusy(false);
+        }
+    }, [
+        hasProcessingSummaryJob,
+        hubAccessToken,
+        loadSummaryJobs,
+        resolveSummaryTargetRoomId,
+        summaryChatMessages,
+        summaryEndDate,
+        summaryJobActionBusy,
+        summarySelectedTarget,
+        summaryStartDate,
+        t,
+    ]);
+
+    const onDeleteSummaryJob = useCallback(async (id: string) => {
+        if (!hubAccessToken || !id) return;
+        setSummaryJobActionBusy(true);
+        try {
+            await deleteChatSummaryJob(hubAccessToken, id);
+            await loadSummaryJobs();
+        } catch (error) {
+            setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryDeleteFailed", "Failed to delete summary."));
+        } finally {
+            setSummaryJobActionBusy(false);
+        }
+    }, [hubAccessToken, loadSummaryJobs, t]);
+
+    const onDownloadSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
+        if (!hubAccessToken) return;
+        setSummaryJobActionBusy(true);
+        try {
+            const blob = await downloadChatSummaryJob(hubAccessToken, job.id);
+            const compactStart = String(job.from_date || "").replace(/-/g, "");
+            const compactEnd = String(job.to_date || "").replace(/-/g, "");
+            const fileBase = `${job.target_label}聊天室总结${compactStart}${compactEnd}`.replace(/[\\/:*?"<>|]/g, "_");
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `${fileBase || "chat-summary"}.docx`;
+            anchor.rel = "noopener noreferrer";
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            setSummaryJobsError(error instanceof Error ? error.message : t("layout.notebook.summaryDownloadFailed", "Failed to download summary."));
+        } finally {
+            setSummaryJobActionBusy(false);
+        }
+    }, [hubAccessToken, t]);
+
+    useEffect(() => {
+        if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
+        void loadSummaryJobs();
+    }, [activeTab, notebookSidebarMode, loadSummaryJobs]);
+
+    useEffect(() => {
+        if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
+        if (!hasProcessingSummaryJob) return;
+        const timer = window.setInterval(() => {
+            void loadSummaryJobs();
+        }, 2500);
+        return () => window.clearInterval(timer);
+    }, [activeTab, hasProcessingSummaryJob, loadSummaryJobs, notebookSidebarMode]);
 
     const openRoomWithOptionalJump = useCallback((roomId: string, eventId?: string | null) => {
         setActiveTab("chat");
@@ -3089,6 +3226,11 @@ export const MainLayout: React.FC = () => {
                                         </div>
                                     ) : summaryDetailTab === "chatContent" ? (
                                         <div className="space-y-3">
+                                            {summaryGenerationNotice ? (
+                                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+                                                    {summaryGenerationNotice}
+                                                </div>
+                                            ) : null}
                                             {summaryContentLoading ? (
                                                 <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
                                                     {t("layout.notebook.summaryLoadingContent", "Loading chat content...")}
@@ -3123,10 +3265,80 @@ export const MainLayout: React.FC = () => {
                                                     ))}
                                                 </div>
                                             )}
+                                            <div className="flex justify-end">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void onStartGenerateSummary()}
+                                                    disabled={summaryJobActionBusy || summaryContentLoading || summaryChatMessages.length === 0 || hasProcessingSummaryJob}
+                                                    className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white shadow-sm enabled:hover:bg-[#244a45] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500 dark:enabled:hover:bg-emerald-400"
+                                                >
+                                                    {hasProcessingSummaryJob
+                                                        ? t("layout.notebook.summaryGenerating", "Generating...")
+                                                        : t("layout.notebook.summaryStartGenerate", "Start generate summary")}
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                            {t("layout.notebook.summaryListPlaceholder", "總結清單區（待開發）")}
+                                        <div className="space-y-2">
+                                            {summaryJobsError ? (
+                                                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                                                    {summaryJobsError}
+                                                </div>
+                                            ) : null}
+                                            {summaryJobsLoading ? (
+                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                                    {t("layout.notebook.summaryJobsLoading", "Loading summary list...")}
+                                                </div>
+                                            ) : summaryJobs.length === 0 ? (
+                                                <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                                    {t("layout.notebook.summaryJobsEmpty", "No generated summary yet.")}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {summaryJobs.map((job) => (
+                                                        <div
+                                                            key={job.id}
+                                                            className="rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900"
+                                                        >
+                                                            <div className="mb-1 flex items-center justify-between gap-3">
+                                                                <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                                    {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
+                                                                </div>
+                                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                                                    job.status === "completed"
+                                                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                                                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+                                                                }`}>
+                                                                    {job.status === "completed"
+                                                                        ? t("layout.notebook.summaryStatusCompleted", "Completed")
+                                                                        : t("layout.notebook.summaryStatusProcessing", "Processing")}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                                                                {`${job.from_date} ~ ${job.to_date}`}
+                                                            </div>
+                                                            <div className="mt-2 flex items-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={summaryJobActionBusy || job.status !== "completed" || !job.has_content}
+                                                                    onClick={() => void onDownloadSummaryJob(job)}
+                                                                    className="rounded-md border border-emerald-500 px-2 py-1 text-xs font-semibold text-emerald-700 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400 dark:text-emerald-300 dark:enabled:hover:bg-emerald-900/20"
+                                                                >
+                                                                    {t("layout.notebook.summaryDownload", "Download")}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={summaryJobActionBusy}
+                                                                    onClick={() => void onDeleteSummaryJob(job.id)}
+                                                                    className="rounded-md border border-rose-400 px-2 py-1 text-xs font-semibold text-rose-600 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400 dark:text-rose-300 dark:enabled:hover:bg-rose-900/20"
+                                                                >
+                                                                    {t("layout.notebook.summaryDelete", "Delete")}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
