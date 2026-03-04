@@ -20,6 +20,9 @@ function firstLocator(page, selectors) {
 
 async function closeCreateGroupModalIfPresent(page) {
   const modal = firstLocator(page, [
+    'div.fixed.inset-0.z-50:has-text("创建聊天室")',
+    'div.fixed.inset-0.z-50:has-text("建立聊天室")',
+    'div.fixed.inset-0.z-50:has-text("Create Room")',
     'div.fixed.inset-0.z-50:has-text("创建群聊")',
     'div.fixed.inset-0.z-50:has-text("建立群聊")',
     'div.fixed.inset-0.z-50:has-text("Create Group")',
