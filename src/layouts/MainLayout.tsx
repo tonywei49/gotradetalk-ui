@@ -54,6 +54,9 @@ import {
     NotebookPanel,
     NotebookSidebar,
     resolveNotebookCapabilities,
+    type SummarySearchPersonItem,
+    type SummarySearchRoomItem,
+    type SummarySearchTarget,
     useNotebookModule,
 } from "../features/notebook";
 import {
@@ -200,6 +203,40 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
     return withoutPrefix.slice(0, colonIndex);
 }
 
+function resolveRoomListDisplayName(room: Room, myUserId: string | null): string {
+    const fallback = room.name || room.getCanonicalAlias() || room.roomId;
+    const normalizedMyUserId = myUserId || null;
+    const joinedMembers = room.getJoinedMembers();
+    if (normalizedMyUserId && joinedMembers.length === 2) {
+        const other = joinedMembers.find((member) => member.userId !== normalizedMyUserId);
+        if (other) {
+            return other.name || formatMatrixUserLocalId(other.userId) || other.userId || fallback;
+        }
+    }
+
+    if (normalizedMyUserId) {
+        const selfMemberEvent = room.currentState.getStateEvents(EventType.RoomMember, normalizedMyUserId);
+        const isDirect = Boolean(selfMemberEvent?.getContent()?.is_direct);
+        if (isDirect) {
+            const other = room
+                .getMembers()
+                .find((member) => member.userId !== normalizedMyUserId && (member.membership === "join" || member.membership === "invite"));
+            if (other) {
+                return other.name || formatMatrixUserLocalId(other.userId) || other.userId || fallback;
+            }
+        }
+    }
+
+    return fallback;
+}
+
+function resolveRoomCreatedAt(room: Room): number | null {
+    const createEvent = room.currentState.getStateEvents(EventType.RoomCreate, "");
+    if (!createEvent) return null;
+    const ts = createEvent.getTs();
+    return Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
 function parseJwtSub(token: string | null | undefined): string | null {
     const raw = String(token || "").trim();
     if (!raw) return null;
@@ -284,6 +321,13 @@ export const MainLayout: React.FC = () => {
     const [chatGlobalSearchError, setChatGlobalSearchError] = useState<string | null>(null);
     const [chatGlobalSearchResult, setChatGlobalSearchResult] = useState<ChatSearchGlobalResponse | null>(null);
     const [chatGlobalSearchCursor, setChatGlobalSearchCursor] = useState<string | null>(null);
+    const [summarySearchQuery, setSummarySearchQuery] = useState("");
+    const [debouncedSummarySearchQuery, setDebouncedSummarySearchQuery] = useState("");
+    const [summarySearchLoading, setSummarySearchLoading] = useState(false);
+    const [summarySearchError, setSummarySearchError] = useState<string | null>(null);
+    const [summaryPeopleResults, setSummaryPeopleResults] = useState<SummarySearchPersonItem[]>([]);
+    const [summaryRoomResults, setSummaryRoomResults] = useState<SummarySearchRoomItem[]>([]);
+    const [summarySelectedTarget, setSummarySelectedTarget] = useState<SummarySearchTarget | null>(null);
     const [selectedSharedRoomId, setSelectedSharedRoomId] = useState<string | null>(null);
     const [creatingContactRoom, setCreatingContactRoom] = useState(false);
     const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
@@ -291,6 +335,8 @@ export const MainLayout: React.FC = () => {
     const [settingsDetail, setSettingsDetail] = useState<
         "none" | "chat-language" | "translation-default"
     >("none");
+    const [notebookSidebarMode, setNotebookSidebarMode] = useState<"notebook" | "chatSummary">("notebook");
+    const [summaryDetailTab, setSummaryDetailTab] = useState<"chatContent" | "summaryList">("chatContent");
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
@@ -514,6 +560,7 @@ export const MainLayout: React.FC = () => {
             notebookModule.setViewFilter("all");
         }
     }, [notebookModule, userType]);
+
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
@@ -893,6 +940,13 @@ export const MainLayout: React.FC = () => {
     }, [chatGlobalSearchQuery]);
 
     useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedSummarySearchQuery(summarySearchQuery.trim());
+        }, CHAT_GLOBAL_SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [summarySearchQuery]);
+
+    useEffect(() => {
         if (activeTab !== "contacts") {
             setActiveContact(null);
             setShowContactMenu(false);
@@ -906,6 +960,11 @@ export const MainLayout: React.FC = () => {
         }
         setSettingsDetail("none");
     }, [activeTab]);
+
+    useEffect(() => {
+        if (notebookSidebarMode !== "chatSummary") return;
+        setSummaryDetailTab("chatContent");
+    }, [notebookSidebarMode]);
 
     useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) {
@@ -1135,6 +1194,114 @@ export const MainLayout: React.FC = () => {
         if (!debouncedChatGlobalSearchQuery) return;
         void runChatGlobalSearch();
     }, [chatGlobalSearchOpen, debouncedChatGlobalSearchQuery, runChatGlobalSearch]);
+
+    const runSummarySearch = useCallback(async (params?: { forceQuery?: string }) => {
+        const q = (params?.forceQuery ?? debouncedSummarySearchQuery).trim();
+        if (!q) {
+            setSummaryPeopleResults([]);
+            setSummaryRoomResults([]);
+            setSummarySearchError(null);
+            setSummarySelectedTarget(null);
+            return;
+        }
+        if (!hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
+            setSummarySearchError(t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching."));
+            setSummaryPeopleResults([]);
+            setSummaryRoomResults([]);
+            setSummarySelectedTarget(null);
+            return;
+        }
+
+        setSummarySearchLoading(true);
+        setSummarySearchError(null);
+        try {
+            const response = await chatSearchGlobal({
+                accessToken: hubAccessToken,
+                matrixAccessToken,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials.user_id,
+            }, {
+                q,
+                limit: 20,
+            });
+            const peopleHits: SummarySearchPersonItem[] = response.people_hits
+                .filter((hit) => Boolean(hit.matrix_user_id))
+                .map((hit) => {
+                    const matrixUserId = hit.matrix_user_id as string;
+                    return {
+                        id: matrixUserId,
+                        label: hit.display_name || hit.user_local_id || matrixUserId,
+                        meta: hit.company_name || matrixUserId,
+                    };
+                });
+            const roomHits: SummarySearchRoomItem[] = response.room_hits.map((hit) => {
+                const room = matrixClient?.getRoom(hit.room_id) ?? null;
+                const label = room
+                    ? resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null)
+                    : (hit.room_name || hit.room_id);
+                const createdAtTs = room ? resolveRoomCreatedAt(room) : null;
+                const fallbackTs = hit.last_ts ? Date.parse(hit.last_ts) : NaN;
+                const displayTs = createdAtTs ?? (Number.isFinite(fallbackTs) ? fallbackTs : null);
+                return {
+                    id: hit.room_id,
+                    label,
+                    meta: displayTs
+                        ? t("layout.notebook.summaryCreatedDate", {
+                            date: new Date(displayTs).toLocaleString(),
+                            defaultValue: "Created at: {{date}}",
+                        })
+                        : null,
+                };
+            });
+
+            setSummaryPeopleResults(peopleHits);
+            setSummaryRoomResults(roomHits);
+            setSummarySelectedTarget((prev) => {
+                if (!prev) return null;
+                const stillExists = prev.type === "person"
+                    ? peopleHits.some((item) => item.id === prev.id)
+                    : roomHits.some((item) => item.id === prev.id);
+                return stillExists ? prev : null;
+            });
+        } catch (error) {
+            if (error instanceof ChatSearchError) {
+                if (error.status === 401) {
+                    setSummarySearchError(t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again."));
+                } else if (error.status === 403) {
+                    setSummarySearchError(t("layout.notebook.summarySearchForbidden", "You do not have permission to use chat search."));
+                } else {
+                    setSummarySearchError(error.message || t("layout.notebook.summarySearchFailed", "Chat search failed."));
+                }
+            } else {
+                setSummarySearchError(error instanceof Error ? error.message : t("layout.notebook.summarySearchFailed", "Chat search failed."));
+            }
+            setSummaryPeopleResults([]);
+            setSummaryRoomResults([]);
+            setSummarySelectedTarget(null);
+        } finally {
+            setSummarySearchLoading(false);
+        }
+    }, [
+        debouncedSummarySearchQuery,
+        hubAccessToken,
+        matrixAccessToken,
+        matrixClient,
+        matrixCredentials?.user_id,
+        matrixHsUrl,
+        t,
+    ]);
+
+    useEffect(() => {
+        if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
+        if (!debouncedSummarySearchQuery) {
+            setSummaryPeopleResults([]);
+            setSummaryRoomResults([]);
+            setSummarySearchError(null);
+            setSummarySelectedTarget(null);
+            return;
+        }
+        void runSummarySearch();
+    }, [activeTab, notebookSidebarMode, debouncedSummarySearchQuery, runSummarySearch]);
 
     const openRoomWithOptionalJump = useCallback((roomId: string, eventId?: string | null) => {
         setActiveTab("chat");
@@ -2006,6 +2173,19 @@ export const MainLayout: React.FC = () => {
                             void notebookModule.loadMore();
                         }}
                         showCompanyFilter={userType !== "client"}
+                        mode={notebookSidebarMode}
+                        onModeChange={setNotebookSidebarMode}
+                        summaryQuery={summarySearchQuery}
+                        onSummaryQueryChange={setSummarySearchQuery}
+                        onSummarySearchNow={(value) => {
+                            void runSummarySearch({ forceQuery: value });
+                        }}
+                        summaryLoading={summarySearchLoading}
+                        summaryError={summarySearchError}
+                        summaryPeopleResults={summaryPeopleResults}
+                        summaryRoomResults={summaryRoomResults}
+                        summarySelectedTarget={summarySelectedTarget}
+                        onSummarySelectTarget={setSummarySelectedTarget}
                     />
                 ) : activeTab === "files" ? (
                     <>
@@ -2731,125 +2911,175 @@ export const MainLayout: React.FC = () => {
                         )}
                     </div>
                 ) : activeTab === "notebook" ? (
-                    <NotebookPanel
-                        enabled={notebookCapabilityState.canUseNotebookBasic}
-                        selectedItem={notebookModule.selectedItem}
-                        isCreatingDraft={notebookModule.isCreatingDraft}
-                        editorTitle={notebookModule.editorTitle}
-                        editorContent={notebookModule.editorContent}
-                        isEditing={notebookModule.isEditing}
-                        setEditorTitle={notebookModule.setEditorTitle}
-                        setEditorContent={notebookModule.setEditorContent}
-                        onStartEdit={() => {
-                            notebookModule.startEdit();
-                        }}
-                        onCancelEdit={() => {
-                            notebookModule.cancelEdit();
-                        }}
-                        onSaveAsKnowledge={() => {
-                            void notebookModule.saveItemAs(true);
-                        }}
-                        onSaveAsNote={() => {
-                            void notebookModule.saveItemAs(false);
-                        }}
-                        onDelete={() => {
-                            void notebookModule.deleteItem();
-                        }}
-                        onSwitchToKnowledge={() => {
-                            void notebookModule.switchItemMode(true);
-                        }}
-                        onSwitchToNote={() => {
-                            void notebookModule.switchItemMode(false);
-                        }}
-                        onRetryIndex={() => {
-                            void notebookModule.retryIndex();
-                        }}
-                        onAttachFile={() => {
-                            const mxc = window.prompt("Input matrix_media_mxc (mxc://server/mediaId)");
-                            if (!mxc) return;
-                            const fileName = window.prompt("Input matrix_media_name (optional)") || "linked-file";
-                            const mime = window.prompt("Input matrix_media_mime (optional)") || undefined;
-                            void notebookModule.attachFile({
-                                matrixMediaMxc: mxc,
-                                matrixMediaName: fileName,
-                                matrixMediaMime: mime,
-                                isIndexable: false,
-                            });
-                        }}
-                        onUploadFile={(file) => {
-                            if (!matrixClient) return;
-                            const maxBytes = notebookUploadLimitMb * 1024 * 1024;
-                            if (file.size > maxBytes) {
-                                window.alert(`檔案超過上限（${notebookUploadLimitMb}MB）`);
-                                return;
-                            }
-                            void (async () => {
-                                try {
-                                    const uploadResult = (await matrixClient.uploadContent(file, {
-                                        includeFilename: false,
-                                    })) as unknown;
+                    notebookSidebarMode === "chatSummary" ? (
+                        <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar bg-white p-6 dark:bg-slate-900">
+                            <div className="mx-auto w-full max-w-5xl">
+                                <div className="mb-4 text-base font-semibold text-slate-800 dark:text-slate-100">
+                                    {t("layout.notebook.summaryWorkspaceTitle", "AI Chat Summary")}
+                                </div>
+                                <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2 dark:border-slate-700 dark:bg-slate-950">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSummaryDetailTab("chatContent")}
+                                        className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                                            summaryDetailTab === "chatContent"
+                                                ? "bg-[#2F5C56] text-white dark:bg-emerald-500"
+                                                : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"
+                                        }`}
+                                    >
+                                        {t("layout.notebook.summaryDetailTabChatContent", "聊天內容")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSummaryDetailTab("summaryList")}
+                                        className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                                            summaryDetailTab === "summaryList"
+                                                ? "bg-[#2F5C56] text-white dark:bg-emerald-500"
+                                                : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"
+                                        }`}
+                                    >
+                                        {t("layout.notebook.summaryDetailTabSummaryList", "總結清單")}
+                                    </button>
+                                </div>
 
-                                    let mxcUrl = "";
-                                    if (typeof uploadResult === "string") {
-                                        if (uploadResult.startsWith("mxc://")) {
-                                            mxcUrl = uploadResult;
-                                        } else {
-                                            try {
-                                                const parsed = JSON.parse(uploadResult) as { content_uri?: string };
-                                                mxcUrl = parsed.content_uri || "";
-                                            } catch {
-                                                mxcUrl = "";
-                                            }
-                                        }
-                                    } else if (uploadResult && typeof uploadResult === "object") {
-                                        const uri = (uploadResult as { content_uri?: string }).content_uri;
-                                        mxcUrl = typeof uri === "string" ? uri : "";
-                                    }
-
-                                    if (!mxcUrl.startsWith("mxc://")) {
-                                        throw new Error("Failed to upload file to Matrix media");
-                                    }
-
-                                    await notebookModule.attachFile({
-                                        matrixMediaMxc: mxcUrl,
-                                        matrixMediaName: file.name,
-                                        matrixMediaMime: file.type || undefined,
-                                        matrixMediaSize: file.size,
-                                        isIndexable: false,
-                                    });
-                                } catch {
-                                    // attach/upload failures are reflected by notebook module action state or ignored safely
+                                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-950">
+                                    {!summarySelectedTarget ? (
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                            {t("layout.notebook.summaryWorkspaceEmpty", "請先在左側選擇人員或聊天室。")}
+                                        </div>
+                                    ) : summaryDetailTab === "chatContent" ? (
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                            {t("layout.notebook.summaryChatContentPlaceholder", "聊天內容區（待開發）")}
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                            {t("layout.notebook.summaryListPlaceholder", "總結清單區（待開發）")}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <NotebookPanel
+                            enabled={notebookCapabilityState.canUseNotebookBasic}
+                            selectedItem={notebookModule.selectedItem}
+                            isCreatingDraft={notebookModule.isCreatingDraft}
+                            editorTitle={notebookModule.editorTitle}
+                            editorContent={notebookModule.editorContent}
+                            isEditing={notebookModule.isEditing}
+                            setEditorTitle={notebookModule.setEditorTitle}
+                            setEditorContent={notebookModule.setEditorContent}
+                            onStartEdit={() => {
+                                notebookModule.startEdit();
+                            }}
+                            onCancelEdit={() => {
+                                notebookModule.cancelEdit();
+                            }}
+                            onSaveAsKnowledge={() => {
+                                void notebookModule.saveItemAs(true);
+                            }}
+                            onSaveAsNote={() => {
+                                void notebookModule.saveItemAs(false);
+                            }}
+                            onDelete={() => {
+                                void notebookModule.deleteItem();
+                            }}
+                            onSwitchToKnowledge={() => {
+                                void notebookModule.switchItemMode(true);
+                            }}
+                            onSwitchToNote={() => {
+                                void notebookModule.switchItemMode(false);
+                            }}
+                            onRetryIndex={() => {
+                                void notebookModule.retryIndex();
+                            }}
+                            onAttachFile={() => {
+                                const mxc = window.prompt("Input matrix_media_mxc (mxc://server/mediaId)");
+                                if (!mxc) return;
+                                const fileName = window.prompt("Input matrix_media_name (optional)") || "linked-file";
+                                const mime = window.prompt("Input matrix_media_mime (optional)") || undefined;
+                                void notebookModule.attachFile({
+                                    matrixMediaMxc: mxc,
+                                    matrixMediaName: fileName,
+                                    matrixMediaMime: mime,
+                                    isIndexable: false,
+                                });
+                            }}
+                            onUploadFile={(file) => {
+                                if (!matrixClient) return;
+                                const maxBytes = notebookUploadLimitMb * 1024 * 1024;
+                                if (file.size > maxBytes) {
+                                    window.alert(`檔案超過上限（${notebookUploadLimitMb}MB）`);
+                                    return;
                                 }
-                            })();
-                        }}
-                        uploadLimitMb={notebookUploadLimitMb}
-                        onDeleteFile={(fileId) => {
-                            void notebookModule.removeFile(fileId);
-                        }}
-                        onDownloadFile={(mxcUrl, preferredName) => {
-                            if (!matrixClient) return;
-                            const url = matrixClient.mxcUrlToHttp(mxcUrl);
-                            if (!url) return;
-                            const anchor = document.createElement("a");
-                            anchor.href = url;
-                            anchor.download = preferredName || "notebook-file";
-                            anchor.rel = "noopener noreferrer";
-                            document.body.appendChild(anchor);
-                            anchor.click();
-                            document.body.removeChild(anchor);
-                        }}
-                        draftFiles={notebookModule.draftFiles}
-                        previewBusy={notebookModule.previewBusy}
-                        previewError={notebookModule.previewError}
-                        parsedPreview={notebookModule.parsedPreview}
-                        chunks={notebookModule.chunks}
-                        chunksTotal={notebookModule.chunksTotal}
-                        busy={notebookModule.actionBusy}
-                        actionError={notebookModule.actionError}
-                        onMobileBack={() => setMobileView("list")}
-                        chunkSettings={notebookModule.chunkSettings}
-                        onChunkSettingsChange={notebookModule.setChunkSettings}
-                    />
+                                void (async () => {
+                                    try {
+                                        const uploadResult = (await matrixClient.uploadContent(file, {
+                                            includeFilename: false,
+                                        })) as unknown;
+
+                                        let mxcUrl = "";
+                                        if (typeof uploadResult === "string") {
+                                            if (uploadResult.startsWith("mxc://")) {
+                                                mxcUrl = uploadResult;
+                                            } else {
+                                                try {
+                                                    const parsed = JSON.parse(uploadResult) as { content_uri?: string };
+                                                    mxcUrl = parsed.content_uri || "";
+                                                } catch {
+                                                    mxcUrl = "";
+                                                }
+                                            }
+                                        } else if (uploadResult && typeof uploadResult === "object") {
+                                            const uri = (uploadResult as { content_uri?: string }).content_uri;
+                                            mxcUrl = typeof uri === "string" ? uri : "";
+                                        }
+
+                                        if (!mxcUrl.startsWith("mxc://")) {
+                                            throw new Error("Failed to upload file to Matrix media");
+                                        }
+
+                                        await notebookModule.attachFile({
+                                            matrixMediaMxc: mxcUrl,
+                                            matrixMediaName: file.name,
+                                            matrixMediaMime: file.type || undefined,
+                                            matrixMediaSize: file.size,
+                                            isIndexable: false,
+                                        });
+                                    } catch {
+                                        // attach/upload failures are reflected by notebook module action state or ignored safely
+                                    }
+                                })();
+                            }}
+                            uploadLimitMb={notebookUploadLimitMb}
+                            onDeleteFile={(fileId) => {
+                                void notebookModule.removeFile(fileId);
+                            }}
+                            onDownloadFile={(mxcUrl, preferredName) => {
+                                if (!matrixClient) return;
+                                const url = matrixClient.mxcUrlToHttp(mxcUrl);
+                                if (!url) return;
+                                const anchor = document.createElement("a");
+                                anchor.href = url;
+                                anchor.download = preferredName || "notebook-file";
+                                anchor.rel = "noopener noreferrer";
+                                document.body.appendChild(anchor);
+                                anchor.click();
+                                document.body.removeChild(anchor);
+                            }}
+                            draftFiles={notebookModule.draftFiles}
+                            previewBusy={notebookModule.previewBusy}
+                            previewError={notebookModule.previewError}
+                            parsedPreview={notebookModule.parsedPreview}
+                            chunks={notebookModule.chunks}
+                            chunksTotal={notebookModule.chunksTotal}
+                            busy={notebookModule.actionBusy}
+                            actionError={notebookModule.actionError}
+                            onMobileBack={() => setMobileView("list")}
+                            chunkSettings={notebookModule.chunkSettings}
+                            onChunkSettingsChange={notebookModule.setChunkSettings}
+                        />
+                    )
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (
@@ -2878,7 +3108,7 @@ export const MainLayout: React.FC = () => {
                                                 type="button"
                                                 onClick={() => setPendingChatReceiveLanguage(option.value)}
                                                 className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${pendingChatReceiveLanguage === option.value
-                                                    ? "border-emerald-400 text-emerald-600"
+                                                    ? "border-yellow-400 text-yellow-600 dark:text-yellow-300"
                                                     : "border-gray-200"
                                                     }`}
                                             >

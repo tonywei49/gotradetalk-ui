@@ -5,5 +5,6 @@ export { useNotebookModule } from "./useNotebookModule";
 export { resolveNotebookCapabilities, type NotebookCapabilityState } from "./capabilities";
 export { mapNotebookErrorToMessage } from "./notebookErrorMap";
 export { buildNotebookAuth } from "./utils/buildNotebookAuth";
+export type { SummarySearchPersonItem, SummarySearchRoomItem, SummarySearchTarget } from "./components/NotebookSidebar";
 export type { NotebookAuthContext, NotebookAssistResponse, NotebookCapability, NotebookItem } from "./types";
 export { NotebookApiError } from "./adapters/types";
