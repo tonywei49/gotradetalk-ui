@@ -218,6 +218,19 @@ const TranslationTypingIndicator = ({ isMe }: { isMe: boolean }) => {
     );
 };
 
+function formatMessageTimestampLabel(ts: number): string {
+    const date = new Date(ts);
+    const now = new Date();
+    const isToday =
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+    if (isToday) {
+        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 const MessageBubble = ({
     event,
     isMe,
@@ -253,7 +266,7 @@ const MessageBubble = ({
     const isSending =
         status === EventStatus.SENDING || status === EventStatus.ENCRYPTING || status === EventStatus.QUEUED;
     const isFailed = status === EventStatus.NOT_SENT;
-    const timeLabel = new Date(event.getTs()).toLocaleTimeString();
+    const timeLabel = formatMessageTimestampLabel(event.getTs());
     const isImageMsg = content?.msgtype === MsgType.Image;
     const isVideoMsg = content?.msgtype === MsgType.Video;
     const isAudioMsg = content?.msgtype === MsgType.Audio;
