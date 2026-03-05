@@ -470,6 +470,8 @@
         "roomInfo": "Room info",
         "showTranslation": "Show translation",
         "showOriginal": "Show original",
+        "showBilingual": "Show bilingual",
+        "retryTranslation": "Retry translation",
         "translationPending": "Translating...",
         "translationUnavailable": "Translation unavailable",
         "playVideo": "Play video",

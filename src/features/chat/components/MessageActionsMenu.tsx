@@ -1,14 +1,17 @@
+import type { TranslationDisplayMode } from "../hooks/useMessageTranslation";
 import { useTranslation } from "react-i18next";
 
 type MessageActionsMenuProps = {
     canToggleTranslation: boolean;
     translationLoading?: boolean;
-    showTranslated?: boolean;
+    translationMode?: TranslationDisplayMode;
+    canRetryTranslation?: boolean;
     canAssistFromContext: boolean;
     canSendFileToNotebook: boolean;
     canRecallMessage?: boolean;
     sendFileToNotebookBusy?: boolean;
-    onToggleTranslation: () => void;
+    onSetTranslationMode: (mode: TranslationDisplayMode) => void;
+    onRetryTranslation?: () => void;
     onCopyMessage: () => void;
     onAssistFromContext?: () => void;
     onSendFileToNotebook?: () => void;
@@ -18,12 +21,14 @@ type MessageActionsMenuProps = {
 export function MessageActionsMenu({
     canToggleTranslation,
     translationLoading,
-    showTranslated,
+    translationMode,
+    canRetryTranslation,
     canAssistFromContext,
     canSendFileToNotebook,
     canRecallMessage,
     sendFileToNotebookBusy,
-    onToggleTranslation,
+    onSetTranslationMode,
+    onRetryTranslation,
     onCopyMessage,
     onAssistFromContext,
     onSendFileToNotebook,
@@ -33,18 +38,47 @@ export function MessageActionsMenu({
     return (
         <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
             {canToggleTranslation && (
-                <button
-                    type="button"
-                    className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                    onClick={onToggleTranslation}
-                    disabled={translationLoading}
-                >
-                    {translationLoading
-                        ? t("chat.translationPending")
-                        : showTranslated
-                            ? t("chat.showOriginal")
-                            : t("chat.showTranslation")}
-                </button>
+                <>
+                    <button
+                        type="button"
+                        className={`w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
+                            translationMode === "original" ? "text-emerald-600 dark:text-emerald-300" : "text-slate-700 dark:text-slate-200"
+                        }`}
+                        onClick={() => onSetTranslationMode("original")}
+                        disabled={translationLoading}
+                    >
+                        {t("chat.showOriginal")}
+                    </button>
+                    <button
+                        type="button"
+                        className={`w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
+                            translationMode === "translated" ? "text-emerald-600 dark:text-emerald-300" : "text-slate-700 dark:text-slate-200"
+                        }`}
+                        onClick={() => onSetTranslationMode("translated")}
+                        disabled={translationLoading}
+                    >
+                        {translationLoading ? t("chat.translationPending") : t("chat.showTranslation")}
+                    </button>
+                    <button
+                        type="button"
+                        className={`w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
+                            translationMode === "bilingual" ? "text-emerald-600 dark:text-emerald-300" : "text-slate-700 dark:text-slate-200"
+                        }`}
+                        onClick={() => onSetTranslationMode("bilingual")}
+                    >
+                        {t("chat.showBilingual")}
+                    </button>
+                    {canRetryTranslation && (
+                        <button
+                            type="button"
+                            className="w-full px-3 py-1.5 text-left text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-900/20"
+                            onClick={onRetryTranslation}
+                            disabled={translationLoading}
+                        >
+                            {t("chat.retryTranslation")}
+                        </button>
+                    )}
+                </>
             )}
             <button
                 type="button"

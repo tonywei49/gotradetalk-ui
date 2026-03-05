@@ -470,6 +470,8 @@
         "roomInfo": "房间信息",
         "showTranslation": "显示翻译",
         "showOriginal": "显示原文",
+        "showBilingual": "双语显示",
+        "retryTranslation": "重试翻译",
         "translationPending": "翻译中...",
         "translationUnavailable": "译文不可用",
         "playVideo": "播放视频",

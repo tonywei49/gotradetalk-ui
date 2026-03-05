@@ -58,7 +58,7 @@ import {
     useAttachmentDrafts,
     type PendingAttachment,
 } from "./hooks/useAttachmentDrafts";
-import { getMessageEventKey, useMessageTranslation } from "./hooks/useMessageTranslation";
+import { getMessageEventKey, type TranslationDisplayMode, useMessageTranslation } from "./hooks/useMessageTranslation";
 import { useNotebookAssist } from "./hooks/useNotebookAssist";
 import { MessageActionsMenu } from "./components/MessageActionsMenu";
 import { getNotebookAdapter } from "../notebook";
@@ -91,10 +91,12 @@ type MessageBubbleProps = {
     senderAvatarUrl?: string | null;
     onOpenMedia: (payload: { url: string; type: "image" | "video" | "pdf" }) => void;
     translatedText?: string | null;
-    showTranslation?: boolean;
+    translationMode?: TranslationDisplayMode;
     translationLoading?: boolean;
     translationError?: boolean;
-    onToggleTranslation?: () => void;
+    translationSuspect?: boolean;
+    onSetTranslationMode?: (mode: TranslationDisplayMode) => void;
+    onRetryTranslation?: () => void;
     canDeleteFile?: boolean;
     deleteBusy?: boolean;
     onDeleteFile?: (event: MatrixEvent) => void;
@@ -241,10 +243,12 @@ const MessageBubble = ({
     senderAvatarUrl,
     onOpenMedia,
     translatedText,
-    showTranslation,
+    translationMode,
     translationLoading,
     translationError,
-    onToggleTranslation,
+    translationSuspect,
+    onSetTranslationMode,
+    onRetryTranslation,
     canDeleteFile,
     deleteBusy,
     onDeleteFile,
@@ -281,13 +285,16 @@ const MessageBubble = ({
     const isText = !isImage && !isVideo && !isAudio && !isFile;
     const isFileLike = Boolean(isImageMsg || isVideoMsg || isAudioMsg || isFile);
     const eventId = event.getId() ?? event.getTxnId() ?? "unknown";
-    const showTranslated = Boolean(isText && showTranslation);
+    const effectiveTranslationMode: TranslationDisplayMode = translationMode ?? "original";
+    const showTranslated = Boolean(isText && effectiveTranslationMode === "translated");
+    const showBilingual = Boolean(isText && effectiveTranslationMode === "bilingual");
     const hasTranslatedText = Boolean((translatedText ?? "").trim());
     const showUnavailableInline = Boolean(
-        isText && showTranslated && !translationLoading && !hasTranslatedText && translationError,
+        isText && (showTranslated || showBilingual) && !translationLoading && !hasTranslatedText && translationError,
     );
     const anchorEventId = event.getId();
-    const canToggleTranslation = Boolean(isText && !isMe && onToggleTranslation);
+    const canToggleTranslation = Boolean(isText && !isMe && onSetTranslationMode);
+    const canRetryTranslation = Boolean(isText && !isMe && onRetryTranslation && (translationError || translationSuspect));
     const canAssistFromContext = Boolean(
         canUseNotebookAssist &&
         event.getType() === EventType.RoomMessage &&
@@ -457,6 +464,21 @@ const MessageBubble = ({
                                     {t("chat.downloadFile")} {messageText}
                                 </a>
                             )
+                        ) : isText && showBilingual ? (
+                            <div className="space-y-2">
+                                <MessageMarkdown text={messageText} isMe={isMe} />
+                                <div className={`rounded-md px-2 py-1 ${isMe ? "bg-white/10" : "bg-slate-100 dark:bg-slate-700"}`}>
+                                    {translationLoading ? (
+                                        <TranslationTypingIndicator isMe={isMe} />
+                                    ) : hasTranslatedText ? (
+                                        <MessageMarkdown text={translatedText as string} isMe={isMe} />
+                                    ) : (
+                                        <span className={`text-[11px] ${isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-300"}`}>
+                                            {t("chat.translationPending")}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
                         ) : isText && showTranslated && translationLoading ? (
                             <TranslationTypingIndicator isMe={isMe} />
                         ) : (
@@ -482,13 +504,18 @@ const MessageBubble = ({
                                 <MessageActionsMenu
                                     canToggleTranslation={canToggleTranslation}
                                     translationLoading={translationLoading}
-                                    showTranslated={showTranslated}
+                                    translationMode={effectiveTranslationMode}
+                                    canRetryTranslation={canRetryTranslation}
                                     canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
-                                    onToggleTranslation={() => {
+                                    onSetTranslationMode={(mode) => {
                                         setShowQuickActionMenu(false);
-                                        onToggleTranslation?.();
+                                        onSetTranslationMode?.(mode);
+                                    }}
+                                    onRetryTranslation={() => {
+                                        setShowQuickActionMenu(false);
+                                        onRetryTranslation?.();
                                     }}
                                     onCopyMessage={() => {
                                         setShowQuickActionMenu(false);
@@ -544,8 +571,18 @@ const MessageBubble = ({
                     )}
                 </div>
             {showUnavailableInline && (
-                <div className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-300">
+                <div className="mt-1 flex items-center gap-2 text-[11px] text-emerald-600 dark:text-emerald-300">
                     {t("chat.translationUnavailable")}
+                    {onRetryTranslation && (
+                        <button
+                            type="button"
+                            className="rounded border border-emerald-500/40 px-2 py-0.5 text-[10px] text-emerald-700 hover:bg-emerald-50 dark:border-emerald-300/40 dark:text-emerald-200 dark:hover:bg-emerald-900/20"
+                            onClick={onRetryTranslation}
+                            disabled={translationLoading}
+                        >
+                            {t("chat.retryTranslation")}
+                        </button>
+                    )}
                 </div>
             )}
             {isFailed && (
@@ -1130,10 +1167,10 @@ export const ChatRoom: React.FC = () => {
         });
         return map;
     }, [contacts, matrixHost]);
-    const resolveContactByMatrixUserId = (matrixUserId?: string | null): ContactEntry | null => {
+    const resolveContactByMatrixUserId = useCallback((matrixUserId?: string | null): ContactEntry | null => {
         if (!matrixUserId) return null;
         return contactLookup.get(matrixUserId) ?? null;
-    };
+    }, [contactLookup]);
 
     const roomKind = useMemo(() => {
         if (!room) return null;
@@ -2538,9 +2575,10 @@ export const ChatRoom: React.FC = () => {
                                 senderAvatarUrl={senderAvatarUrl}
                                 onOpenMedia={openMediaPreview}
                                 translatedText={translationMap[getMessageEventKey(event)]?.text ?? null}
+                                translationMode={translationView[getMessageEventKey(event)] ?? (!isMe && translationDefaultView !== "original" ? "translated" : "original")}
                                 translationLoading={translationMap[getMessageEventKey(event)]?.loading ?? false}
                                 translationError={translationMap[getMessageEventKey(event)]?.error ?? false}
-                                showTranslation={translationView[getMessageEventKey(event)] ?? (!isMe && translationDefaultView !== "original")}
+                                translationSuspect={translationMap[getMessageEventKey(event)]?.suspect ?? false}
                                 canDeleteFile={isOwnFileEvent(event)}
                                 deleteBusy={deletingEventId === event.getId()}
                                 onDeleteFile={(targetEvent) => {
@@ -2561,20 +2599,26 @@ export const ChatRoom: React.FC = () => {
                                 onRecallMessage={(targetEvent) => {
                                     void onRecallMessageEvent(targetEvent);
                                 }}
-                                onToggleTranslation={() => {
+                                onSetTranslationMode={(mode) => {
                                     const key = getMessageEventKey(event);
-                                    const nextValue = !(translationView[key] ?? false);
-                                    setTranslationView((prev) => ({ ...prev, [key]: nextValue }));
-                                    if (nextValue) {
+                                    setTranslationView((prev) => ({ ...prev, [key]: mode }));
+                                    if (mode === "translated" || mode === "bilingual") {
                                         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
                                         const messageText = content?.body ?? "";
                                         const cache = translationMap[key];
                                         const hasCachedTranslation = Boolean((cache?.text ?? "").trim());
-                                        const shouldRetry =
-                                            !cache || (!cache.loading && !hasCachedTranslation && Boolean(cache.error));
-                                        if (messageText && shouldRetry) {
-                                            void requestTranslation(event, messageText, true);
+                                        const shouldLoad =
+                                            !cache || (!cache.loading && !hasCachedTranslation && !cache.error);
+                                        if (messageText && shouldLoad) {
+                                            void requestTranslation(event, messageText);
                                         }
+                                    }
+                                }}
+                                onRetryTranslation={() => {
+                                    const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
+                                    const messageText = content?.body ?? "";
+                                    if (messageText) {
+                                        void requestTranslation(event, messageText, true);
                                     }
                                 }}
                             />
