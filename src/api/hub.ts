@@ -396,17 +396,29 @@ export type ChatSummaryJobDetail = {
     progress_message?: string | null;
 };
 
-function toSummaryApiDate(value: string): string {
+function toSummaryApiDateTime(value: string): string {
     const trimmed = String(value || "").trim();
     if (!trimmed) return "";
-    const datePart = trimmed.split("T")[0];
-    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+    const normalized = trimmed.replace(/\//g, "-").replace(" ", "T");
+    const localMatch = normalized.match(
+        /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2})(?::(\d{2}))?(?::(\d{2}))?)?$/,
+    );
+    if (localMatch) {
+        const year = Number(localMatch[1]);
+        const month = Number(localMatch[2]);
+        const day = Number(localMatch[3]);
+        const hour = Number(localMatch[4] || "0");
+        const minute = Number(localMatch[5] || "0");
+        const second = Number(localMatch[6] || "0");
+        const localDate = new Date(year, month - 1, day, hour, minute, second, 0);
+        if (!Number.isNaN(localDate.getTime())) {
+            return localDate.toISOString();
+        }
+    }
+    // Fallback for ISO strings with timezone / other parseable formats.
     const parsed = new Date(trimmed);
     if (Number.isNaN(parsed.getTime())) return "";
-    const year = parsed.getFullYear();
-    const month = String(parsed.getMonth() + 1).padStart(2, "0");
-    const day = String(parsed.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    return parsed.toISOString();
 }
 
 export async function createChatSummaryJob(params: {
@@ -426,8 +438,8 @@ export async function createChatSummaryJob(params: {
     if (params.hsUrl) query.hs_url = params.hsUrl;
     if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
     const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/chat/summary/jobs"), query) : joinUrl(hubBaseUrl, "/chat/summary/jobs");
-    const fromDate = toSummaryApiDate(params.fromDate);
-    const toDate = toSummaryApiDate(params.toDate);
+    const fromDate = toSummaryApiDateTime(params.fromDate);
+    const toDate = toSummaryApiDateTime(params.toDate);
     return postJson(url, {
         target_label: params.targetLabel,
         room_id: params.roomId || null,
