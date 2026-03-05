@@ -325,6 +325,7 @@
             "summaryJobNameSuffix": " room summary",
             "summaryStatusCompleted": "Completed",
             "summaryStatusProcessing": "Processing",
+            "summaryStatusFailed": "Failed",
             "summaryPreviewFailed": "Failed to load summary preview.",
             "summaryHintSelectTarget": "Please select a person or room first.",
             "summaryHintSelectTimeRange": "Please select start and end time.",

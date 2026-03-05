@@ -325,6 +325,7 @@
             "summaryJobNameSuffix": "聊天室总结",
             "summaryStatusCompleted": "已完成",
             "summaryStatusProcessing": "生成中",
+            "summaryStatusFailed": "失败",
             "summaryPreviewFailed": "加载总结预览失败。",
             "summaryHintSelectTarget": "请先选择人员或聊天室。",
             "summaryHintSelectTimeRange": "请选择开始和结束时间。",

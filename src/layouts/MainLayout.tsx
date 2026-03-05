@@ -2465,16 +2465,49 @@ export const MainLayout: React.FC = () => {
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                         job.status === "completed"
                                             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                            : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+                                            : job.status === "failed"
+                                                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
+                                                : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
                                     }`}>
                                         {job.status === "completed"
                                             ? t("layout.notebook.summaryStatusCompleted", "Completed")
-                                            : t("layout.notebook.summaryStatusProcessing", "Processing")}
+                                            : job.status === "failed"
+                                                ? t("layout.notebook.summaryStatusFailed", "Failed")
+                                                : t("layout.notebook.summaryStatusProcessing", "Processing")}
                                     </span>
                                 </div>
                                 <div className="text-xs text-slate-500 dark:text-slate-400">
                                     {`${formatSummaryDisplayDateTime(job.from_date)} ~ ${formatSummaryDisplayDateTime(job.to_date)}`}
                                 </div>
+                                {job.status === "processing" ? (
+                                    <div className="mt-2 space-y-1">
+                                        <div className="text-xs text-slate-600 dark:text-slate-300">
+                                            {job.progress_message || t("layout.notebook.summaryStatusProcessing", "Processing")}
+                                            {Number.isFinite(Number(job.progress_current)) && Number.isFinite(Number(job.progress_total)) && Number(job.progress_total) > 0
+                                                ? ` (${Number(job.progress_current)}/${Number(job.progress_total)})`
+                                                : ""}
+                                        </div>
+                                        <div className="h-1.5 w-full overflow-hidden rounded bg-slate-200 dark:bg-slate-700">
+                                            <div
+                                                className="h-full bg-emerald-500 transition-all"
+                                                style={{
+                                                    width: (() => {
+                                                        const current = Number(job.progress_current);
+                                                        const total = Number(job.progress_total);
+                                                        if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) return "18%";
+                                                        const percent = Math.max(4, Math.min(100, Math.round((current / total) * 100)));
+                                                        return `${percent}%`;
+                                                    })(),
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {job.status === "failed" ? (
+                                    <div className="mt-1 text-xs text-rose-500 dark:text-rose-300">
+                                        {job.progress_message || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.")}
+                                    </div>
+                                ) : null}
                                 <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                                     {t("layout.notebook.summaryGeneratedDate", {
                                         date: formatSummaryDisplayDate(job.created_at),

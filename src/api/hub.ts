@@ -374,6 +374,10 @@ export type ChatSummaryJobItem = {
     created_at: string;
     updated_at: string;
     has_content: boolean;
+    progress_stage?: string | null;
+    progress_current?: number | null;
+    progress_total?: number | null;
+    progress_message?: string | null;
 };
 
 export type ChatSummaryJobDetail = {
@@ -386,6 +390,10 @@ export type ChatSummaryJobDetail = {
     created_at: string;
     updated_at: string;
     summary_text: string;
+    progress_stage?: string | null;
+    progress_current?: number | null;
+    progress_total?: number | null;
+    progress_message?: string | null;
 };
 
 function toSummaryApiDate(value: string): string {
