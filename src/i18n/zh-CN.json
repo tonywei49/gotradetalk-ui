@@ -279,6 +279,7 @@
             "summaryRangeExceeded": "时间范围不能超过3天。",
             "summaryRangeHelp": "聊天总结时间范围上限为3天。",
             "summaryCreatedDate": "创建日期：{{date}}",
+            "summaryGeneratedDate": "生成日期：{{date}}",
             "summaryWorkspaceTitle": "AI聊天总结",
             "summaryDetailTabChatContent": "聊天内容",
             "summaryDetailTabSummaryList": "总结清单",

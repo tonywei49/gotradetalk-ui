@@ -347,6 +347,30 @@ function toCompactDateTime(value: string): string {
     return iso.slice(0, 16).replace(/[-:T]/g, "");
 }
 
+function formatSummaryDisplayDateTime(value: string | null | undefined): string {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    const year = parsed.getFullYear();
+    const month = parsed.getMonth() + 1;
+    const day = parsed.getDate();
+    const hour = String(parsed.getHours()).padStart(2, "0");
+    const minute = String(parsed.getMinutes()).padStart(2, "0");
+    return `${year}/${month}/${day} ${hour}:${minute}`;
+}
+
+function formatSummaryDisplayDate(value: string | null | undefined): string {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    const year = parsed.getFullYear();
+    const month = parsed.getMonth() + 1;
+    const day = parsed.getDate();
+    return `${year}/${month}/${day}`;
+}
+
 function parseJwtSub(token: string | null | undefined): string | null {
     const raw = String(token || "").trim();
     if (!raw) return null;
@@ -2404,7 +2428,7 @@ export const MainLayout: React.FC = () => {
                                 {`${summaryPreviewJob.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
                             </div>
                             <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-                                {`${summaryPreviewJob.from_date} ~ ${summaryPreviewJob.to_date}`}
+                                {`${formatSummaryDisplayDateTime(summaryPreviewJob.from_date)} ~ ${formatSummaryDisplayDateTime(summaryPreviewJob.to_date)}`}
                             </div>
                             <pre className="max-h-[56vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
                                 {summaryPreviewJob.summary_text || ""}
@@ -2446,7 +2470,13 @@ export const MainLayout: React.FC = () => {
                                     </span>
                                 </div>
                                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                                    {`${job.from_date} ~ ${job.to_date}`}
+                                    {`${formatSummaryDisplayDateTime(job.from_date)} ~ ${formatSummaryDisplayDateTime(job.to_date)}`}
+                                </div>
+                                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("layout.notebook.summaryGeneratedDate", {
+                                        date: formatSummaryDisplayDate(job.created_at),
+                                        defaultValue: "Generated on: {{date}}",
+                                    })}
                                 </div>
                                 <div className="mt-2 flex items-center gap-2">
                                     <button
