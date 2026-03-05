@@ -607,7 +607,7 @@ type ChatRoomContext = {
     onTogglePin?: () => void;
     isRoomPinned?: boolean;
     chatReceiveLanguage?: string;
-    translationDefaultView?: "translated" | "original";
+    translationDefaultView?: "translated" | "original" | "bilingual";
     companyName?: string | null;
     jumpToEventId?: string | null;
     onJumpHandled?: () => void;
@@ -2575,7 +2575,7 @@ export const ChatRoom: React.FC = () => {
                                 senderAvatarUrl={senderAvatarUrl}
                                 onOpenMedia={openMediaPreview}
                                 translatedText={translationMap[getMessageEventKey(event)]?.text ?? null}
-                                translationMode={translationView[getMessageEventKey(event)] ?? (!isMe && translationDefaultView !== "original" ? "translated" : "original")}
+                                translationMode={translationView[getMessageEventKey(event)] ?? (!isMe ? (translationDefaultView ?? "translated") : "original")}
                                 translationLoading={translationMap[getMessageEventKey(event)]?.loading ?? false}
                                 translationError={translationMap[getMessageEventKey(event)]?.error ?? false}
                                 translationSuspect={translationMap[getMessageEventKey(event)]?.suspect ?? false}

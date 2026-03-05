@@ -175,6 +175,7 @@
         "chatReceiveLanguage": "Chat receive language",
         "translationDefaultContent": "Default display content",
         "translationDefaultTranslated": "Show translation",
+        "translationDefaultBilingual": "Show bilingual",
         "translationDefaultOriginal": "Show original",
         "notificationSound": "Notification sound",
         "notificationSoundOff": "Off",

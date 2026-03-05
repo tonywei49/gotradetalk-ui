@@ -175,6 +175,7 @@
         "chatReceiveLanguage": "聊天接收语言",
         "translationDefaultContent": "默認顯示內容",
         "translationDefaultTranslated": "顯示譯文",
+        "translationDefaultBilingual": "雙語顯示",
         "translationDefaultOriginal": "顯示原文",
         "notificationSound": "提示音",
         "notificationSoundOff": "关闭",

@@ -486,7 +486,7 @@ export const MainLayout: React.FC = () => {
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
-    const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original">("translated");
+    const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original" | "bilingual">("translated");
     const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
     const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
     const chatGlobalSearchPanelRef = useRef<HTMLDivElement | null>(null);
@@ -1040,7 +1040,11 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         const raw = localStorage.getItem(translationDefaultStorageKey);
-        setTranslationDefaultView(raw === "original" ? "original" : "translated");
+        if (raw === "original" || raw === "translated" || raw === "bilingual") {
+            setTranslationDefaultView(raw);
+            return;
+        }
+        setTranslationDefaultView("translated");
     }, [translationDefaultStorageKey]);
 
     useEffect(() => {
@@ -3828,7 +3832,7 @@ export const MainLayout: React.FC = () => {
                                             {t("layout.translationDefaultContent")}
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -3842,6 +3846,20 @@ export const MainLayout: React.FC = () => {
                                                 }`}
                                         >
                                             {t("layout.translationDefaultTranslated")}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setTranslationDefaultView("bilingual");
+                                                setSettingsDetail("none");
+                                                setMobileView("list");
+                                            }}
+                                            className={`rounded-lg border px-3 py-2 text-sm ${translationDefaultView === "bilingual"
+                                                    ? "border-emerald-400 text-emerald-600"
+                                                    : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                                                }`}
+                                        >
+                                            {t("layout.translationDefaultBilingual")}
                                         </button>
                                         <button
                                             type="button"

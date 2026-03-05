@@ -29,7 +29,7 @@ type Params = {
     userId: string | null;
     canTranslate: boolean;
     targetLanguage: string;
-    translationDefaultView?: "translated" | "original";
+    translationDefaultView?: "translated" | "original" | "bilingual";
     translateAccessToken: string | null;
     translateHsUrl: string | null;
     translateMatrixUserId: string | null;
@@ -138,7 +138,7 @@ export function useMessageTranslation(params: Params) {
                     setTranslationMap((prev) => ({ ...prev, [key]: { text: cachedText, loading: false, error: false, suspect: false } }));
                     setTranslationView((prev) =>
                         prev[key] === undefined
-                            ? { ...prev, [key]: translationDefaultView !== "original" ? "translated" : "original" }
+                            ? { ...prev, [key]: translationDefaultView ?? "translated" }
                             : prev,
                     );
                     return;
@@ -188,7 +188,7 @@ export function useMessageTranslation(params: Params) {
                 }));
                 setTranslationView((prev) =>
                     prev[key] === undefined
-                        ? { ...prev, [key]: translationDefaultView !== "original" ? "translated" : "original" }
+                        ? { ...prev, [key]: translationDefaultView ?? "translated" }
                         : prev,
                 );
             } catch (error) {
