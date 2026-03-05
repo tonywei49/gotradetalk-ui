@@ -127,7 +127,13 @@ export function useMessageTranslation(params: Params) {
             if (!messageId) return;
             const key = getMessageEventKey(event);
             const isMeMessage = event.getSender() === userId;
-            if (!shouldTranslateEvent(event, isMeMessage)) return;
+            if (!shouldTranslateEvent(event, isMeMessage)) {
+                setTranslationMap((prev) => ({
+                    ...prev,
+                    [key]: { text: prev[key]?.text ?? null, loading: false, error: true, suspect: false },
+                }));
+                return;
+            }
             const roomId = activeRoomId ?? "";
             const requestKey = `${roomId}|${messageId}|${targetLanguage}|${messageText}`;
             if (inflightRef.current.has(requestKey)) return;

@@ -472,6 +472,10 @@ const MessageBubble = ({
                                         <TranslationTypingIndicator isMe={isMe} />
                                     ) : hasTranslatedText ? (
                                         <MessageMarkdown text={translatedText as string} isMe={isMe} />
+                                    ) : translationError ? (
+                                        <span className={`text-[11px] ${isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-300"}`}>
+                                            {t("chat.translationUnavailable")}
+                                        </span>
                                     ) : (
                                         <span className={`text-[11px] ${isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-300"}`}>
                                             {t("chat.translationPending")}
