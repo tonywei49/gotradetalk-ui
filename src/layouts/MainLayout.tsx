@@ -65,6 +65,7 @@ import {
     getNotebookAdapter,
     NotebookPanel,
     NotebookSidebar,
+    type SummaryDirectionPayload,
     resolveNotebookCapabilities,
     type SummarySearchPersonItem,
     type SummarySearchRoomItem,
@@ -1627,7 +1628,7 @@ export const MainLayout: React.FC = () => {
         return null;
     }, [summaryEndDate, summarySelectedTarget, summaryStartDate, t]);
 
-    const onStartGenerateSummary = useCallback(async () => {
+    const onStartGenerateSummary = useCallback(async (directionPayload?: SummaryDirectionPayload) => {
         if (!hubAccessToken || !summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
         if (summaryStartDate > summaryEndDate) {
             setSummaryGenerationNotice(t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date."));
@@ -1693,6 +1694,8 @@ export const MainLayout: React.FC = () => {
                 fromDate: summaryStartDate,
                 toDate: summaryEndDate,
                 messages,
+                summaryDirection: directionPayload?.summaryDirection || "meetingMinutes",
+                summaryCustomRequirement: directionPayload?.summaryCustomRequirement || null,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
@@ -2856,8 +2859,8 @@ export const MainLayout: React.FC = () => {
                         summaryEndDate={summaryEndDate}
                         onSummaryStartDateChange={setSummaryStartDate}
                         onSummaryEndDateChange={setSummaryEndDate}
-                        onSummaryConfirm={() => {
-                            void onStartGenerateSummary();
+                        onSummaryConfirm={(payload) => {
+                            void onStartGenerateSummary(payload);
                         }}
                         summaryConfirmLoading={summaryContentLoading}
                         summaryConfirmHint={summaryConfirmHint}

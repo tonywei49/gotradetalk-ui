@@ -24,6 +24,11 @@ export type SummarySearchRoomItem = {
     meta?: string | null;
 };
 
+export type SummaryDirectionPayload = {
+    summaryDirection: string;
+    summaryCustomRequirement: string | null;
+};
+
 type NotebookSidebarProps = {
     listState: NotebookListState;
     listError: string | null;
@@ -57,7 +62,7 @@ type NotebookSidebarProps = {
     summaryEndDate: string;
     onSummaryStartDateChange: (value: string) => void;
     onSummaryEndDateChange: (value: string) => void;
-    onSummaryConfirm: () => void;
+    onSummaryConfirm: (payload: SummaryDirectionPayload) => void;
     summaryConfirmLoading?: boolean;
     summaryConfirmHint?: string | null;
     summaryMobilePanel?: ReactNode;
@@ -491,7 +496,12 @@ export function NotebookSidebar({
                             <button
                                 type="button"
                                 disabled={summaryConfirmLoading || !summarySelectedTarget || !summaryStartDate || !summaryEndDate || hasInvalidDateRange || hasSummaryRangeExceeded}
-                                onClick={onSummaryConfirm}
+                                onClick={() => onSummaryConfirm({
+                                    summaryDirection,
+                                    summaryCustomRequirement: summaryDirection === "custom"
+                                        ? (summaryCustomRequirement.trim() || null)
+                                        : null,
+                                })}
                                 className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500"
                             >
                                 {summaryConfirmLoading ? t("common.loading", "Loading...") : t("layout.notebook.summaryConfirm", "Confirm")}
