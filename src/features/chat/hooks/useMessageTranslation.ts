@@ -5,18 +5,10 @@ import type { ContactEntry } from "../../../api/contacts";
 import { createTranslationCacheStore } from "../translationCache";
 import { normalizeHubLanguage, resolveSourceLangHint, shouldTranslateIncomingMessage } from "../translationPolicy";
 
-const TRANSLATION_CACHE_STORAGE_KEY = "gtt_translation_cache_v1";
+const TRANSLATION_CACHE_STORAGE_KEY = "gtt_translation_cache_v2";
 const TRANSLATION_CACHE_MAX_ITEMS = 1500;
 
-function looksLikeStaleEnglishCache(sourceText: string, translatedText: string, targetLanguage: string): boolean {
-    const target = (targetLanguage || "").toLowerCase();
-    const isEnglishTarget = target === "en" || target.startsWith("en-");
-    if (!isEnglishTarget) return false;
-    if (translatedText !== sourceText) return false;
-    return /[\u3400-\u9fff]/.test(sourceText);
-}
-
-function shouldRetryEnglishTranslation(sourceText: string, translatedText: string, targetLanguage: string): boolean {
+function looksLikeUntranslatedEnglishResult(sourceText: string, translatedText: string, targetLanguage: string): boolean {
     const target = (targetLanguage || "").toLowerCase();
     const isEnglishTarget = target === "en" || target.startsWith("en-");
     if (!isEnglishTarget) return false;
@@ -27,6 +19,8 @@ function shouldRetryEnglishTranslation(sourceText: string, translatedText: strin
 export function getMessageEventKey(event: MatrixEvent): string {
     return event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender()}`;
 }
+
+export type TranslationDisplayMode = "original" | "translated" | "bilingual";
 
 type Params = {
     activeRoomId: string | null;
@@ -78,11 +72,12 @@ export function useMessageTranslation(params: Params) {
     } = params;
 
     const [translationMap, setTranslationMap] = useState<
-        Record<string, { text: string | null; loading: boolean; error: boolean }>
+        Record<string, { text: string | null; loading: boolean; error: boolean; suspect: boolean }>
     >({});
-    const [translationView, setTranslationView] = useState<Record<string, boolean>>({});
+    const [translationView, setTranslationView] = useState<Record<string, TranslationDisplayMode>>({});
     const [translationBlocked, setTranslationBlocked] = useState(false);
     const translationErrorToastRef = useRef<{ key: string; ts: number } | null>(null);
+    const inflightRef = useRef<Set<string>>(new Set());
     const translationCacheStore = useMemo(
         () => createTranslationCacheStore(TRANSLATION_CACHE_STORAGE_KEY, TRANSLATION_CACHE_MAX_ITEMS),
         [],
@@ -134,33 +129,37 @@ export function useMessageTranslation(params: Params) {
             const isMeMessage = event.getSender() === userId;
             if (!shouldTranslateEvent(event, isMeMessage)) return;
             const roomId = activeRoomId ?? "";
+            const requestKey = `${roomId}|${messageId}|${targetLanguage}|${messageText}`;
+            if (inflightRef.current.has(requestKey)) return;
 
             if (!forceRetry && roomId && targetLanguage) {
                 const cachedText = translationCacheStore.read(roomId, messageId, targetLanguage, messageText);
                 if (cachedText) {
-                    if (looksLikeStaleEnglishCache(messageText, cachedText, targetLanguage)) {
-                        // Skip stale same-text cache for English target and CJK source.
-                    } else {
-                    setTranslationMap((prev) => ({ ...prev, [key]: { text: cachedText, loading: false, error: false } }));
+                    setTranslationMap((prev) => ({ ...prev, [key]: { text: cachedText, loading: false, error: false, suspect: false } }));
                     setTranslationView((prev) =>
                         prev[key] === undefined
-                            ? { ...prev, [key]: translationDefaultView !== "original" }
+                            ? { ...prev, [key]: translationDefaultView !== "original" ? "translated" : "original" }
                             : prev,
                     );
                     return;
-                    }
                 }
             }
 
             const senderId = event.getSender() ?? null;
             const senderContact = resolveContactByMatrixUserId(senderId);
             const senderLangHint = (senderContact?.locale || "").trim() || undefined;
+            let shouldRequest = true;
             setTranslationMap((prev) => {
                 if (prev[key]?.loading) return prev;
-                if (!forceRetry && prev[key]) return prev;
+                if (!forceRetry && prev[key]) {
+                    shouldRequest = false;
+                    return prev;
+                }
                 const previousText = prev[key]?.text ?? null;
-                return { ...prev, [key]: { text: previousText, loading: true, error: false } };
+                return { ...prev, [key]: { text: previousText, loading: true, error: false, suspect: false } };
             });
+            if (!shouldRequest) return;
+            inflightRef.current.add(requestKey);
 
             try {
                 const normalizedTargetLang = normalizeHubLanguage(targetLanguage) ?? targetLanguage;
@@ -176,18 +175,20 @@ export function useMessageTranslation(params: Params) {
                     matrixUserId: translateMatrixUserId,
                 } as const;
                 const result = await hubTranslate({ ...basePayload, messageId });
-                const retryResult =
-                    shouldRetryEnglishTranslation(messageText, result.translation, normalizedTargetLang)
-                        ? await hubTranslate(basePayload)
-                        : null;
-                const finalTranslation = retryResult?.translation ?? result.translation;
+                const finalTranslation = result.translation;
+                const suspect = looksLikeUntranslatedEnglishResult(messageText, finalTranslation, normalizedTargetLang);
                 if (roomId && targetLanguage) {
-                    translationCacheStore.write(roomId, messageId, targetLanguage, messageText, finalTranslation);
+                    if (!suspect) {
+                        translationCacheStore.write(roomId, messageId, targetLanguage, messageText, finalTranslation);
+                    }
                 }
-                setTranslationMap((prev) => ({ ...prev, [key]: { text: finalTranslation, loading: false, error: false } }));
+                setTranslationMap((prev) => ({
+                    ...prev,
+                    [key]: { text: suspect ? null : finalTranslation, loading: false, error: suspect, suspect },
+                }));
                 setTranslationView((prev) =>
                     prev[key] === undefined
-                        ? { ...prev, [key]: translationDefaultView !== "original" }
+                        ? { ...prev, [key]: translationDefaultView !== "original" ? "translated" : "original" }
                         : prev,
                 );
             } catch (error) {
@@ -209,7 +210,9 @@ export function useMessageTranslation(params: Params) {
                 ) {
                     setTranslationBlocked(true);
                 }
-                setTranslationMap((prev) => ({ ...prev, [key]: { text: null, loading: false, error: true } }));
+                setTranslationMap((prev) => ({ ...prev, [key]: { text: null, loading: false, error: true, suspect: false } }));
+            } finally {
+                inflightRef.current.delete(requestKey);
             }
         },
         [
