@@ -35,39 +35,43 @@ export function MessageActionsMenu({
     onRecallMessage,
 }: MessageActionsMenuProps) {
     const { t } = useTranslation();
+    const showSwitchToOriginal = translationMode === "translated";
+    const showSwitchToTranslated = translationMode === "original";
+    const showBilingualOption = translationMode !== "bilingual";
+
     return (
         <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
             {canToggleTranslation && (
                 <>
-                    <button
-                        type="button"
-                        className={`w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
-                            translationMode === "original" ? "text-emerald-600 dark:text-emerald-300" : "text-slate-700 dark:text-slate-200"
-                        }`}
-                        onClick={() => onSetTranslationMode("original")}
-                        disabled={translationLoading}
-                    >
-                        {t("chat.showOriginal")}
-                    </button>
-                    <button
-                        type="button"
-                        className={`w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
-                            translationMode === "translated" ? "text-emerald-600 dark:text-emerald-300" : "text-slate-700 dark:text-slate-200"
-                        }`}
-                        onClick={() => onSetTranslationMode("translated")}
-                        disabled={translationLoading}
-                    >
-                        {translationLoading ? t("chat.translationPending") : t("chat.showTranslation")}
-                    </button>
-                    <button
-                        type="button"
-                        className={`w-full px-3 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
-                            translationMode === "bilingual" ? "text-emerald-600 dark:text-emerald-300" : "text-slate-700 dark:text-slate-200"
-                        }`}
-                        onClick={() => onSetTranslationMode("bilingual")}
-                    >
-                        {t("chat.showBilingual")}
-                    </button>
+                    {showSwitchToOriginal && (
+                        <button
+                            type="button"
+                            className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                            onClick={() => onSetTranslationMode("original")}
+                            disabled={translationLoading}
+                        >
+                            {t("chat.showOriginal")}
+                        </button>
+                    )}
+                    {showSwitchToTranslated && (
+                        <button
+                            type="button"
+                            className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                            onClick={() => onSetTranslationMode("translated")}
+                            disabled={translationLoading}
+                        >
+                            {translationLoading ? t("chat.translationPending") : t("chat.showTranslation")}
+                        </button>
+                    )}
+                    {showBilingualOption && (
+                        <button
+                            type="button"
+                            className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                            onClick={() => onSetTranslationMode("bilingual")}
+                        >
+                            {t("chat.showBilingual")}
+                        </button>
+                    )}
                     {canRetryTranslation && (
                         <button
                             type="button"
