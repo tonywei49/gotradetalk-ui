@@ -129,6 +129,8 @@ export function NotebookSidebar({
     const [pickerMonth, setPickerMonth] = useState<number>(new Date().getMonth() + 1);
     const [pickerDay, setPickerDay] = useState<number>(new Date().getDate());
     const [pickerHour, setPickerHour] = useState<number>(new Date().getHours());
+    const [summaryDirection, setSummaryDirection] = useState<string>("meetingMinutes");
+    const [summaryCustomRequirement, setSummaryCustomRequirement] = useState<string>("");
     const hasSummaryRangeExceeded = (() => {
         if (!summaryStartDate || !summaryEndDate) return false;
         const start = new Date(summaryStartDate).getTime();
@@ -177,6 +179,22 @@ export function NotebookSidebar({
         const currentYear = new Date().getFullYear();
         return Array.from({ length: 7 }, (_, index) => currentYear - 2 + index);
     }, []);
+    const summaryDirectionOptions = useMemo(
+        () => ([
+            { value: "meetingMinutes", label: t("layout.notebook.summaryDirectionMeetingMinutes", "General meeting minutes") },
+            { value: "quotationSummary", label: t("layout.notebook.summaryDirectionQuotation", "Quotation summary") },
+            { value: "complaintNegotiation", label: t("layout.notebook.summaryDirectionComplaint", "Customer complaint negotiation") },
+            { value: "productDevelopment", label: t("layout.notebook.summaryDirectionProduct", "Product development") },
+            { value: "orderFollowUp", label: t("layout.notebook.summaryDirectionOrder", "Order follow-up") },
+            { value: "supplierCoordination", label: t("layout.notebook.summaryDirectionSupplier", "Supplier coordination") },
+            { value: "logisticsShipment", label: t("layout.notebook.summaryDirectionLogistics", "Logistics and shipment") },
+            { value: "paymentCollection", label: t("layout.notebook.summaryDirectionPayment", "Payment and collection") },
+            { value: "contractTerms", label: t("layout.notebook.summaryDirectionContract", "Contract terms") },
+            { value: "riskCompliance", label: t("layout.notebook.summaryDirectionRisk", "Risk and compliance") },
+            { value: "custom", label: t("layout.notebook.summaryDirectionCustom", "Custom") },
+        ]),
+        [t],
+    );
     const pickerMonths = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), []);
     const pickerHours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
     const pickerDays = useMemo(
@@ -423,6 +441,39 @@ export function NotebookSidebar({
                                 </button>
                             </label>
                         </div>
+                        <label className="block">
+                            <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                                {t("layout.notebook.summaryDirectionLabel", "Summary direction")}
+                            </div>
+                            <select
+                                value={summaryDirection}
+                                onChange={(event) => setSummaryDirection(event.target.value)}
+                                className="h-10 w-[320px] max-w-full rounded-lg border border-gray-200 bg-white px-3 text-left text-base font-semibold leading-tight text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            >
+                                {summaryDirectionOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        {summaryDirection === "custom" ? (
+                            <label className="block">
+                                <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                                    {t("layout.notebook.summaryCustomRequirementLabel", "Custom requirement")}
+                                </div>
+                                <textarea
+                                    value={summaryCustomRequirement}
+                                    onChange={(event) => setSummaryCustomRequirement(event.target.value)}
+                                    placeholder={t(
+                                        "layout.notebook.summaryCustomRequirementPlaceholder",
+                                        "Describe your custom summary requirement",
+                                    )}
+                                    rows={3}
+                                    className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                />
+                            </label>
+                        ) : null}
                         {hasInvalidDateRange && (
                             <div className="text-xs text-rose-500">
                                 {t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date.")}
