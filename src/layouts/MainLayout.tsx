@@ -56,7 +56,6 @@ import {
 import {
     chatSearchGlobal,
     ChatSearchError,
-    chatSearchRoom,
     type ChatSearchGlobalResponse,
     type ChatSearchMessageHit,
     type ChatSearchPersonHit,
@@ -1662,30 +1661,6 @@ export const MainLayout: React.FC = () => {
         setSummaryGenerationNotice(t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait."));
         setSummaryGenerationNoticeTone("info");
         try {
-            const searchResponse = await chatSearchRoom({
-                accessToken: hubAccessToken,
-                matrixAccessToken,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials.user_id,
-            }, {
-                roomId,
-                type: "messages",
-                limit: 120,
-                fromTs: parseDateTimeInputToIso(summaryStartDate) ?? undefined,
-                toTs: parseDateTimeInputToIso(summaryEndDate) ?? undefined,
-            });
-            const messages = searchResponse.message_hits
-                .map((item) => ({
-                    sender: formatMatrixUserLocalId(item.sender) || (item.sender || "unknown"),
-                    ts: item.ts || null,
-                    text: String(item.preview || "").trim(),
-                }))
-                .filter((item) => item.text);
-            if (messages.length === 0) {
-                setSummaryGenerationNotice(t("layout.notebook.summaryNoChatContent", "No chat content in the selected range."));
-                setSummaryGenerationNoticeTone("error");
-                return;
-            }
             const safeTargetLabel = summarySelectedTarget.label.trim() || roomId;
             await createChatSummaryJob({
                 accessToken: hubAccessToken,
@@ -1693,7 +1668,6 @@ export const MainLayout: React.FC = () => {
                 roomId,
                 fromDate: summaryStartDate,
                 toDate: summaryEndDate,
-                messages,
                 summaryDirection: directionPayload?.summaryDirection || "meetingMinutes",
                 summaryCustomRequirement: directionPayload?.summaryCustomRequirement || null,
                 hsUrl: matrixHsUrl,

@@ -415,7 +415,6 @@ export async function createChatSummaryJob(params: {
     roomId?: string | null;
     fromDate: string;
     toDate: string;
-    messages: Array<{ sender?: string; ts?: string | null; text: string }>;
     summaryDirection?: string | null;
     summaryCustomRequirement?: string | null;
     hsUrl?: string | null;
@@ -434,7 +433,6 @@ export async function createChatSummaryJob(params: {
         room_id: params.roomId || null,
         from_date: fromDate,
         to_date: toDate,
-        messages: params.messages,
         summary_direction: params.summaryDirection || null,
         summary_custom_requirement: params.summaryCustomRequirement || null,
     }, params.accessToken, params.matrixAccessToken ? { "X-Matrix-Access-Token": params.matrixAccessToken } : undefined);
