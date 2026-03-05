@@ -22,6 +22,7 @@ import {
     hubMeUpdateLocale,
     hubMeUpdateTranslationLocale,
     listChatSummaryJobs,
+    retryChatSummaryJob,
     type ChatSummaryJobDetail,
     type ChatSummaryJobItem,
 } from "../api/hub";
@@ -1722,6 +1723,30 @@ export const MainLayout: React.FC = () => {
         }
     }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
 
+    const onRetrySummaryJob = useCallback(async (id: string) => {
+        if (!hubAccessToken || !id) return;
+        setSummaryJobActionBusy(true);
+        try {
+            await retryChatSummaryJob({
+                accessToken: hubAccessToken,
+                id,
+                hsUrl: matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
+                matrixAccessToken,
+            });
+            setSummaryGenerationNotice(t("layout.notebook.summaryRetryStarted", "Retry started."));
+            setSummaryGenerationNoticeTone("info");
+            await loadSummaryJobs();
+        } catch (error) {
+            const message = error instanceof Error
+                ? mapChatSummaryErrorMessage(error.message, t)
+                : t("layout.notebook.summaryRetryFailed", "Failed to retry summary.");
+            setSummaryJobsError(message);
+        } finally {
+            setSummaryJobActionBusy(false);
+        }
+    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+
     const onDownloadSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken) return;
         setSummaryJobActionBusy(true);
@@ -2479,7 +2504,7 @@ export const MainLayout: React.FC = () => {
                                 ) : null}
                                 {job.status === "failed" ? (
                                     <div className="mt-1 text-xs text-rose-500 dark:text-rose-300">
-                                        {job.progress_message || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.")}
+                                        {job.progress_message || job.error_message || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.")}
                                     </div>
                                 ) : null}
                                 <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
@@ -2504,6 +2529,14 @@ export const MainLayout: React.FC = () => {
                                         className="rounded-md border border-emerald-500 px-2 py-1 text-xs font-semibold text-emerald-700 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400 dark:text-emerald-300 dark:enabled:hover:bg-emerald-900/20"
                                     >
                                         {t("layout.notebook.summaryDownload", "Download")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={summaryJobActionBusy || hasProcessingSummaryJob || job.status !== "failed"}
+                                        onClick={() => void onRetrySummaryJob(job.id)}
+                                        className="rounded-md border border-amber-400 px-2 py-1 text-xs font-semibold text-amber-600 enabled:hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-400 dark:text-amber-300 dark:enabled:hover:bg-amber-900/20"
+                                    >
+                                        {t("layout.notebook.summaryRetry", "Retry")}
                                     </button>
                                     <button
                                         type="button"

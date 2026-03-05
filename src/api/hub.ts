@@ -378,6 +378,7 @@ export type ChatSummaryJobItem = {
     progress_current?: number | null;
     progress_total?: number | null;
     progress_message?: string | null;
+    error_message?: string | null;
 };
 
 export type ChatSummaryJobDetail = {
@@ -394,6 +395,7 @@ export type ChatSummaryJobDetail = {
     progress_current?: number | null;
     progress_total?: number | null;
     progress_message?: string | null;
+    error_message?: string | null;
 };
 
 function toSummaryApiDateTime(value: string): string {
@@ -488,6 +490,27 @@ export async function deleteChatSummaryJob(params: {
         throw new Error(await readResponseMessage(response));
     }
     return (await response.json()) as { ok: boolean };
+}
+
+export async function retryChatSummaryJob(params: {
+    accessToken: string;
+    id: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
+}): Promise<{ ok: boolean; id: string; status: string }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query: Record<string, string> = {};
+    if (params.hsUrl) query.hs_url = params.hsUrl;
+    if (params.matrixUserId) query.matrix_user_id = params.matrixUserId;
+    const base = joinUrl(hubBaseUrl, `/chat/summary/jobs/${encodeURIComponent(params.id)}/retry`);
+    const url = Object.keys(query).length ? withQuery(base, query) : base;
+    return postJson<{ ok: boolean; id: string; status: string }>(
+        url,
+        {},
+        params.accessToken,
+        params.matrixAccessToken ? { "X-Matrix-Access-Token": params.matrixAccessToken } : undefined,
+    );
 }
 
 export async function getChatSummaryJob(params: {
