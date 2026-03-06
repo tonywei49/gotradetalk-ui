@@ -384,7 +384,15 @@
             "reject": "Reject",
             "hide": "Hide",
             "addTag": "Conversation tag",
-            "clearTag": "Clear tag"
+            "clearTag": "Clear tag",
+            "tag": "Tag"
+        },
+        "tags": {
+            "urgent": "Urgent",
+            "followup": "Follow-up",
+            "vip": "Priority",
+            "quoted": "Quoted",
+            "closed": "Done"
         },
         "empty": {
             "chatRooms": "No chat rooms yet.",

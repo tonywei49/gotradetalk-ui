@@ -2,6 +2,7 @@
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { FlagIcon } from "@heroicons/react/24/solid";
 import { useTranslation } from "react-i18next";
 
 import { searchDirectoryAll, searchStaffDirectoryCustomers, searchStaffDirectoryEmployees } from "../../api/directory";
@@ -94,29 +95,44 @@ const REPLY_PENDING_THRESHOLD_MS = 5 * 60 * 1000;
 
 const ROOM_TAG_OPTIONS = [
     {
-        id: "rose",
-        chipClassName: "bg-rose-100 border-rose-300 dark:bg-rose-900/30 dark:border-rose-700",
-        swatchClassName: "bg-rose-500 border-rose-600",
+        id: "urgent",
+        labelKey: "roomList.tags.urgent",
+        chipClassName:
+            "bg-rose-100 border-rose-300 text-rose-700 dark:bg-rose-900/30 dark:border-rose-700 dark:text-rose-300",
+        iconClassName: "text-rose-500 dark:text-rose-400",
+        rowClassName: "hover:bg-rose-50 dark:hover:bg-rose-900/20",
     },
     {
-        id: "amber",
-        chipClassName: "bg-amber-100 border-amber-300 dark:bg-amber-900/30 dark:border-amber-700",
-        swatchClassName: "bg-amber-500 border-amber-600",
+        id: "followup",
+        labelKey: "roomList.tags.followup",
+        chipClassName:
+            "bg-amber-100 border-amber-300 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300",
+        iconClassName: "text-amber-500 dark:text-amber-400",
+        rowClassName: "hover:bg-amber-50 dark:hover:bg-amber-900/20",
     },
     {
-        id: "emerald",
-        chipClassName: "bg-emerald-100 border-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-700",
-        swatchClassName: "bg-emerald-500 border-emerald-600",
+        id: "vip",
+        labelKey: "roomList.tags.vip",
+        chipClassName:
+            "bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-300",
+        iconClassName: "text-emerald-500 dark:text-emerald-400",
+        rowClassName: "hover:bg-emerald-50 dark:hover:bg-emerald-900/20",
     },
     {
-        id: "sky",
-        chipClassName: "bg-sky-100 border-sky-300 dark:bg-sky-900/30 dark:border-sky-700",
-        swatchClassName: "bg-sky-500 border-sky-600",
+        id: "quoted",
+        labelKey: "roomList.tags.quoted",
+        chipClassName:
+            "bg-sky-100 border-sky-300 text-sky-700 dark:bg-sky-900/30 dark:border-sky-700 dark:text-sky-300",
+        iconClassName: "text-sky-500 dark:text-sky-400",
+        rowClassName: "hover:bg-sky-50 dark:hover:bg-sky-900/20",
     },
     {
-        id: "violet",
-        chipClassName: "bg-violet-100 border-violet-300 dark:bg-violet-900/30 dark:border-violet-700",
-        swatchClassName: "bg-violet-500 border-violet-600",
+        id: "closed",
+        labelKey: "roomList.tags.closed",
+        chipClassName:
+            "bg-slate-100 border-slate-300 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300",
+        iconClassName: "text-slate-500 dark:text-slate-400",
+        rowClassName: "hover:bg-slate-100 dark:hover:bg-slate-800",
     },
 ] as const;
 
@@ -1186,36 +1202,37 @@ export function RoomList({
                         </p>
                     </div>
                 </button>
-                <div
-                    className="relative w-10 flex-shrink-0 flex items-center justify-end"
-                    ref={openTagRoomId === entry.roomId ? tagMenuRef : undefined}
-                >
-                    <button
-                        type="button"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            setOpenTagRoomId((prev) => (prev === entry.roomId ? null : entry.roomId));
-                        }}
-                        className="inline-flex h-6 min-w-7 items-center justify-center rounded-md border border-gray-300 px-1 text-[11px] font-semibold text-gray-500 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-600 dark:text-slate-400"
-                        aria-label={t("roomList.actions.addTag")}
-                        title={t("roomList.actions.addTag")}
-                    >
-                        {roomTags[entry.roomId] ? (
-                            <span
-                                className={`mx-auto block h-3 w-5 rounded-sm border ${ROOM_TAG_OPTIONS.find(
-                                    (item) => item.id === roomTags[entry.roomId],
-                                )?.chipClassName || "bg-emerald-100 border-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-700"}`}
-                            />
-                        ) : (
-                            "+"
-                        )}
-                    </button>
+                <div className="relative w-[88px] flex-shrink-0 flex items-center justify-end" ref={openTagRoomId === entry.roomId ? tagMenuRef : undefined}>
+                    {(() => {
+                        const selectedTag = ROOM_TAG_OPTIONS.find((item) => item.id === roomTags[entry.roomId]);
+                        return (
+                            <button
+                                type="button"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    setOpenTagRoomId((prev) => (prev === entry.roomId ? null : entry.roomId));
+                                }}
+                                className="inline-flex h-6 max-w-[86px] items-center justify-center rounded-md border border-gray-300 px-1.5 text-[11px] font-semibold text-gray-500 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-600 dark:text-slate-400"
+                                aria-label={t("roomList.actions.addTag")}
+                                title={t("roomList.actions.addTag")}
+                            >
+                                {selectedTag ? (
+                                    <span className={`inline-flex items-center gap-1 rounded-md border px-1 py-0.5 ${selectedTag.chipClassName}`}>
+                                        <FlagIcon className={`h-2.5 w-2.5 ${selectedTag.iconClassName}`} />
+                                        <span className="truncate">{t(selectedTag.labelKey)}</span>
+                                    </span>
+                                ) : (
+                                    <span>+ {t("roomList.actions.tag")}</span>
+                                )}
+                            </button>
+                        );
+                    })()}
                     {openTagRoomId === entry.roomId && (
-                        <div className="absolute right-0 top-8 z-20 w-40 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                        <div className="absolute right-0 top-8 z-20 w-44 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
                             <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
                                 {t("roomList.actions.addTag")}
                             </div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="space-y-1">
                                 {ROOM_TAG_OPTIONS.map((option) => (
                                     <button
                                         key={option.id}
@@ -1228,10 +1245,18 @@ export function RoomList({
                                             }));
                                             setOpenTagRoomId(null);
                                         }}
-                                        className={`h-5 w-8 rounded-sm border ${option.swatchClassName}`}
+                                        className={`flex w-full items-center justify-between rounded-md border border-gray-200 px-2 py-1.5 text-left text-[12px] text-slate-700 dark:border-slate-600 dark:text-slate-200 ${option.rowClassName}`}
                                         aria-label={option.id}
-                                        title={option.id}
-                                    />
+                                        title={t(option.labelKey)}
+                                    >
+                                        <span className="inline-flex items-center gap-1">
+                                            <FlagIcon className={`h-3.5 w-3.5 ${option.iconClassName}`} />
+                                            <span>{t(option.labelKey)}</span>
+                                        </span>
+                                        {roomTags[entry.roomId] === option.id ? (
+                                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">✓</span>
+                                        ) : null}
+                                    </button>
                                 ))}
                                 <button
                                     type="button"
@@ -1244,11 +1269,12 @@ export function RoomList({
                                         });
                                         setOpenTagRoomId(null);
                                     }}
-                                    className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded border border-gray-200 text-gray-400 hover:text-rose-500 dark:border-slate-600"
+                                    className="mt-1 inline-flex w-full items-center justify-center gap-1 rounded-md border border-gray-200 py-1 text-[12px] text-gray-500 hover:text-rose-500 dark:border-slate-600"
                                     aria-label={t("roomList.actions.clearTag")}
                                     title={t("roomList.actions.clearTag")}
                                 >
                                     <XMarkIcon className="h-3.5 w-3.5" />
+                                    <span>{t("roomList.actions.clearTag")}</span>
                                 </button>
                             </div>
                         </div>

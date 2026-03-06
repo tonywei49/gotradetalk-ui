@@ -384,7 +384,15 @@
             "reject": "拒绝",
             "hide": "隐藏",
             "addTag": "会话标签",
-            "clearTag": "清除标签"
+            "clearTag": "清除标签",
+            "tag": "标签"
+        },
+        "tags": {
+            "urgent": "紧急",
+            "followup": "跟进",
+            "vip": "重点",
+            "quoted": "已报价",
+            "closed": "已完成"
         },
         "empty": {
             "chatRooms": "暂无聊天室。",
