@@ -93,11 +93,31 @@ const ROOM_TAGS_CACHE_PREFIX = "gtt_room_tags_v1:";
 const REPLY_PENDING_THRESHOLD_MS = 5 * 60 * 1000;
 
 const ROOM_TAG_OPTIONS = [
-    { id: "rose", className: "bg-rose-400 border-rose-500" },
-    { id: "amber", className: "bg-amber-400 border-amber-500" },
-    { id: "emerald", className: "bg-emerald-400 border-emerald-500" },
-    { id: "sky", className: "bg-sky-400 border-sky-500" },
-    { id: "violet", className: "bg-violet-400 border-violet-500" },
+    {
+        id: "rose",
+        chipClassName: "bg-rose-100 border-rose-300 dark:bg-rose-900/30 dark:border-rose-700",
+        swatchClassName: "bg-rose-500 border-rose-600",
+    },
+    {
+        id: "amber",
+        chipClassName: "bg-amber-100 border-amber-300 dark:bg-amber-900/30 dark:border-amber-700",
+        swatchClassName: "bg-amber-500 border-amber-600",
+    },
+    {
+        id: "emerald",
+        chipClassName: "bg-emerald-100 border-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-700",
+        swatchClassName: "bg-emerald-500 border-emerald-600",
+    },
+    {
+        id: "sky",
+        chipClassName: "bg-sky-100 border-sky-300 dark:bg-sky-900/30 dark:border-sky-700",
+        swatchClassName: "bg-sky-500 border-sky-600",
+    },
+    {
+        id: "violet",
+        chipClassName: "bg-violet-100 border-violet-300 dark:bg-violet-900/30 dark:border-violet-700",
+        swatchClassName: "bg-violet-500 border-violet-600",
+    },
 ] as const;
 
 type RoomTagColorId = (typeof ROOM_TAG_OPTIONS)[number]["id"];
@@ -1049,6 +1069,7 @@ export function RoomList({
             .filter(
                 (entry) =>
                     entry.lastMessageTs > 0 &&
+                    entry.unreadCount > 0 &&
                     timeTick - entry.lastMessageTs >= REPLY_PENDING_THRESHOLD_MS &&
                     Boolean(entry.lastMessageSender) &&
                     entry.lastMessageSender !== myUserId,
@@ -1175,15 +1196,15 @@ export function RoomList({
                             event.stopPropagation();
                             setOpenTagRoomId((prev) => (prev === entry.roomId ? null : entry.roomId));
                         }}
-                        className="h-6 w-6 rounded-full border border-dashed border-gray-300 text-xs text-gray-500 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-600 dark:text-slate-400"
+                        className="inline-flex h-6 min-w-7 items-center justify-center rounded-md border border-gray-300 px-1 text-[11px] font-semibold text-gray-500 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-600 dark:text-slate-400"
                         aria-label={t("roomList.actions.addTag")}
                         title={t("roomList.actions.addTag")}
                     >
                         {roomTags[entry.roomId] ? (
                             <span
-                                className={`mx-auto block h-3.5 w-3.5 rounded-full border ${ROOM_TAG_OPTIONS.find(
+                                className={`mx-auto block h-3 w-5 rounded-sm border ${ROOM_TAG_OPTIONS.find(
                                     (item) => item.id === roomTags[entry.roomId],
-                                )?.className || "bg-emerald-400 border-emerald-500"}`}
+                                )?.chipClassName || "bg-emerald-100 border-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-700"}`}
                             />
                         ) : (
                             "+"
@@ -1207,7 +1228,7 @@ export function RoomList({
                                             }));
                                             setOpenTagRoomId(null);
                                         }}
-                                        className={`h-5 w-5 rounded-full border ${option.className}`}
+                                        className={`h-5 w-8 rounded-sm border ${option.swatchClassName}`}
                                         aria-label={option.id}
                                         title={option.id}
                                     />
