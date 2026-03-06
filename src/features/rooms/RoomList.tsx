@@ -2,7 +2,7 @@
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { FlagIcon } from "@heroicons/react/24/solid";
+import { TagIcon } from "@heroicons/react/24/solid";
 import { useTranslation } from "react-i18next";
 
 import { searchDirectoryAll, searchStaffDirectoryCustomers, searchStaffDirectoryEmployees } from "../../api/directory";
@@ -96,43 +96,38 @@ const REPLY_PENDING_THRESHOLD_MS = 5 * 60 * 1000;
 const ROOM_TAG_OPTIONS = [
     {
         id: "urgent",
-        labelKey: "roomList.tags.urgent",
         chipClassName:
             "bg-rose-100 border-rose-300 text-rose-700 dark:bg-rose-900/30 dark:border-rose-700 dark:text-rose-300",
-        iconClassName: "text-rose-500 dark:text-rose-400",
-        rowClassName: "hover:bg-rose-50 dark:hover:bg-rose-900/20",
+        swatchClassName:
+            "bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100 dark:bg-rose-900/20 dark:border-rose-700 dark:text-rose-300",
     },
     {
         id: "followup",
-        labelKey: "roomList.tags.followup",
         chipClassName:
             "bg-amber-100 border-amber-300 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300",
-        iconClassName: "text-amber-500 dark:text-amber-400",
-        rowClassName: "hover:bg-amber-50 dark:hover:bg-amber-900/20",
+        swatchClassName:
+            "bg-amber-50 border-amber-300 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-300",
     },
     {
         id: "vip",
-        labelKey: "roomList.tags.vip",
         chipClassName:
             "bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-300",
-        iconClassName: "text-emerald-500 dark:text-emerald-400",
-        rowClassName: "hover:bg-emerald-50 dark:hover:bg-emerald-900/20",
+        swatchClassName:
+            "bg-emerald-50 border-emerald-300 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-300",
     },
     {
         id: "quoted",
-        labelKey: "roomList.tags.quoted",
         chipClassName:
             "bg-sky-100 border-sky-300 text-sky-700 dark:bg-sky-900/30 dark:border-sky-700 dark:text-sky-300",
-        iconClassName: "text-sky-500 dark:text-sky-400",
-        rowClassName: "hover:bg-sky-50 dark:hover:bg-sky-900/20",
+        swatchClassName:
+            "bg-sky-50 border-sky-300 text-sky-600 hover:bg-sky-100 dark:bg-sky-900/20 dark:border-sky-700 dark:text-sky-300",
     },
     {
         id: "closed",
-        labelKey: "roomList.tags.closed",
         chipClassName:
             "bg-slate-100 border-slate-300 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300",
-        iconClassName: "text-slate-500 dark:text-slate-400",
-        rowClassName: "hover:bg-slate-100 dark:hover:bg-slate-800",
+        swatchClassName:
+            "bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300",
     },
 ] as const;
 
@@ -1217,9 +1212,8 @@ export function RoomList({
                                 title={t("roomList.actions.addTag")}
                             >
                                 {selectedTag ? (
-                                    <span className={`inline-flex items-center gap-1 rounded-md border px-1 py-0.5 ${selectedTag.chipClassName}`}>
-                                        <FlagIcon className={`h-2.5 w-2.5 ${selectedTag.iconClassName}`} />
-                                        <span className="truncate">{t(selectedTag.labelKey)}</span>
+                                    <span className={`inline-flex items-center rounded-md border px-1 py-0.5 ${selectedTag.chipClassName}`}>
+                                        <TagIcon className="h-3.5 w-3.5" />
                                     </span>
                                 ) : (
                                     <span>+ {t("roomList.actions.tag")}</span>
@@ -1245,13 +1239,12 @@ export function RoomList({
                                             }));
                                             setOpenTagRoomId(null);
                                         }}
-                                        className={`flex w-full items-center justify-between rounded-md border border-gray-200 px-2 py-1.5 text-left text-[12px] text-slate-700 dark:border-slate-600 dark:text-slate-200 ${option.rowClassName}`}
+                                        className={`flex w-full items-center justify-between rounded-md border px-2 py-1.5 ${option.swatchClassName}`}
                                         aria-label={option.id}
-                                        title={t(option.labelKey)}
+                                        title={t("roomList.actions.addTag")}
                                     >
-                                        <span className="inline-flex items-center gap-1">
-                                            <FlagIcon className={`h-3.5 w-3.5 ${option.iconClassName}`} />
-                                            <span>{t(option.labelKey)}</span>
+                                        <span className="inline-flex items-center">
+                                            <TagIcon className="h-4 w-4" />
                                         </span>
                                         {roomTags[entry.roomId] === option.id ? (
                                             <span className="text-[10px] text-emerald-600 dark:text-emerald-400">✓</span>
