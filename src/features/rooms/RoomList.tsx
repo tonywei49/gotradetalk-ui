@@ -1226,7 +1226,7 @@ export function RoomList({
                             <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
                                 {t("roomList.actions.addTag")}
                             </div>
-                            <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
                                 {ROOM_TAG_OPTIONS.map((option) => (
                                     <button
                                         key={option.id}
@@ -1239,18 +1239,18 @@ export function RoomList({
                                             }));
                                             setOpenTagRoomId(null);
                                         }}
-                                        className={`flex w-full items-center justify-between rounded-md border px-2 py-1.5 ${option.swatchClassName}`}
+                                        className={`relative inline-flex h-7 w-7 items-center justify-center rounded-md border ${option.swatchClassName}`}
                                         aria-label={option.id}
                                         title={t("roomList.actions.addTag")}
                                     >
-                                        <span className="inline-flex items-center">
-                                            <TagIcon className="h-4 w-4" />
-                                        </span>
+                                        <TagIcon className="h-4 w-4" />
                                         {roomTags[entry.roomId] === option.id ? (
-                                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">✓</span>
+                                            <span className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 text-[9px] text-white">✓</span>
                                         ) : null}
                                     </button>
                                 ))}
+                            </div>
+                            <div className="mt-2">
                                 <button
                                     type="button"
                                     onClick={(event) => {
