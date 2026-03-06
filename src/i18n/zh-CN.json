@@ -375,13 +375,16 @@
             "chatRooms": "聊天室",
             "directMessages": "聊天列表",
             "requests": "请求",
-            "groupChats": "聊天室"
+            "groupChats": "聊天室",
+            "pendingReply": "待回复"
         },
         "actions": {
             "addContact": "添加好友",
             "accept": "接受",
             "reject": "拒绝",
-            "hide": "隐藏"
+            "hide": "隐藏",
+            "addTag": "会话标签",
+            "clearTag": "清除标签"
         },
         "empty": {
             "chatRooms": "暂无聊天室。",

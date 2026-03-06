@@ -375,13 +375,16 @@
             "chatRooms": "Chat rooms",
             "directMessages": "Chat list",
             "requests": "Requests",
-            "groupChats": "Chat Rooms"
+            "groupChats": "Chat Rooms",
+            "pendingReply": "Pending Reply"
         },
         "actions": {
             "addContact": "Add contact",
             "accept": "Accept",
             "reject": "Reject",
-            "hide": "Hide"
+            "hide": "Hide",
+            "addTag": "Conversation tag",
+            "clearTag": "Clear tag"
         },
         "empty": {
             "chatRooms": "No chat rooms yet.",

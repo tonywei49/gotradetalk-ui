@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, type ReactNode } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
@@ -31,6 +31,8 @@ type ChatRoomEntry = {
     myMembership: string;
     displayName: string;
     lastMessage: string;
+    lastMessageTs: number;
+    lastMessageSender: string | null;
     lastActive: number;
     unreadCount: number;
     isDeprecated: boolean;
@@ -42,6 +44,8 @@ type RoomCacheEntry = {
     myMembership: string;
     displayName: string;
     lastMessage: string;
+    lastMessageTs: number;
+    lastMessageSender: string | null;
     lastActive: number;
     unreadCount: number;
     isDeprecated: boolean;
@@ -85,6 +89,18 @@ const EMPTY_STATE: ChatRoomEntry[] = [];
 const STAFF_CUSTOMER_DOMAIN = "matrix.gotradetalk.com";
 const CONTACTS_CACHE_PREFIX = "gtt_contacts_cache_v1:";
 const ROOMS_CACHE_PREFIX = "gtt_rooms_cache_v1:";
+const ROOM_TAGS_CACHE_PREFIX = "gtt_room_tags_v1:";
+const REPLY_PENDING_THRESHOLD_MS = 5 * 60 * 1000;
+
+const ROOM_TAG_OPTIONS = [
+    { id: "rose", className: "bg-rose-400 border-rose-500" },
+    { id: "amber", className: "bg-amber-400 border-amber-500" },
+    { id: "emerald", className: "bg-emerald-400 border-emerald-500" },
+    { id: "sky", className: "bg-sky-400 border-sky-500" },
+    { id: "violet", className: "bg-violet-400 border-violet-500" },
+] as const;
+
+type RoomTagColorId = (typeof ROOM_TAG_OPTIONS)[number]["id"];
 
 function normalizeMatrixLocalpart(value: string): string {
     const trimmed = value.trim();
@@ -121,17 +137,23 @@ function getMyIdMessage(client: MatrixClient): string {
     return withoutAt.split(":")[0]?.trim() || withoutAt;
 }
 
-function getLastMessagePreview(room: Room): string {
+function getLastMessageMeta(room: Room): { body: string; ts: number; sender: string | null } {
     const events = room.getLiveTimeline().getEvents();
     for (let index = events.length - 1; index >= 0; index -= 1) {
         const event = events[index];
         if (event.getType() !== EventType.RoomMessage) continue;
         const content = event.getContent() as { body?: string } | undefined;
-        if (content?.body) {
-            return content.body;
-        }
+        return {
+            body: content?.body || "",
+            ts: event.getTs() ?? 0,
+            sender: event.getSender() ?? null,
+        };
     }
-    return "";
+    return {
+        body: "",
+        ts: 0,
+        sender: null,
+    };
 }
 
 function resolveExplicitRoomName(room: Room): string | null {
@@ -159,6 +181,7 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
             return (membership === "join" || membership === "invite") && !room.isSpaceRoom();
         })
         .map((room) => {
+            const lastMessageMeta = getLastMessageMeta(room);
             const explicitRoomName = resolveExplicitRoomName(room);
             const mappedDirectUserId = directUserByRoomId.get(room.roomId);
             const fallbackPeerUserId =
@@ -179,7 +202,9 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
                 room,
                 myMembership: room.getMyMembership(),
                 displayName,
-                lastMessage: getLastMessagePreview(room),
+                lastMessage: lastMessageMeta.body,
+                lastMessageTs: lastMessageMeta.ts,
+                lastMessageSender: lastMessageMeta.sender,
                 lastActive: room.getLastActiveTimestamp(),
                 unreadCount: room.getUnreadNotificationCount() ?? 0,
                 isDeprecated: room.name?.startsWith(DEPRECATED_DM_PREFIX) ?? false,
@@ -251,6 +276,10 @@ export function RoomList({
         Record<string, { roomId: string; matrixUserId: string }>
     >({});
     const [cachedRooms, setCachedRooms] = useState<RoomCacheEntry[]>([]);
+    const [roomTags, setRoomTags] = useState<Record<string, RoomTagColorId>>({});
+    const [openTagRoomId, setOpenTagRoomId] = useState<string | null>(null);
+    const [timeTick, setTimeTick] = useState(() => Date.now());
+    const tagMenuRef = useRef<HTMLDivElement | null>(null);
     const contactCacheKey = useMemo(() => {
         const userId = client?.getUserId() ?? "";
         if (!userId) return null;
@@ -260,6 +289,11 @@ export function RoomList({
         const userId = client?.getUserId() ?? "";
         if (!userId) return null;
         return `${ROOMS_CACHE_PREFIX}${userId}`;
+    }, [client]);
+    const roomTagCacheKey = useMemo(() => {
+        const userId = client?.getUserId() ?? "";
+        if (!userId) return null;
+        return `${ROOM_TAGS_CACHE_PREFIX}${userId}`;
     }, [client]);
 
     const refresh = useMemo(() => {
@@ -384,10 +418,12 @@ export function RoomList({
                 myMembership: room.myMembership,
                 displayName: room.displayName,
                 lastMessage: room.lastMessage,
+                lastMessageTs: room.lastMessageTs,
+                lastMessageSender: room.lastMessageSender,
                 lastActive: room.lastActive,
-                    unreadCount: room.unreadCount,
-                    isDeprecated: room.isDeprecated,
-                }));
+                unreadCount: room.unreadCount,
+                isDeprecated: room.isDeprecated,
+            }));
             localStorage.setItem(roomCacheKey, JSON.stringify(snapshot));
         } catch {
             // ignore room cache write failures
@@ -399,8 +435,52 @@ export function RoomList({
         ? rooms
         : cachedRooms.map((room) => ({
             ...room,
+            lastMessageTs: room.lastMessageTs ?? 0,
+            lastMessageSender: room.lastMessageSender ?? null,
             room: null,
         }));
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            setTimeTick(Date.now());
+        }, 30000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        if (!roomTagCacheKey) return;
+        try {
+            const raw = localStorage.getItem(roomTagCacheKey);
+            if (!raw) {
+                setRoomTags({});
+                return;
+            }
+            const parsed = JSON.parse(raw) as Record<string, RoomTagColorId>;
+            setRoomTags(parsed && typeof parsed === "object" ? parsed : {});
+        } catch {
+            setRoomTags({});
+        }
+    }, [roomTagCacheKey]);
+
+    useEffect(() => {
+        if (!roomTagCacheKey) return;
+        try {
+            localStorage.setItem(roomTagCacheKey, JSON.stringify(roomTags));
+        } catch {
+            // ignore tag cache write failures
+        }
+    }, [roomTagCacheKey, roomTags]);
+
+    useEffect(() => {
+        if (!openTagRoomId) return undefined;
+        const onPointerDown = (event: MouseEvent): void => {
+            if (tagMenuRef.current && !tagMenuRef.current.contains(event.target as Node)) {
+                setOpenTagRoomId(null);
+            }
+        };
+        window.addEventListener("mousedown", onPointerDown);
+        return () => window.removeEventListener("mousedown", onPointerDown);
+    }, [openTagRoomId]);
 
     useEffect(() => {
         const totalUnread = displayedRooms.reduce((sum, room) => sum + room.unreadCount, 0);
@@ -963,9 +1043,24 @@ export function RoomList({
     const visibleRooms = displayedRooms;
     const inviteRooms = visibleRooms.filter((entry) => entry.myMembership === "invite");
     const activeRooms = visibleRooms.filter((entry) => entry.myMembership !== "invite");
+    const myUserId = client?.getUserId() ?? null;
+    const pendingReplyRoomIdSet = new Set(
+        activeRooms
+            .filter(
+                (entry) =>
+                    entry.lastMessageTs > 0 &&
+                    timeTick - entry.lastMessageTs >= REPLY_PENDING_THRESHOLD_MS &&
+                    Boolean(entry.lastMessageSender) &&
+                    entry.lastMessageSender !== myUserId,
+            )
+            .map((entry) => entry.roomId),
+    );
     const pinnedSet = new Set(pinnedRoomIds);
-    const pinnedRooms = activeRooms.filter((entry) => pinnedSet.has(entry.roomId));
-    const unpinnedRooms = activeRooms.filter((entry) => !pinnedSet.has(entry.roomId));
+    const pendingReplyRooms = activeRooms.filter((entry) => pendingReplyRoomIdSet.has(entry.roomId));
+    const pinnedRooms = activeRooms.filter((entry) => pinnedSet.has(entry.roomId) && !pendingReplyRoomIdSet.has(entry.roomId));
+    const unpinnedRooms = activeRooms.filter(
+        (entry) => !pinnedSet.has(entry.roomId) && !pendingReplyRoomIdSet.has(entry.roomId),
+    );
 
     const renderRoomAvatar = (entry: ChatRoomEntry): ReactNode => {
         const avatarMxc = entry.userId ? client?.getUser(entry.userId)?.avatarUrl : null;
@@ -1070,6 +1165,74 @@ export function RoomList({
                         </p>
                     </div>
                 </button>
+                <div
+                    className="relative w-10 flex-shrink-0 flex items-center justify-end"
+                    ref={openTagRoomId === entry.roomId ? tagMenuRef : undefined}
+                >
+                    <button
+                        type="button"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenTagRoomId((prev) => (prev === entry.roomId ? null : entry.roomId));
+                        }}
+                        className="h-6 w-6 rounded-full border border-dashed border-gray-300 text-xs text-gray-500 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-600 dark:text-slate-400"
+                        aria-label={t("roomList.actions.addTag")}
+                        title={t("roomList.actions.addTag")}
+                    >
+                        {roomTags[entry.roomId] ? (
+                            <span
+                                className={`mx-auto block h-3.5 w-3.5 rounded-full border ${ROOM_TAG_OPTIONS.find(
+                                    (item) => item.id === roomTags[entry.roomId],
+                                )?.className || "bg-emerald-400 border-emerald-500"}`}
+                            />
+                        ) : (
+                            "+"
+                        )}
+                    </button>
+                    {openTagRoomId === entry.roomId && (
+                        <div className="absolute right-0 top-8 z-20 w-40 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                            <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                {t("roomList.actions.addTag")}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                {ROOM_TAG_OPTIONS.map((option) => (
+                                    <button
+                                        key={option.id}
+                                        type="button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            setRoomTags((prev) => ({
+                                                ...prev,
+                                                [entry.roomId]: option.id,
+                                            }));
+                                            setOpenTagRoomId(null);
+                                        }}
+                                        className={`h-5 w-5 rounded-full border ${option.className}`}
+                                        aria-label={option.id}
+                                        title={option.id}
+                                    />
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        setRoomTags((prev) => {
+                                            const next = { ...prev };
+                                            delete next[entry.roomId];
+                                            return next;
+                                        });
+                                        setOpenTagRoomId(null);
+                                    }}
+                                    className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded border border-gray-200 text-gray-400 hover:text-rose-500 dark:border-slate-600"
+                                    aria-label={t("roomList.actions.clearTag")}
+                                    title={t("roomList.actions.clearTag")}
+                                >
+                                    <XMarkIcon className="h-3.5 w-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         );
     };
@@ -1097,7 +1260,16 @@ export function RoomList({
                 ) : (
                     <>
                         {inviteRooms.map((entry) => renderRoomEntry(entry))}
-                        {inviteRooms.length > 0 && (pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
+                        {inviteRooms.length > 0 && (pendingReplyRooms.length > 0 || pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
+                            <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                        )}
+                        {pendingReplyRooms.length > 0 && (
+                            <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400">
+                                {t("roomList.sections.pendingReply")}
+                            </div>
+                        )}
+                        {pendingReplyRooms.map((entry) => renderRoomEntry(entry))}
+                        {pendingReplyRooms.length > 0 && (pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
                             <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
                         )}
                         {pinnedRooms.map((entry) => renderRoomEntry(entry))}
