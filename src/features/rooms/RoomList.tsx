@@ -1216,7 +1216,7 @@ export function RoomList({
                                 }}
                                 className={
                                     selectedTag
-                                        ? `inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:opacity-80 ${selectedTag.iconClassName}`
+                                        ? `inline-flex h-6 w-6 items-center justify-center rounded hover:opacity-80 ${selectedTag.iconClassName}`
                                         : "inline-flex h-6 min-w-[52px] items-center justify-center rounded-md border border-gray-300 px-1 text-[11px] font-semibold text-gray-500 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-600 dark:text-slate-400"
                                 }
                                 aria-label={t("roomList.actions.addTag")}
