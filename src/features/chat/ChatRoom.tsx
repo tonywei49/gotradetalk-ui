@@ -65,7 +65,7 @@ import { MessageActionsMenu } from "./components/MessageActionsMenu";
 import { getNotebookAdapter } from "../notebook";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
-import { TaskQuickCreate, TaskRoomBar, type TaskDraft, type TaskItem, type TaskStatus } from "../tasks";
+import { TaskQuickCreate, TaskRoomBar, type TaskChatContext } from "../tasks";
 import {
     chatSearchLocate,
     chatSearchRoom,
@@ -624,14 +624,7 @@ type ChatRoomContext = {
     onReloginForNotebook?: () => void;
     hasNotebookAuthToken?: boolean;
     notebookApiBaseUrl?: string | null;
-    taskStatuses?: TaskStatus[];
-    roomTasks?: TaskItem[];
-    taskQuickDraft?: TaskDraft;
-    onTaskQuickDraftChange?: (patch: Partial<TaskDraft>) => void;
-    onCreateRoomTask?: () => void;
-    onOpenTasksTab?: () => void;
-    onUpdateRoomTaskStatus?: (taskId: string, statusId: string) => void;
-};
+} & TaskChatContext;
 
 type RemoveTarget = {
     userId: string;

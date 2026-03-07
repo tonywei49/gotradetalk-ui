@@ -73,7 +73,7 @@ import {
     type SummarySearchTarget,
     useNotebookModule,
 } from "../features/notebook";
-import { TaskDetail, TaskList, TaskReminderBanner, useTaskModule } from "../features/tasks";
+import { TaskDetail, TaskList, TaskReminderBanner, useTaskModule, useTaskUI } from "../features/tasks";
 import {
     getCompanyNotebookAiSettings,
     getNotebookCapabilities,
@@ -568,6 +568,20 @@ export const MainLayout: React.FC = () => {
         userId: matrixCredentials?.user_id ?? null,
         activeRoomId,
         activeRoomName,
+    });
+    const taskUi = useTaskUI({
+        taskModule,
+        onOpenRoom: (roomId) => {
+            setActiveRoomId(roomId);
+            setActiveTab("chat");
+            setMobileView("detail");
+        },
+        onOpenTasksTab: () => {
+            setActiveTab("tasks");
+            setMobileView("list");
+        },
+        onMobileDetail: () => setMobileView("detail"),
+        onMobileList: () => setMobileView("list"),
     });
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : null;
     const meUpdateOptions = undefined;
@@ -3023,24 +3037,7 @@ export const MainLayout: React.FC = () => {
                         </div>
                     </>
                 ) : activeTab === "tasks" ? (
-                    <TaskList
-                        tasks={taskModule.tasks}
-                        statuses={taskModule.statuses}
-                        selectedTaskId={taskModule.selectedTaskId}
-                        onSelectTask={(taskId) => {
-                            taskModule.setSelectedTaskId(taskId);
-                            setMobileView("detail");
-                        }}
-                        onCreateTask={() => {
-                            taskModule.createTask();
-                            setMobileView("detail");
-                        }}
-                        onOpenRoom={(roomId) => {
-                            setActiveRoomId(roomId);
-                            setActiveTab("chat");
-                            setMobileView("detail");
-                        }}
-                    />
+                    <TaskList {...taskUi.listProps} />
                 ) : (
                     <>
                         {/* Header */}
@@ -3220,9 +3217,7 @@ export const MainLayout: React.FC = () => {
                     }`}
             >
                 <TaskReminderBanner
-                    task={taskModule.currentReminder}
-                    onSnooze={taskModule.snoozeReminder}
-                    onDismiss={taskModule.dismissReminder}
+                    {...taskUi.reminderProps}
                 />
                 {capabilityError && (
                     <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
@@ -3887,22 +3882,7 @@ export const MainLayout: React.FC = () => {
                         />
                     )
                 ) : activeTab === "tasks" ? (
-                    <TaskDetail
-                        task={taskModule.selectedTask}
-                        statuses={taskModule.statuses}
-                        draft={taskModule.detailDraft}
-                        editing={taskModule.editing}
-                        onDraftChange={taskModule.setDetailDraft}
-                        onStartEdit={() => taskModule.setEditing(true)}
-                        onSave={taskModule.saveSelectedTask}
-                        onDelete={taskModule.deleteSelectedTask}
-                        onMobileBack={() => setMobileView("list")}
-                        onOpenLinkedRoom={(roomId) => {
-                            setActiveRoomId(roomId);
-                            setActiveTab("chat");
-                            setMobileView("detail");
-                        }}
-                    />
+                    <TaskDetail {...taskUi.detailProps} />
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (
@@ -4047,16 +4027,7 @@ export const MainLayout: React.FC = () => {
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
                             notebookApiBaseUrl: notebookApiBaseUrlOverride,
-                            taskStatuses: taskModule.statuses,
-                            roomTasks: taskModule.roomTasks,
-                            taskQuickDraft: taskModule.quickDraft,
-                            onTaskQuickDraftChange: taskModule.setQuickDraft,
-                            onCreateRoomTask: taskModule.createQuickTask,
-                            onUpdateRoomTaskStatus: taskModule.updateTaskStatus,
-                            onOpenTasksTab: () => {
-                                setActiveTab("tasks");
-                                setMobileView("list");
-                            },
+                            ...taskUi.chatContext,
                         }}
                     />
                 )}

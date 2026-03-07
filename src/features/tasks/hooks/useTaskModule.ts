@@ -1,22 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TaskDraft, TaskItem, TaskReminderState, TaskStatus } from "../types";
-
-const TASKS_STORAGE_PREFIX = "gtt_tasks_v1:";
+import { buildTaskStatuses, getDefaultTaskStatusId, isCompletedTaskStatus } from "../taskStatusConfig";
+import { buildTaskStorageKey, readStoredTasks, writeStoredTasks } from "../taskStorage";
 
 const EMPTY_DRAFT: TaskDraft = {
     title: "",
     content: "",
-    statusId: "preparing",
+    statusId: getDefaultTaskStatusId(),
     remindAt: "",
     roomId: null,
     roomNameSnapshot: null,
 };
-
-function buildStorageKey(userId: string | null | undefined): string | null {
-    const normalized = String(userId || "").trim();
-    return normalized ? `${TASKS_STORAGE_PREFIX}${normalized}` : null;
-}
 
 function toDateInputValue(value: string | null | undefined): string {
     const raw = String(value || "").trim();
@@ -44,7 +39,7 @@ function formatDate(value: string): string {
     return `${parsed.getFullYear()}/${parsed.getMonth() + 1}/${parsed.getDate()}`;
 }
 
-function sortTasks(tasks: TaskItem[]): TaskItem[] {
+export function sortTasks(tasks: TaskItem[]): TaskItem[] {
     return [...tasks].sort((a, b) => {
         const aDone = a.completedAt ? 1 : 0;
         const bDone = b.completedAt ? 1 : 0;
@@ -53,18 +48,13 @@ function sortTasks(tasks: TaskItem[]): TaskItem[] {
     });
 }
 
+export type TaskModuleState = ReturnType<typeof useTaskModule>;
+
 export function useTaskModule(params: { userId: string | null; activeRoomId: string | null; activeRoomName?: string | null }) {
     const { t } = useTranslation();
     const { userId, activeRoomId, activeRoomName } = params;
-    const statuses = useMemo<TaskStatus[]>(() => ([
-        { id: "preparing", name: t("tasks.status.preparing"), color: "gray", sortOrder: 10 },
-        { id: "pending_review", name: t("tasks.status.pendingReview"), color: "amber", sortOrder: 20 },
-        { id: "in_progress", name: t("tasks.status.inProgress"), color: "blue", sortOrder: 30 },
-        { id: "waiting_reply", name: t("tasks.status.waitingReply"), color: "purple", sortOrder: 40 },
-        { id: "blocked", name: t("tasks.status.blocked"), color: "red", sortOrder: 50 },
-        { id: "completed", name: t("tasks.status.completed"), color: "green", sortOrder: 60 },
-    ]), [t]);
-    const storageKey = useMemo(() => buildStorageKey(userId), [userId]);
+    const statuses = useMemo<TaskStatus[]>(() => buildTaskStatuses(t), [t]);
+    const storageKey = useMemo(() => buildTaskStorageKey(userId), [userId]);
     const [tasks, setTasks] = useState<TaskItem[]>([]);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [editing, setEditing] = useState(false);
@@ -84,16 +74,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
             return;
         }
         try {
-            const raw = localStorage.getItem(storageKey);
-            if (!raw) {
-                setTasks([]);
-                setHydrated(true);
-                return;
-            }
-            const parsed = JSON.parse(raw) as TaskItem[];
-            setTasks(Array.isArray(parsed) ? sortTasks(parsed) : []);
-        } catch {
-            setTasks([]);
+            setTasks(sortTasks(readStoredTasks(window.localStorage, storageKey)));
         } finally {
             setHydrated(true);
         }
@@ -101,7 +82,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
 
     useEffect(() => {
         if (!storageKey || !hydrated) return;
-        localStorage.setItem(storageKey, JSON.stringify(tasks));
+        writeStoredTasks(window.localStorage, storageKey, tasks);
     }, [storageKey, hydrated, tasks]);
 
     useEffect(() => {
@@ -159,7 +140,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
             id: `task-${Date.now()}-${Math.random().toString(16).slice(2)}`,
             title: "",
             content: "",
-            statusId: statuses[0]?.id || "preparing",
+            statusId: statuses[0]?.id || getDefaultTaskStatusId(),
             remindAt: null,
             remindState: "pending",
             snoozedUntil: null,
@@ -181,7 +162,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
         const remindAtIso = toIsoOrNull(detailDraft.remindAt);
         setTasks((prev) => prev.map((task) => {
             if (task.id !== selectedTask.id) return task;
-            const completed = detailDraft.statusId === "completed";
+            const completed = isCompletedTaskStatus(detailDraft.statusId);
             return {
                 ...task,
                 title: detailDraft.title.trim(),
@@ -223,7 +204,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
             createdBy: userId,
             createdAt: now,
             updatedAt: now,
-            completedAt: quickDraft.statusId === "completed" ? now : null,
+            completedAt: isCompletedTaskStatus(quickDraft.statusId) ? now : null,
         };
         setTasks((prev) => sortTasks([next, ...prev]));
         setSelectedTaskId(next.id);
@@ -253,7 +234,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
         const now = new Date().toISOString();
         setTasks((prev) => prev.map((task) => {
             if (task.id !== taskId) return task;
-            const completed = statusId === "completed";
+            const completed = isCompletedTaskStatus(statusId);
             return {
                 ...task,
                 statusId,

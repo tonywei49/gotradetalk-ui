@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { TaskDraft, TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
 
-type TaskDetailProps = {
+export type TaskDetailProps = {
     task: TaskItem | null;
     statuses: TaskStatus[];
     draft: TaskDraft;

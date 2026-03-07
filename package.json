@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",
+    "test:tasks": "node --test scripts/tasks-regression.test.mjs",
     "test:regression:matrix": "node scripts/regression-matrix.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",

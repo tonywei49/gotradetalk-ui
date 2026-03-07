@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { TaskItem } from "../types";
 
-type TaskReminderBannerProps = {
+export type TaskReminderBannerProps = {
     task: TaskItem | null;
     onSnooze: () => void;
     onDismiss: () => void;

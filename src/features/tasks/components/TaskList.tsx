@@ -2,10 +2,15 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
+import {
+    buildPrimaryTaskFilters,
+    buildStatusTaskFilters,
+    filterTaskItems,
+    isTaskStatusFilter,
+    type TaskListFilter,
+} from "../taskFilters";
 
-type TaskListFilter = "all" | "reminder" | "linked" | `status:${string}`;
-
-type TaskListProps = {
+export type TaskListProps = {
     tasks: TaskItem[];
     statuses: TaskStatus[];
     selectedTaskId: string | null;
@@ -27,29 +32,10 @@ export function TaskList({
     const [showMoreFilters, setShowMoreFilters] = useState(false);
     const moreFiltersRef = useRef<HTMLDivElement | null>(null);
     const statusMap = new Map(statuses.map((status) => [status.id, status]));
-    const filteredTasks = useMemo(() => tasks.filter((task) => {
-        if (filter === "reminder") return Boolean(task.remindAt) && task.remindState !== "notified";
-        if (filter === "linked") return Boolean(task.roomId);
-        if (filter.startsWith("status:")) return task.statusId === filter.slice(7);
-        return true;
-    }), [filter, tasks]);
-    const primaryFilters = useMemo(
-        () => [
-            { id: "all" as TaskListFilter, label: t("tasks.filters.all") },
-            { id: "reminder" as TaskListFilter, label: t("tasks.filters.reminder") },
-            { id: "linked" as TaskListFilter, label: t("tasks.filters.linked") },
-        ],
-        [t],
-    );
-    const statusFilters = useMemo(
-        () =>
-            statuses.map((status) => ({
-                id: `status:${status.id}` as TaskListFilter,
-                label: status.name,
-            })),
-        [statuses, t],
-    );
-    const moreFiltersActive = filter.startsWith("status:");
+    const filteredTasks = useMemo(() => filterTaskItems(tasks, filter), [filter, tasks]);
+    const primaryFilters = useMemo(() => buildPrimaryTaskFilters(t), [t]);
+    const statusFilters = useMemo(() => buildStatusTaskFilters(statuses), [statuses]);
+    const moreFiltersActive = isTaskStatusFilter(filter);
 
     useEffect(() => {
         if (!showMoreFilters) return undefined;
