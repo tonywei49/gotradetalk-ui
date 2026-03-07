@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
 
@@ -14,6 +15,7 @@ export function TaskRoomBar({
     expandedTaskIds,
     onToggle,
 }: TaskRoomBarProps) {
+    const { t } = useTranslation();
     const statusMap = new Map(statuses.map((status) => [status.id, status]));
 
     if (tasks.length === 0) return null;
@@ -31,13 +33,13 @@ export function TaskRoomBar({
                     >
                         <div className="flex items-center justify-between gap-3">
                             <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {task.title || "Untitled task"}
+                                {task.title || t("tasks.untitled")}
                             </div>
                             <div className="flex items-center gap-2 text-[11px]">
                                 <span
                                     className={`inline-flex rounded-full border px-2 py-0.5 ${getTaskStatusBadgeClass(statusMap.get(task.statusId)?.color)}`}
                                 >
-                                    {statusMap.get(task.statusId)?.name || "Unknown"}
+                                    {statusMap.get(task.statusId)?.name || t("tasks.unknownStatus")}
                                 </span>
                                 <span className="text-slate-400 dark:text-slate-500">
                                     {task.createdAt}
@@ -46,7 +48,7 @@ export function TaskRoomBar({
                         </div>
                         {expanded ? (
                             <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                {task.content || "No details yet."}
+                                {task.content || t("tasks.noDetails")}
                             </div>
                         ) : null}
                     </button>

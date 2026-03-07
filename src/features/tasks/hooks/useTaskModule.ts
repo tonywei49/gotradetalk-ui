@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { TaskDraft, TaskItem, TaskReminderState, TaskStatus } from "../types";
 
 const TASKS_STORAGE_PREFIX = "gtt_tasks_v1:";
-
-const DEFAULT_STATUSES: TaskStatus[] = [
-    { id: "preparing", name: "准备中", color: "gray", sortOrder: 10 },
-    { id: "in_progress", name: "执行中", color: "blue", sortOrder: 20 },
-    { id: "completed", name: "已完成", color: "green", sortOrder: 30 },
-];
 
 const EMPTY_DRAFT: TaskDraft = {
     title: "",
@@ -59,7 +54,13 @@ function sortTasks(tasks: TaskItem[]): TaskItem[] {
 }
 
 export function useTaskModule(params: { userId: string | null; activeRoomId: string | null; activeRoomName?: string | null }) {
+    const { t } = useTranslation();
     const { userId, activeRoomId, activeRoomName } = params;
+    const statuses = useMemo<TaskStatus[]>(() => ([
+        { id: "preparing", name: t("tasks.status.preparing"), color: "gray", sortOrder: 10 },
+        { id: "in_progress", name: t("tasks.status.inProgress"), color: "blue", sortOrder: 20 },
+        { id: "completed", name: t("tasks.status.completed"), color: "green", sortOrder: 30 },
+    ]), [t]);
     const storageKey = useMemo(() => buildStorageKey(userId), [userId]);
     const [tasks, setTasks] = useState<TaskItem[]>([]);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -155,7 +156,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
             id: `task-${Date.now()}-${Math.random().toString(16).slice(2)}`,
             title: "",
             content: "",
-            statusId: DEFAULT_STATUSES[0].id,
+            statusId: statuses[0]?.id || "preparing",
             remindAt: null,
             remindState: "pending",
             snoozedUntil: null,
@@ -251,7 +252,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
     };
 
     return {
-        statuses: DEFAULT_STATUSES,
+        statuses,
         tasks: sortedTasks.map((task) => ({
             ...task,
             createdAt: formatDate(task.createdAt),

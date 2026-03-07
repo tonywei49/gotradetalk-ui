@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { TaskDraft, TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
 
@@ -26,10 +27,11 @@ export function TaskDetail({
     onMobileBack,
     onOpenLinkedRoom,
 }: TaskDetailProps) {
+    const { t } = useTranslation();
     if (!task && !editing) {
         return (
             <div className="flex h-full items-center justify-center bg-white text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-                Select a task to view details.
+                {t("tasks.selectTask")}
             </div>
         );
     }
@@ -43,19 +45,19 @@ export function TaskDetail({
                             type="button"
                             onClick={onMobileBack}
                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                            aria-label="Back to task list"
+                            aria-label={t("tasks.backToList")}
                         >
                             &lt;
                         </button>
                     ) : null}
                     <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                        {editing ? "Edit Task" : "Task Detail"}
+                        {editing ? t("tasks.editTask") : t("tasks.detail")}
                     </div>
                 </div>
             </div>
             <div className="flex-1 space-y-4 overflow-y-auto p-6">
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Title</div>
+                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">{t("tasks.fields.title")}</div>
                     <input
                         type="text"
                         value={draft.title}
@@ -65,7 +67,7 @@ export function TaskDetail({
                     />
                 </label>
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Content</div>
+                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">{t("tasks.fields.content")}</div>
                     <textarea
                         value={draft.content}
                         readOnly={!editing}
@@ -75,7 +77,7 @@ export function TaskDetail({
                     />
                 </label>
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Status</div>
+                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">{t("tasks.fields.status")}</div>
                     <select
                         value={draft.statusId}
                         disabled={!editing}
@@ -91,13 +93,13 @@ export function TaskDetail({
                     {!editing ? (
                         <div className="mt-2">
                             <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${getTaskStatusBadgeClass(statuses.find((status) => status.id === draft.statusId)?.color)}`}>
-                                {statuses.find((status) => status.id === draft.statusId)?.name || "Unknown"}
+                                {statuses.find((status) => status.id === draft.statusId)?.name || t("tasks.unknownStatus")}
                             </span>
                         </div>
                     ) : null}
                 </label>
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Reminder Time</div>
+                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">{t("tasks.fields.reminderTime")}</div>
                     <input
                         type="datetime-local"
                         value={draft.remindAt}
@@ -108,14 +110,14 @@ export function TaskDetail({
                 </label>
                 {task?.roomNameSnapshot ? (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        <div>Linked room: {task.roomNameSnapshot}</div>
+                        <div>{t("tasks.linkedRoom", { roomName: task.roomNameSnapshot })}</div>
                         {task.roomId && onOpenLinkedRoom ? (
                             <button
                                 type="button"
                                 onClick={() => onOpenLinkedRoom(task.roomId as string)}
                                 className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
                             >
-                                Open room
+                                {t("tasks.openRoom")}
                             </button>
                         ) : null}
                     </div>
@@ -128,7 +130,7 @@ export function TaskDetail({
                         onClick={onStartEdit}
                         className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
                     >
-                        Edit
+                        {t("common.edit")}
                     </button>
                 ) : (
                     <button
@@ -136,7 +138,7 @@ export function TaskDetail({
                         onClick={onSave}
                         className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white"
                     >
-                        Save
+                        {t("common.save")}
                     </button>
                 )}
                 <button
@@ -144,7 +146,7 @@ export function TaskDetail({
                     onClick={onDelete}
                     className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-600 dark:border-rose-700 dark:text-rose-300"
                 >
-                    Delete
+                    {t("common.delete")}
                 </button>
             </div>
         </div>

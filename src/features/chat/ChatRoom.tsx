@@ -13,7 +13,7 @@ import {
     SparklesIcon,
     ArrowsPointingOutIcon,
     ArrowsPointingInIcon,
-    ClipboardDocumentListIcon,
+    ClockIcon,
 } from "@heroicons/react/24/outline";
 import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
@@ -2615,7 +2615,7 @@ export const ChatRoom: React.FC = () => {
                 <div className="border-b border-slate-200 bg-white/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
                     <div className="mb-2 flex items-center justify-between gap-3">
                         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                            Work Tasks
+                            {t("tasks.title")}
                         </div>
                         {onOpenTasksTab ? (
                             <button
@@ -2623,7 +2623,7 @@ export const ChatRoom: React.FC = () => {
                                 onClick={onOpenTasksTab}
                                 className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
                             >
-                                Open task list
+                                {t("tasks.openTaskList")}
                             </button>
                         ) : null}
                     </div>
@@ -2873,9 +2873,9 @@ export const ChatRoom: React.FC = () => {
                             type="button"
                             onClick={() => setShowTaskQuickCreate((prev) => !prev)}
                             className={`hover:text-[#2F5C56] dark:hover:text-emerald-400 ${showTaskQuickCreate ? "text-[#2F5C56] dark:text-emerald-400" : ""}`}
-                            title="工作任务"
+                            title={t("tasks.title")}
                         >
-                            <ClipboardDocumentListIcon className="w-6 h-6" />
+                            <ClockIcon className="w-6 h-6" />
                         </button>
                     )}
                     {canUseNotebookAssist && (

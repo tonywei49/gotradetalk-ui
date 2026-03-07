@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { TaskItem } from "../types";
 
 type TaskReminderBannerProps = {
@@ -7,6 +8,7 @@ type TaskReminderBannerProps = {
 };
 
 export function TaskReminderBanner({ task, onSnooze, onDismiss }: TaskReminderBannerProps) {
+    const { t } = useTranslation();
     if (!task) return null;
 
     return (
@@ -14,10 +16,10 @@ export function TaskReminderBanner({ task, onSnooze, onDismiss }: TaskReminderBa
             <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                     <div className="font-semibold text-slate-800 dark:text-slate-100">
-                        Task Reminder
+                        {t("tasks.reminderTitle")}
                     </div>
                     <div className="truncate text-slate-600 dark:text-slate-300">
-                        {task.title || "Untitled task"}
+                        {task.title || t("tasks.untitled")}
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -26,14 +28,14 @@ export function TaskReminderBanner({ task, onSnooze, onDismiss }: TaskReminderBa
                         onClick={onSnooze}
                         className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-700 dark:text-amber-300"
                     >
-                        Remind in 5 min
+                        {t("tasks.remindInFiveMinutes")}
                     </button>
                     <button
                         type="button"
                         onClick={onDismiss}
                         className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
                     >
-                        Dismiss
+                        {t("tasks.dismissReminder")}
                     </button>
                 </div>
             </div>

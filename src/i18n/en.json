@@ -154,12 +154,49 @@
         "cancel": "Cancel",
         "search": "Search",
         "close": "Close",
+        "save": "Save",
+        "edit": "Edit",
+        "delete": "Delete",
         "errors": {
             "network": "Network error. Please try again.",
             "timeout": "Request timed out. Please try again.",
             "noPermission": "You don't have permission to perform this action.",
             "quotaExceeded": "Storage limit reached. Please clear old files and retry.",
             "invalidSearchQuery": "Invalid search format. Please check your input and try again."
+        }
+    },
+    "tasks": {
+        "title": "Work Tasks",
+        "newTask": "New Task",
+        "empty": "No tasks yet.",
+        "untitled": "Untitled task",
+        "noDetails": "No details yet.",
+        "unknownStatus": "Unknown",
+        "selectTask": "Select a task to view details.",
+        "backToList": "Back to task list",
+        "detail": "Task Detail",
+        "editTask": "Edit Task",
+        "quickCreate": "Create Work Task",
+        "openTaskList": "Open task list",
+        "linkedRoom": "Linked room: {{roomName}}",
+        "openRoom": "Open room",
+        "reminderTitle": "Task Reminder",
+        "remindInFiveMinutes": "Remind in 5 min",
+        "dismissReminder": "Dismiss",
+        "fields": {
+            "title": "Title",
+            "content": "Content",
+            "status": "Status",
+            "reminderTime": "Reminder Time"
+        },
+        "placeholders": {
+            "title": "Task title",
+            "details": "Task details"
+        },
+        "status": {
+            "preparing": "Preparing",
+            "inProgress": "In Progress",
+            "completed": "Completed"
         }
     },
     "layout": {
