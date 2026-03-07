@@ -630,6 +630,7 @@ type ChatRoomContext = {
     onTaskQuickDraftChange?: (patch: Partial<TaskDraft>) => void;
     onCreateRoomTask?: () => void;
     onOpenTasksTab?: () => void;
+    onUpdateRoomTaskStatus?: (taskId: string, statusId: string) => void;
 };
 
 type RemoveTarget = {
@@ -828,6 +829,7 @@ export const ChatRoom: React.FC = () => {
         onTaskQuickDraftChange,
         onCreateRoomTask,
         onOpenTasksTab,
+        onUpdateRoomTaskStatus,
     } =
         useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
@@ -2631,6 +2633,7 @@ export const ChatRoom: React.FC = () => {
                         tasks={roomTasks}
                         statuses={taskStatuses}
                         expandedTaskIds={expandedTaskIds}
+                        onStatusChange={onUpdateRoomTaskStatus}
                         onToggle={(taskId) =>
                             setExpandedTaskIds((prev) =>
                                 prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId],

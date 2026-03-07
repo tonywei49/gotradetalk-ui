@@ -4052,6 +4052,7 @@ export const MainLayout: React.FC = () => {
                             taskQuickDraft: taskModule.quickDraft,
                             onTaskQuickDraftChange: taskModule.setQuickDraft,
                             onCreateRoomTask: taskModule.createQuickTask,
+                            onUpdateRoomTaskStatus: taskModule.updateTaskStatus,
                             onOpenTasksTab: () => {
                                 setActiveTab("tasks");
                                 setMobileView("list");

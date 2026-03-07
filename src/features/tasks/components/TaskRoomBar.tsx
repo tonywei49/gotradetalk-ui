@@ -7,6 +7,7 @@ type TaskRoomBarProps = {
     statuses: TaskStatus[];
     expandedTaskIds: string[];
     onToggle: (taskId: string) => void;
+    onStatusChange?: (taskId: string, statusId: string) => void;
 };
 
 export function TaskRoomBar({
@@ -14,6 +15,7 @@ export function TaskRoomBar({
     statuses,
     expandedTaskIds,
     onToggle,
+    onStatusChange,
 }: TaskRoomBarProps) {
     const { t } = useTranslation();
     const statusMap = new Map(statuses.map((status) => [status.id, status]));
@@ -47,8 +49,31 @@ export function TaskRoomBar({
                             </div>
                         </div>
                         {expanded ? (
-                            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                {task.content || t("tasks.noDetails")}
+                            <div className="mt-2 space-y-2">
+                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                                    {task.content || t("tasks.noDetails")}
+                                </div>
+                                {onStatusChange ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        {statuses.map((status) => (
+                                            <button
+                                                key={status.id}
+                                                type="button"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    onStatusChange(task.id, status.id);
+                                                }}
+                                                className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${
+                                                    task.statusId === status.id
+                                                        ? getTaskStatusBadgeClass(status.color)
+                                                        : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200"
+                                                }`}
+                                            >
+                                                {status.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
                             </div>
                         ) : null}
                     </button>

@@ -169,6 +169,7 @@
         "title": "Work Tasks",
         "newTask": "New Task",
         "empty": "No tasks yet.",
+        "emptyFiltered": "No tasks match this filter.",
         "untitled": "Untitled task",
         "noDetails": "No details yet.",
         "unknownStatus": "Unknown",
@@ -198,6 +199,13 @@
             "preparing": "Preparing",
             "inProgress": "In Progress",
             "completed": "Completed"
+        },
+        "filters": {
+            "all": "All",
+            "active": "Active",
+            "completed": "Completed",
+            "reminder": "With Reminder",
+            "linked": "Linked Room"
         }
     },
     "layout": {

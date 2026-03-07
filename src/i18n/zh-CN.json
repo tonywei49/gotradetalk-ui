@@ -169,6 +169,7 @@
         "title": "工作任务",
         "newTask": "新增任务",
         "empty": "还没有任务。",
+        "emptyFiltered": "当前筛选条件下没有任务。",
         "untitled": "未命名任务",
         "noDetails": "暂无任务内容。",
         "unknownStatus": "未知状态",
@@ -198,6 +199,13 @@
             "preparing": "准备中",
             "inProgress": "执行中",
             "completed": "已完成"
+        },
+        "filters": {
+            "all": "全部",
+            "active": "未完成",
+            "completed": "已完成",
+            "reminder": "有提醒",
+            "linked": "关联聊天室"
         }
     },
     "layout": {

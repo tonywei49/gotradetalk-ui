@@ -246,6 +246,23 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
             : task));
     };
 
+    const updateTaskStatus = (taskId: string, statusId: string): void => {
+        const now = new Date().toISOString();
+        setTasks((prev) => prev.map((task) => {
+            if (task.id !== taskId) return task;
+            const completed = statusId === "completed";
+            return {
+                ...task,
+                statusId,
+                updatedAt: now,
+                completedAt: completed ? task.completedAt ?? now : null,
+            };
+        }));
+        if (selectedTaskId === taskId) {
+            setDetailDraft((prev) => ({ ...prev, statusId }));
+        }
+    };
+
     const openTaskRoom = (taskId: string): string | null => {
         const target = tasks.find((task) => task.id === taskId);
         return target?.roomId ?? null;
@@ -277,6 +294,7 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
         createQuickTask,
         snoozeReminder,
         dismissReminder,
+        updateTaskStatus,
         openTaskRoom,
     };
 }

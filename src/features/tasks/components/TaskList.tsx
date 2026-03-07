@@ -1,6 +1,9 @@
 import { useTranslation } from "react-i18next";
+import { useMemo, useState } from "react";
 import type { TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
+
+type TaskListFilter = "all" | "active" | "completed" | "reminder" | "linked";
 
 type TaskListProps = {
     tasks: TaskItem[];
@@ -20,7 +23,16 @@ export function TaskList({
     onOpenRoom,
 }: TaskListProps) {
     const { t } = useTranslation();
+    const [filter, setFilter] = useState<TaskListFilter>("all");
     const statusMap = new Map(statuses.map((status) => [status.id, status]));
+    const filteredTasks = useMemo(() => tasks.filter((task) => {
+        if (filter === "active") return !task.completedAt;
+        if (filter === "completed") return Boolean(task.completedAt);
+        if (filter === "reminder") return Boolean(task.remindAt) && task.remindState !== "notified";
+        if (filter === "linked") return Boolean(task.roomId);
+        return true;
+    }), [filter, tasks]);
+    const filters: TaskListFilter[] = ["all", "active", "completed", "reminder", "linked"];
 
     return (
         <div className="flex h-full flex-col bg-white dark:bg-slate-900">
@@ -36,14 +48,32 @@ export function TaskList({
                     {t("tasks.newTask")}
                 </button>
             </div>
+            <div className="border-b border-gray-100 px-3 py-2 dark:border-slate-800">
+                <div className="flex flex-wrap gap-2">
+                    {filters.map((item) => (
+                        <button
+                            key={item}
+                            type="button"
+                            onClick={() => setFilter(item)}
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                filter === item
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
+                                    : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200"
+                            }`}
+                        >
+                            {t(`tasks.filters.${item}`)}
+                        </button>
+                    ))}
+                </div>
+            </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
-                {tasks.length === 0 ? (
+                {filteredTasks.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                        {t("tasks.empty")}
+                        {tasks.length === 0 ? t("tasks.empty") : t("tasks.emptyFiltered")}
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {tasks.map((task) => (
+                        {filteredTasks.map((task) => (
                             <button
                                 key={task.id}
                                 type="button"
