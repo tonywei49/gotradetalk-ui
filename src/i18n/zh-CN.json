@@ -179,6 +179,7 @@
         "editTask": "编辑任务",
         "quickCreate": "新增工作任务",
         "openTaskList": "打开任务列表",
+        "jumpToTaskList": "跳转任务栏",
         "linkedRoom": "关联聊天室：{{roomName}}",
         "linkedRoomShort": "聊天室：{{roomName}}",
         "openRoom": "打开聊天室",

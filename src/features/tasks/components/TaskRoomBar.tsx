@@ -1,3 +1,4 @@
+import { ChevronRightIcon } from "@heroicons/react/24/solid";
 import { useTranslation } from "react-i18next";
 import type { TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
@@ -8,6 +9,7 @@ type TaskRoomBarProps = {
     expandedTaskIds: string[];
     onToggle: (taskId: string) => void;
     onStatusChange?: (taskId: string, statusId: string) => void;
+    onOpenTaskList?: () => void;
 };
 
 export function TaskRoomBar({
@@ -16,6 +18,7 @@ export function TaskRoomBar({
     expandedTaskIds,
     onToggle,
     onStatusChange,
+    onOpenTaskList,
 }: TaskRoomBarProps) {
     const { t } = useTranslation();
     const statusMap = new Map(statuses.map((status) => [status.id, status]));
@@ -27,14 +30,16 @@ export function TaskRoomBar({
             {tasks.map((task) => {
                 const expanded = expandedTaskIds.includes(task.id);
                 return (
-                    <button
+                    <div
                         key={task.id}
-                        type="button"
-                        onClick={() => onToggle(task.id)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left dark:border-slate-700 dark:bg-slate-900"
+                        className="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
                     >
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        <button
+                            type="button"
+                            onClick={() => onToggle(task.id)}
+                            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                        >
+                            <div className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
                                 {task.title || t("tasks.untitled")}
                             </div>
                             <div className="flex items-center gap-2 text-[11px]">
@@ -46,11 +51,14 @@ export function TaskRoomBar({
                                 <span className="text-slate-400 dark:text-slate-500">
                                     {task.createdAt}
                                 </span>
+                                <ChevronRightIcon
+                                    className={`h-4 w-4 text-slate-400 transition-transform dark:text-slate-500 ${expanded ? "rotate-90" : ""}`}
+                                />
                             </div>
-                        </div>
+                        </button>
                         {expanded ? (
-                            <div className="mt-2 space-y-2">
-                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                            <div className="space-y-2 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+                                <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                                     {task.content || t("tasks.noDetails")}
                                 </div>
                                 {onStatusChange ? (
@@ -74,9 +82,20 @@ export function TaskRoomBar({
                                         ))}
                                     </div>
                                 ) : null}
+                                {onOpenTaskList ? (
+                                    <div className="flex justify-end">
+                                        <button
+                                            type="button"
+                                            onClick={onOpenTaskList}
+                                            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
+                                        >
+                                            {t("tasks.jumpToTaskList")}
+                                        </button>
+                                    </div>
+                                ) : null}
                             </div>
                         ) : null}
-                    </button>
+                    </div>
                 );
             })}
         </div>

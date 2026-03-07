@@ -179,6 +179,7 @@
         "editTask": "Edit Task",
         "quickCreate": "Create Work Task",
         "openTaskList": "Open task list",
+        "jumpToTaskList": "Open task panel",
         "linkedRoom": "Linked room: {{roomName}}",
         "linkedRoomShort": "Room: {{roomName}}",
         "openRoom": "Open room",
