@@ -387,6 +387,9 @@
             "clearTag": "清除标签",
             "tag": "标签"
         },
+        "alerts": {
+            "mentionedYou": "有人@你"
+        },
         "tags": {
             "urgent": "紧急",
             "followup": "跟进",
@@ -524,6 +527,7 @@
         "singleMemberNotice": "此房间就剩你一人，发的讯息都是在和空气聊天哦",
         "directPeerLeftNotice": "对方已离开此聊天室，继续发送的新消息不会送达对方。",
         "directPeerLeftPlaceholder": "对方已离开此聊天室",
+        "mentionSuggestions": "选择提及对象",
         "notebook": {
             "useKnowledgeBase": "調用知識庫",
             "retry": "重試",

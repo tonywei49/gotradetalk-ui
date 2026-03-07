@@ -3748,6 +3748,29 @@ export const MainLayout: React.FC = () => {
                                 anchor.click();
                                 document.body.removeChild(anchor);
                             }}
+                            onPreviewFile={(file) => {
+                                if (!matrixClient) return;
+                                const previewType = getFilePreviewType({
+                                    msgtype: (file.matrixMediaMime || "").toLowerCase().startsWith("image/")
+                                        ? "m.image"
+                                        : (file.matrixMediaMime || "").toLowerCase().startsWith("video/")
+                                            ? "m.video"
+                                            : (file.matrixMediaMime || "").toLowerCase().startsWith("audio/")
+                                                ? "m.audio"
+                                                : "m.file",
+                                    mimeType: file.matrixMediaMime ?? undefined,
+                                });
+                                if (!previewType) return;
+                                const url = matrixClient.mxcUrlToHttp(file.matrixMediaMxc);
+                                if (!url) return;
+                                setPreviewZoom(1);
+                                setPreviewOffset({ x: 0, y: 0 });
+                                setFilePreview({
+                                    url,
+                                    type: previewType,
+                                    name: file.matrixMediaName || "notebook-file",
+                                });
+                            }}
                             draftFiles={notebookModule.draftFiles}
                             previewBusy={notebookModule.previewBusy}
                             previewError={notebookModule.previewError}

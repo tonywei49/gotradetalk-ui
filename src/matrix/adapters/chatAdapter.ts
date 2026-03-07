@@ -4,10 +4,12 @@ export async function sendTextMessageEvent(
     matrixClient: MatrixClient,
     roomId: string,
     body: string,
+    extraContent?: Record<string, unknown>,
 ): Promise<string | undefined> {
     const result = (await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
         msgtype: MsgType.Text,
         body,
+        ...(extraContent ?? {}),
     })) as { event_id?: string } | undefined;
     return result?.event_id;
 }

@@ -26,6 +26,11 @@ type NotebookPanelProps = {
     uploadLimitMb: number;
     onDeleteFile: (fileId: string) => void;
     onDownloadFile: (mxcUrl: string, preferredName?: string | null) => void;
+    onPreviewFile: (file: {
+        matrixMediaMxc: string;
+        matrixMediaName?: string | null;
+        matrixMediaMime?: string | null;
+    }) => void;
     draftFiles?: NotebookItem["files"];
     previewBusy: boolean;
     previewError: string | null;
@@ -92,6 +97,7 @@ export function NotebookPanel({
     uploadLimitMb,
     onDeleteFile,
     onDownloadFile,
+    onPreviewFile,
     draftFiles,
     previewBusy,
     previewError,
@@ -187,16 +193,25 @@ export function NotebookPanel({
                                         <div className="min-w-0 flex-1 truncate">
                                             {file.matrixMediaName || file.matrixMediaMxc}
                                         </div>
-                                        {isEditing && !isCompanyReadOnly && (
+                                        <div className="flex items-center gap-2">
                                             <button
                                                 type="button"
-                                                onClick={() => onDeleteFile(file.id)}
-                                                disabled={busy}
-                                                className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                                                onClick={() => onPreviewFile(file)}
+                                                className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
                                             >
-                                                Remove
+                                                Preview
                                             </button>
-                                        )}
+                                            {isEditing && !isCompanyReadOnly && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onDeleteFile(file.id)}
+                                                    disabled={busy}
+                                                    className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -211,6 +226,13 @@ export function NotebookPanel({
                                         {file.matrixMediaName || file.matrixMediaMxc}
                                     </div>
                                     <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => onPreviewFile(file)}
+                                            className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+                                        >
+                                            Preview
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={() => onDownloadFile(file.matrixMediaMxc, file.matrixMediaName)}

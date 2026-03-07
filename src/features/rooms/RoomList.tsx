@@ -36,6 +36,7 @@ type ChatRoomEntry = {
     lastMessageSender: string | null;
     lastActive: number;
     unreadCount: number;
+    hasUnreadMention: boolean;
     isDeprecated: boolean;
 };
 
@@ -49,6 +50,7 @@ type RoomCacheEntry = {
     lastMessageSender: string | null;
     lastActive: number;
     unreadCount: number;
+    hasUnreadMention: boolean;
     isDeprecated: boolean;
 };
 
@@ -192,6 +194,41 @@ function getLastMessageMeta(room: Room): { body: string; ts: number; sender: str
     };
 }
 
+function eventMentionsUser(event: MatrixEvent, room: Room, myUserId: string): boolean {
+    const content = (event.getContent() ?? {}) as {
+        body?: string;
+        ["m.mentions"]?: { user_ids?: string[] };
+    };
+    const mentionedIds = Array.isArray(content["m.mentions"]?.user_ids) ? content["m.mentions"]?.user_ids ?? [] : [];
+    if (mentionedIds.includes(myUserId)) return true;
+
+    const body = String(content.body || "");
+    if (!body) return false;
+    const localpart = normalizeMatrixLocalpart(myUserId);
+    const displayName = String(room.getMember(myUserId)?.name || "").trim();
+    const patterns = [localpart, displayName]
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => new RegExp(`(^|\\s)@${value.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}(?=\\s|$)`, "i"));
+    return patterns.some((pattern) => pattern.test(body));
+}
+
+function hasUnreadMention(room: Room, myUserId: string | null): boolean {
+    if (!myUserId) return false;
+    if ((room.getUnreadNotificationCount() ?? 0) <= 0) return false;
+    const readUpToEventId = room.getEventReadUpTo(myUserId, true);
+    const events = room.getLiveTimeline().getEvents();
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        const eventId = event.getId();
+        if (readUpToEventId && eventId === readUpToEventId) break;
+        if (event.getType() !== EventType.RoomMessage) continue;
+        if (event.getSender() === myUserId) continue;
+        if (eventMentionsUser(event, room, myUserId)) return true;
+    }
+    return false;
+}
+
 function resolveExplicitRoomName(room: Room): string | null {
     const nameEvent = room.currentState.getStateEvents(EventType.RoomName, "");
     const explicit = String((nameEvent?.getContent() as { name?: string } | undefined)?.name || "").trim();
@@ -243,6 +280,7 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
                 lastMessageSender: lastMessageMeta.sender,
                 lastActive: room.getLastActiveTimestamp(),
                 unreadCount: room.getUnreadNotificationCount() ?? 0,
+                hasUnreadMention: hasUnreadMention(room, myUserId ?? null),
                 isDeprecated: room.name?.startsWith(DEPRECATED_DM_PREFIX) ?? false,
             };
         })
@@ -459,6 +497,7 @@ export function RoomList({
                 lastMessageSender: room.lastMessageSender,
                 lastActive: room.lastActive,
                 unreadCount: room.unreadCount,
+                hasUnreadMention: room.hasUnreadMention,
                 isDeprecated: room.isDeprecated,
             }));
             localStorage.setItem(roomCacheKey, JSON.stringify(snapshot));
@@ -474,6 +513,7 @@ export function RoomList({
             ...room,
             lastMessageTs: room.lastMessageTs ?? 0,
             lastMessageSender: room.lastMessageSender ?? null,
+            hasUnreadMention: room.hasUnreadMention ?? false,
             room: null,
         }));
 
@@ -1204,9 +1244,16 @@ export function RoomList({
                                     </span>
                                 )}
                             </div>
-                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                                {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
-                            </span>
+                            <div className="ml-2 flex items-center gap-1.5 flex-shrink-0">
+                                {entry.hasUnreadMention && (
+                                    <span className="animate-pulse text-[10px] font-semibold text-rose-500 dark:text-rose-400">
+                                        {t("roomList.alerts.mentionedYou")}
+                                    </span>
+                                )}
+                                <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                    {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
+                                </span>
+                            </div>
                         </div>
                         <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
                             {entry.lastMessage || " "}

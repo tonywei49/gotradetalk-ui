@@ -29,8 +29,9 @@ export async function sendTextMessage(
     matrixClient: MatrixClient,
     roomId: string,
     text: string,
+    extraContent?: Record<string, unknown>,
 ): Promise<string | undefined> {
-    return sendTextMessageEvent(matrixClient, roomId, text);
+    return sendTextMessageEvent(matrixClient, roomId, text, extraContent);
 }
 
 export async function sendReadyAttachments(

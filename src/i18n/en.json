@@ -387,6 +387,9 @@
             "clearTag": "Clear tag",
             "tag": "Tag"
         },
+        "alerts": {
+            "mentionedYou": "Mentioned you"
+        },
         "tags": {
             "urgent": "Urgent",
             "followup": "Follow-up",
@@ -524,6 +527,7 @@
         "singleMemberNotice": "You're the only person left in this room. New messages won't reach anyone else yet.",
         "directPeerLeftNotice": "The other member left this room. New messages will not be delivered.",
         "directPeerLeftPlaceholder": "The other member left this room.",
+        "mentionSuggestions": "Mention someone",
         "notebook": {
             "useKnowledgeBase": "Use Knowledge Base",
             "retry": "Retry",

@@ -630,6 +630,31 @@ type RemoveTarget = {
     membership: "join" | "invite";
 };
 
+type MentionCandidate = {
+    userId: string;
+    localpart: string;
+    label: string;
+};
+
+function extractActiveMention(text: string, cursor: number): { start: number; end: number; query: string } | null {
+    const safeCursor = Math.max(0, Math.min(cursor, text.length));
+    const beforeCursor = text.slice(0, safeCursor);
+    const match = /(?:^|\s)@([a-zA-Z0-9._-]*)$/.exec(beforeCursor);
+    if (!match) return null;
+    const query = match[1] ?? "";
+    const atIndex = safeCursor - query.length - 1;
+    if (atIndex < 0) return null;
+    return {
+        start: atIndex,
+        end: safeCursor,
+        query: query.toLowerCase(),
+    };
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function formatNoticeTimestamp(ts: number): string {
     const date = new Date(ts);
     const yyyy = date.getFullYear();
@@ -838,6 +863,8 @@ export const ChatRoom: React.FC = () => {
     const [renameError, setRenameError] = useState<string | null>(null);
     const [showEmojiBoard, setShowEmojiBoard] = useState(false);
     const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
+    const [activeMention, setActiveMention] = useState<{ start: number; end: number; query: string } | null>(null);
+    const [activeMentionIndex, setActiveMentionIndex] = useState(0);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
     const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiBoardRef = useRef<HTMLDivElement | null>(null);
@@ -845,6 +872,7 @@ export const ChatRoom: React.FC = () => {
     const roomSearchButtonRef = useRef<HTMLButtonElement | null>(null);
     const roomSearchPanelRef = useRef<HTMLDivElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
+    const mentionMenuRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const retryFileInputRef = useRef<HTMLInputElement | null>(null);
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
@@ -1100,6 +1128,17 @@ export const ChatRoom: React.FC = () => {
     }, [showEmojiBoard]);
 
     useEffect(() => {
+        if (!activeMention) return;
+        const onPointerDown = (event: MouseEvent): void => {
+            const target = event.target as Node;
+            if (mentionMenuRef.current?.contains(target) || composerRef.current?.contains(target)) return;
+            setActiveMention(null);
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        return () => document.removeEventListener("mousedown", onPointerDown);
+    }, [activeMention]);
+
+    useEffect(() => {
         if (!composerDraftStorageKey) {
             setComposerText("");
             return;
@@ -1292,6 +1331,46 @@ export const ChatRoom: React.FC = () => {
     const canRenameRoom = roomPermissions.canRenameRoom ?? roomPermissions.canRenameGroup;
     const canRemoveMembers = roomPermissions.canRemoveMembers;
     const memberIdSet = useMemo(() => new Set(joinedMembers.map((member) => member.userId)), [joinedMembers]);
+    const mentionCandidates = useMemo((): MentionCandidate[] => {
+        const seen = new Set<string>();
+        return [...joinedMembers, ...invitedMembers]
+            .filter((member) => member.userId && member.userId !== userId)
+            .map((member) => {
+                const localpart = getLocalPart(member.userId);
+                return {
+                    userId: member.userId,
+                    localpart,
+                    label: getUserLabel(member.userId, member.name || member.rawDisplayName),
+                };
+            })
+            .filter((item) => {
+                if (!item.localpart) return false;
+                if (seen.has(item.userId)) return false;
+                seen.add(item.userId);
+                return true;
+            })
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }, [joinedMembers, invitedMembers, userId]);
+    const visibleMentionCandidates = useMemo(() => {
+        if (!activeMention) return [];
+        const query = activeMention.query.trim();
+        const filtered = mentionCandidates.filter((candidate) => {
+            if (!query) return true;
+            return (
+                candidate.localpart.toLowerCase().includes(query) ||
+                candidate.label.toLowerCase().includes(query)
+            );
+        });
+        return filtered.slice(0, 6);
+    }, [activeMention, mentionCandidates]);
+    useEffect(() => {
+        if (!activeMention) return;
+        if (visibleMentionCandidates.length === 0) {
+            setActiveMention(null);
+            return;
+        }
+        setActiveMentionIndex((prev) => Math.min(prev, visibleMentionCandidates.length - 1));
+    }, [activeMention, visibleMentionCandidates]);
     const filteredContacts = useMemo(() => {
         const needle = contactFilter.trim().toLowerCase();
         return contacts.filter((contact) => {
@@ -1689,11 +1768,23 @@ export const ChatRoom: React.FC = () => {
             return;
         }
         if (!trimmed && readyAttachments.length === 0) return;
+        const mentionedUserIds = mentionCandidates
+            .filter((candidate) => new RegExp(`(^|\\s)@${escapeRegExp(candidate.localpart)}(?=\\s|$)`, "i").test(trimmed))
+            .map((candidate) => candidate.userId);
+        const mentionContent =
+            mentionedUserIds.length > 0
+                ? {
+                    "m.mentions": {
+                        user_ids: mentionedUserIds,
+                    },
+                }
+                : undefined;
         if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
         setComposerText("");
+        setActiveMention(null);
         setUploadError(null);
         let sentEventId: string | undefined;
-        if (trimmed) sentEventId = await sendTextMessage(matrixClient, activeRoomId, trimmed);
+        if (trimmed) sentEventId = await sendTextMessage(matrixClient, activeRoomId, trimmed, mentionContent);
         const peerLang = (directPeerContact?.translation_locale || directPeerContact?.locale || "").trim();
         const shouldPretranslateForClient =
             userType === "staff" &&
@@ -2139,6 +2230,32 @@ export const ChatRoom: React.FC = () => {
             const cursor = start + emoji.length;
             input.focus();
             input.setSelectionRange(cursor, cursor);
+        });
+    };
+
+    const syncMentionState = (nextText: string, explicitCursor?: number): void => {
+        const input = composerRef.current;
+        const cursor = explicitCursor ?? input?.selectionStart ?? nextText.length;
+        const nextMention = extractActiveMention(nextText, cursor);
+        setActiveMention(nextMention);
+        setActiveMentionIndex(0);
+    };
+
+    const insertMentionToComposer = (candidate: MentionCandidate): void => {
+        const input = composerRef.current;
+        const currentMention = activeMention ?? extractActiveMention(composerText, input?.selectionStart ?? composerText.length);
+        if (!currentMention) return;
+        const mentionText = `@${candidate.localpart} `;
+        const nextText = `${composerText.slice(0, currentMention.start)}${mentionText}${composerText.slice(currentMention.end)}`;
+        const nextCursor = currentMention.start + mentionText.length;
+        setComposerText(nextText);
+        setActiveMention(null);
+        requestAnimationFrame(() => {
+            const target = composerRef.current;
+            if (!target) return;
+            target.focus();
+            target.setSelectionRange(nextCursor, nextCursor);
+            syncMentionState(nextText, nextCursor);
         });
     };
 
@@ -2925,28 +3042,89 @@ export const ChatRoom: React.FC = () => {
                             void uploadDraftAttachmentById(roomId, attachmentId, file);
                         }}
                     />
-                    <textarea
-                        ref={composerRef}
-                        data-testid="chat-composer-input"
-                        value={composerText}
-                        onChange={(event) => setComposerText(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                                event.preventDefault();
-                                void onSend();
+                    <div className="relative flex-1">
+                        <textarea
+                            ref={composerRef}
+                            data-testid="chat-composer-input"
+                            value={composerText}
+                            onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setComposerText(nextValue);
+                                syncMentionState(nextValue, event.target.selectionStart ?? nextValue.length);
+                            }}
+                            onClick={(event) => {
+                                syncMentionState(composerText, event.currentTarget.selectionStart ?? composerText.length);
+                            }}
+                            onKeyUp={(event) => {
+                                syncMentionState(composerText, event.currentTarget.selectionStart ?? composerText.length);
+                            }}
+                            onKeyDown={(event) => {
+                                if (activeMention && visibleMentionCandidates.length > 0) {
+                                    if (event.key === "ArrowDown") {
+                                        event.preventDefault();
+                                        setActiveMentionIndex((prev) => (prev + 1) % visibleMentionCandidates.length);
+                                        return;
+                                    }
+                                    if (event.key === "ArrowUp") {
+                                        event.preventDefault();
+                                        setActiveMentionIndex((prev) => (prev - 1 + visibleMentionCandidates.length) % visibleMentionCandidates.length);
+                                        return;
+                                    }
+                                    if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                                        event.preventDefault();
+                                        insertMentionToComposer(visibleMentionCandidates[activeMentionIndex] || visibleMentionCandidates[0]);
+                                        return;
+                                    }
+                                    if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        setActiveMention(null);
+                                        return;
+                                    }
+                                }
+                                if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                                    event.preventDefault();
+                                    void onSend();
+                                }
+                            }}
+                            className="flex-1 w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 leading-5 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none min-h-12 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-slate-800"
+                            placeholder={
+                                isDeprecatedRoom
+                                    ? t("chat.deprecatedPlaceholder")
+                                    : isDirectPeerAbsent
+                                        ? t("chat.directPeerLeftPlaceholder")
+                                        : t("chat.placeholder")
                             }
-                        }}
-                        className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-slate-800 leading-5 focus:outline-none focus:border-[#2F5C56] focus:ring-1 focus:ring-[#2F5C56] resize-none min-h-12 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-slate-800"
-                        placeholder={
-                            isDeprecatedRoom
-                                ? t("chat.deprecatedPlaceholder")
-                                : isDirectPeerAbsent
-                                    ? t("chat.directPeerLeftPlaceholder")
-                                    : t("chat.placeholder")
-                        }
-                        rows={1}
-                        disabled={isDeprecatedRoom || isDirectPeerAbsent}
-                    />
+                            rows={1}
+                            disabled={isDeprecatedRoom || isDirectPeerAbsent}
+                        />
+                        {activeMention && visibleMentionCandidates.length > 0 && (
+                            <div
+                                ref={mentionMenuRef}
+                                className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-72 rounded-xl border border-gray-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+                            >
+                                <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+                                    {t("chat.mentionSuggestions")}
+                                </div>
+                                <div className="space-y-1">
+                                    {visibleMentionCandidates.map((candidate, index) => (
+                                        <button
+                                            key={candidate.userId}
+                                            type="button"
+                                            onClick={() => insertMentionToComposer(candidate)}
+                                            className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left ${
+                                                index === activeMentionIndex
+                                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
+                                                    : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                            }`}
+                                        >
+                                            <span className="truncate text-sm font-semibold">@{candidate.localpart}</span>
+                                            <span className="truncate pl-3 text-[11px] text-slate-400 dark:text-slate-500">{candidate.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <button
                         data-testid="chat-send-button"
                         type="button"
