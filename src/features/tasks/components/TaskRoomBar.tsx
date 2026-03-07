@@ -70,36 +70,36 @@ export function TaskRoomBar({
                                 <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                                     {task.content || t("tasks.noDetails")}
                                 </div>
-                                {onStatusChange ? (
-                                    <div className="flex flex-wrap gap-2">
-                                        {statuses.map((status) => (
+                                {(onStatusChange || onOpenTaskList) ? (
+                                    <div className="flex items-end justify-between gap-3">
+                                        <div className="flex flex-wrap gap-2">
+                                            {onStatusChange ? statuses.map((status) => (
+                                                <button
+                                                    key={status.id}
+                                                    type="button"
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        onStatusChange(task.id, status.id);
+                                                    }}
+                                                    className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                                                        task.statusId === status.id
+                                                            ? getCompactStatusClass(status.id)
+                                                            : "border border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200"
+                                                    }`}
+                                                >
+                                                    {status.name}
+                                                </button>
+                                            )) : null}
+                                        </div>
+                                        {onOpenTaskList ? (
                                             <button
-                                                key={status.id}
                                                 type="button"
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    onStatusChange(task.id, status.id);
-                                                }}
-                                                className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
-                                                    task.statusId === status.id
-                                                        ? getCompactStatusClass(status.id)
-                                                        : "border border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200"
-                                                }`}
+                                                onClick={onOpenTaskList}
+                                                className="shrink-0 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
                                             >
-                                                {status.name}
+                                                {t("tasks.jumpToTaskList")}
                                             </button>
-                                        ))}
-                                    </div>
-                                ) : null}
-                                {onOpenTaskList ? (
-                                    <div className="flex justify-end">
-                                        <button
-                                            type="button"
-                                            onClick={onOpenTaskList}
-                                            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
-                                        >
-                                            {t("tasks.jumpToTaskList")}
-                                        </button>
+                                        ) : null}
                                     </div>
                                 ) : null}
                             </div>
