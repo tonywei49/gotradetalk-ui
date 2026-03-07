@@ -1,4 +1,5 @@
 import type { TaskItem, TaskStatus } from "../types";
+import { getTaskStatusBadgeClass } from "../statusStyles";
 
 type TaskRoomBarProps = {
     tasks: TaskItem[];
@@ -33,7 +34,9 @@ export function TaskRoomBar({
                                 {task.title || "Untitled task"}
                             </div>
                             <div className="flex items-center gap-2 text-[11px]">
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                <span
+                                    className={`inline-flex rounded-full border px-2 py-0.5 ${getTaskStatusBadgeClass(statusMap.get(task.statusId)?.color)}`}
+                                >
                                     {statusMap.get(task.statusId)?.name || "Unknown"}
                                 </span>
                                 <span className="text-slate-400 dark:text-slate-500">

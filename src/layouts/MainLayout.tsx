@@ -6,6 +6,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
     FolderIcon,
+    ClipboardDocumentListIcon,
 } from "@heroicons/react/24/outline";
 import { ClientEvent, EventTimeline, EventType, Preset, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
@@ -72,6 +73,7 @@ import {
     type SummarySearchTarget,
     useNotebookModule,
 } from "../features/notebook";
+import { TaskDetail, TaskList, TaskReminderBanner, useTaskModule } from "../features/tasks";
 import {
     getCompanyNotebookAiSettings,
     getNotebookCapabilities,
@@ -416,7 +418,7 @@ const FILE_HISTORY_MAX_ROUNDS = 6;
 
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
-    const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "orders" | "settings" | "account">("chat");
+    const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
@@ -553,6 +555,17 @@ export const MainLayout: React.FC = () => {
     );
     const [notificationSoundMode, setNotificationSoundMode] = useState<NotificationSoundMode>("classic");
     const [notificationSoundHydrated, setNotificationSoundHydrated] = useState(false);
+    const activeRoomName = useMemo(() => {
+        if (!matrixClient || !activeRoomId) return null;
+        const room = matrixClient.getRoom(activeRoomId);
+        if (!room) return null;
+        return resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
+    }, [matrixClient, activeRoomId, matrixCredentials?.user_id]);
+    const taskModule = useTaskModule({
+        userId: matrixCredentials?.user_id ?? null,
+        activeRoomId,
+        activeRoomName,
+    });
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : null;
     const meUpdateOptions = undefined;
     const [capabilityValues, setCapabilityValues] = useState<string[]>([]);
@@ -2656,6 +2669,15 @@ export const MainLayout: React.FC = () => {
                         className="order-4 lg:order-none"
                     />
                     <NavBarItem
+                        icon={ClipboardDocumentListIcon}
+                        active={activeTab === "tasks"}
+                        onClick={() => {
+                            setMobileView("list");
+                            setActiveTab("tasks");
+                        }}
+                        className="order-5 lg:order-none"
+                    />
+                    <NavBarItem
                         icon={Cog6ToothIcon}
                         active={activeTab === "settings"}
                         onClick={() => {
@@ -2663,7 +2685,7 @@ export const MainLayout: React.FC = () => {
                             setSettingsDetail("none");
                             setMobileView("list");
                         }}
-                        className="order-5 lg:order-none lg:hidden"
+                        className="order-6 lg:order-none lg:hidden"
                     />
                 </div>
 
@@ -2991,6 +3013,20 @@ export const MainLayout: React.FC = () => {
                             )}
                         </div>
                     </>
+                ) : activeTab === "tasks" ? (
+                    <TaskList
+                        tasks={taskModule.tasks}
+                        statuses={taskModule.statuses}
+                        selectedTaskId={taskModule.selectedTaskId}
+                        onSelectTask={(taskId) => {
+                            taskModule.setSelectedTaskId(taskId);
+                            setMobileView("detail");
+                        }}
+                        onCreateTask={() => {
+                            taskModule.createTask();
+                            setMobileView("detail");
+                        }}
+                    />
                 ) : (
                     <>
                         {/* Header */}
@@ -3169,6 +3205,11 @@ export const MainLayout: React.FC = () => {
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
             >
+                <TaskReminderBanner
+                    task={taskModule.currentReminder}
+                    onSnooze={taskModule.snoozeReminder}
+                    onDismiss={taskModule.dismissReminder}
+                />
                 {capabilityError && (
                     <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         <div>{capabilityError}</div>
@@ -3831,6 +3872,23 @@ export const MainLayout: React.FC = () => {
                             onChunkSettingsChange={notebookModule.setChunkSettings}
                         />
                     )
+                ) : activeTab === "tasks" ? (
+                    <TaskDetail
+                        task={taskModule.selectedTask}
+                        statuses={taskModule.statuses}
+                        draft={taskModule.detailDraft}
+                        editing={taskModule.editing}
+                        onDraftChange={taskModule.setDetailDraft}
+                        onStartEdit={() => taskModule.setEditing(true)}
+                        onSave={taskModule.saveSelectedTask}
+                        onDelete={taskModule.deleteSelectedTask}
+                        onMobileBack={() => setMobileView("list")}
+                        onOpenLinkedRoom={(roomId) => {
+                            setActiveRoomId(roomId);
+                            setActiveTab("chat");
+                            setMobileView("detail");
+                        }}
+                    />
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (
@@ -3975,6 +4033,15 @@ export const MainLayout: React.FC = () => {
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
                             notebookApiBaseUrl: notebookApiBaseUrlOverride,
+                            taskStatuses: taskModule.statuses,
+                            roomTasks: taskModule.roomTasks,
+                            taskQuickDraft: taskModule.quickDraft,
+                            onTaskQuickDraftChange: taskModule.setQuickDraft,
+                            onCreateRoomTask: taskModule.createQuickTask,
+                            onOpenTasksTab: () => {
+                                setActiveTab("tasks");
+                                setMobileView("list");
+                            },
                         }}
                     />
                 )}

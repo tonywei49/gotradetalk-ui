@@ -13,6 +13,7 @@ import {
     SparklesIcon,
     ArrowsPointingOutIcon,
     ArrowsPointingInIcon,
+    ClipboardDocumentListIcon,
 } from "@heroicons/react/24/outline";
 import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
@@ -64,6 +65,7 @@ import { MessageActionsMenu } from "./components/MessageActionsMenu";
 import { getNotebookAdapter } from "../notebook";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
+import { TaskQuickCreate, TaskRoomBar, type TaskDraft, type TaskItem, type TaskStatus } from "../tasks";
 import {
     chatSearchLocate,
     chatSearchRoom,
@@ -622,6 +624,12 @@ type ChatRoomContext = {
     onReloginForNotebook?: () => void;
     hasNotebookAuthToken?: boolean;
     notebookApiBaseUrl?: string | null;
+    taskStatuses?: TaskStatus[];
+    roomTasks?: TaskItem[];
+    taskQuickDraft?: TaskDraft;
+    onTaskQuickDraftChange?: (patch: Partial<TaskDraft>) => void;
+    onCreateRoomTask?: () => void;
+    onOpenTasksTab?: () => void;
 };
 
 type RemoveTarget = {
@@ -814,6 +822,12 @@ export const ChatRoom: React.FC = () => {
         onReloginForNotebook,
         hasNotebookAuthToken,
         notebookApiBaseUrl,
+        taskStatuses,
+        roomTasks,
+        taskQuickDraft,
+        onTaskQuickDraftChange,
+        onCreateRoomTask,
+        onOpenTasksTab,
     } =
         useOutletContext<ChatRoomContext>();
     const matrixClient = useAuthStore((state) => state.matrixClient);
@@ -865,6 +879,8 @@ export const ChatRoom: React.FC = () => {
     const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
     const [activeMention, setActiveMention] = useState<{ start: number; end: number; query: string } | null>(null);
     const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+    const [showTaskQuickCreate, setShowTaskQuickCreate] = useState(false);
+    const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
     const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiBoardRef = useRef<HTMLDivElement | null>(null);
@@ -2284,6 +2300,11 @@ export const ChatRoom: React.FC = () => {
         return Array.from(new Set(merged));
     }, [recentEmojis]);
 
+    useEffect(() => {
+        setShowTaskQuickCreate(false);
+        setExpandedTaskIds([]);
+    }, [activeRoomId]);
+
     if (!activeRoomId) {
         return <div className="flex-1" />;
     }
@@ -2590,6 +2611,35 @@ export const ChatRoom: React.FC = () => {
                 </div>
             )}
 
+            {taskStatuses && roomTasks && roomTasks.length > 0 && (
+                <div className="border-b border-slate-200 bg-white/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                            Work Tasks
+                        </div>
+                        {onOpenTasksTab ? (
+                            <button
+                                type="button"
+                                onClick={onOpenTasksTab}
+                                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
+                            >
+                                Open task list
+                            </button>
+                        ) : null}
+                    </div>
+                    <TaskRoomBar
+                        tasks={roomTasks}
+                        statuses={taskStatuses}
+                        expandedTaskIds={expandedTaskIds}
+                        onToggle={(taskId) =>
+                            setExpandedTaskIds((prev) =>
+                                prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId],
+                            )
+                        }
+                    />
+                </div>
+            )}
+
             {/* Chat History (Timeline) */}
             <div
                 ref={timelineRef}
@@ -2818,6 +2868,16 @@ export const ChatRoom: React.FC = () => {
                     <button type="button" className="hover:text-[#2F5C56] dark:hover:text-emerald-400">
                         <MicrophoneIcon className="w-6 h-6" />
                     </button>
+                    {taskStatuses && taskQuickDraft && onTaskQuickDraftChange && onCreateRoomTask && (
+                        <button
+                            type="button"
+                            onClick={() => setShowTaskQuickCreate((prev) => !prev)}
+                            className={`hover:text-[#2F5C56] dark:hover:text-emerald-400 ${showTaskQuickCreate ? "text-[#2F5C56] dark:text-emerald-400" : ""}`}
+                            title="工作任务"
+                        >
+                            <ClipboardDocumentListIcon className="w-6 h-6" />
+                        </button>
+                    )}
                     {canUseNotebookAssist && (
                         <button
                             type="button"
@@ -2831,6 +2891,22 @@ export const ChatRoom: React.FC = () => {
                         </button>
                     )}
                 </div>
+
+                {taskStatuses && taskQuickDraft && onTaskQuickDraftChange && onCreateRoomTask && (
+                    <div className="mb-3">
+                        <TaskQuickCreate
+                            open={showTaskQuickCreate}
+                            draft={taskQuickDraft}
+                            statuses={taskStatuses}
+                            onDraftChange={onTaskQuickDraftChange}
+                            onSave={() => {
+                                onCreateRoomTask();
+                                setShowTaskQuickCreate(false);
+                            }}
+                            onClose={() => setShowTaskQuickCreate(false)}
+                        />
+                    </div>
+                )}
 
                 {(assistState !== "idle" || assistOutput || assistError) && (
                     <div className={`${assistEditorFullscreen

@@ -64,6 +64,13 @@ export function TaskQuickCreate({
                     Save
                 </button>
             </div>
+            <textarea
+                value={draft.content}
+                onChange={(event) => onDraftChange({ content: event.target.value })}
+                rows={3}
+                placeholder="Task details"
+                className="mt-3 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
         </div>
     );
 }
