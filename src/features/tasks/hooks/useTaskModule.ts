@@ -58,8 +58,11 @@ export function useTaskModule(params: { userId: string | null; activeRoomId: str
     const { userId, activeRoomId, activeRoomName } = params;
     const statuses = useMemo<TaskStatus[]>(() => ([
         { id: "preparing", name: t("tasks.status.preparing"), color: "gray", sortOrder: 10 },
-        { id: "in_progress", name: t("tasks.status.inProgress"), color: "blue", sortOrder: 20 },
-        { id: "completed", name: t("tasks.status.completed"), color: "green", sortOrder: 30 },
+        { id: "pending_review", name: t("tasks.status.pendingReview"), color: "amber", sortOrder: 20 },
+        { id: "in_progress", name: t("tasks.status.inProgress"), color: "blue", sortOrder: 30 },
+        { id: "waiting_reply", name: t("tasks.status.waitingReply"), color: "purple", sortOrder: 40 },
+        { id: "blocked", name: t("tasks.status.blocked"), color: "red", sortOrder: 50 },
+        { id: "completed", name: t("tasks.status.completed"), color: "green", sortOrder: 60 },
     ]), [t]);
     const storageKey = useMemo(() => buildStorageKey(userId), [userId]);
     const [tasks, setTasks] = useState<TaskItem[]>([]);

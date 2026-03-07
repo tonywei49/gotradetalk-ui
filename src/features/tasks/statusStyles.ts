@@ -6,8 +6,22 @@ const BADGE_CLASS_MAP: Record<TaskStatusColor, string> = {
     blue: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-200",
     green: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200",
     red: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200",
+    purple: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-200",
+};
+
+const SOLID_BADGE_CLASS_MAP: Record<TaskStatusColor, string> = {
+    gray: "bg-slate-500 text-white dark:bg-slate-500 dark:text-white",
+    amber: "bg-amber-500 text-white dark:bg-amber-500 dark:text-white",
+    blue: "bg-sky-500 text-white dark:bg-sky-500 dark:text-white",
+    green: "bg-emerald-500 text-white dark:bg-emerald-500 dark:text-white",
+    red: "bg-rose-500 text-white dark:bg-rose-500 dark:text-white",
+    purple: "bg-violet-500 text-white dark:bg-violet-500 dark:text-white",
 };
 
 export function getTaskStatusBadgeClass(color: TaskStatusColor | undefined): string {
     return color ? BADGE_CLASS_MAP[color] : BADGE_CLASS_MAP.gray;
+}
+
+export function getTaskStatusSolidClass(color: TaskStatusColor | undefined): string {
+    return color ? SOLID_BADGE_CLASS_MAP[color] : SOLID_BADGE_CLASS_MAP.gray;
 }

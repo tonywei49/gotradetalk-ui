@@ -1,4 +1,4 @@
-export type TaskStatusColor = "gray" | "amber" | "blue" | "green" | "red";
+export type TaskStatusColor = "gray" | "amber" | "blue" | "green" | "red" | "purple";
 
 export type TaskReminderState = "pending" | "snoozed" | "notified";
 

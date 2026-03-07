@@ -198,7 +198,10 @@
         },
         "status": {
             "preparing": "Preparing",
+            "pendingReview": "Pending Review",
             "inProgress": "In Progress",
+            "waitingReply": "Waiting Reply",
+            "blocked": "Blocked",
             "completed": "Completed"
         },
         "filters": {

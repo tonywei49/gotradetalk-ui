@@ -198,7 +198,10 @@
         },
         "status": {
             "preparing": "准备中",
+            "pendingReview": "待确认",
             "inProgress": "执行中",
+            "waitingReply": "待回复",
+            "blocked": "阻塞中",
             "completed": "已完成"
         },
         "filters": {
