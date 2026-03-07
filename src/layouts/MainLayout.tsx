@@ -442,7 +442,12 @@ export const MainLayout: React.FC = () => {
     const [fileBatchDeleting, setFileBatchDeleting] = useState(false);
     const [fileBatchDeleteProgress, setFileBatchDeleteProgress] = useState({ done: 0, total: 0 });
     const [fileHistoryLoadingRoomId, setFileHistoryLoadingRoomId] = useState<string | null>(null);
-    const [filePreview, setFilePreview] = useState<{ url: string; type: "image" | "video" | "audio" | "pdf"; name: string } | null>(null);
+    const [filePreview, setFilePreview] = useState<{
+        url: string;
+        type: "image" | "video" | "audio" | "pdf";
+        name: string;
+        revokeOnClose?: boolean;
+    } | null>(null);
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
     const previewDraggingRef = useRef(false);
@@ -468,6 +473,14 @@ export const MainLayout: React.FC = () => {
     const [summaryContentLoading, setSummaryContentLoading] = useState(false);
     const [summaryJobs, setSummaryJobs] = useState<ChatSummaryJobItem[]>([]);
     const [summaryJobsLoading, setSummaryJobsLoading] = useState(false);
+
+    useEffect(() => {
+        return () => {
+            if (filePreview?.revokeOnClose) {
+                URL.revokeObjectURL(filePreview.url);
+            }
+        };
+    }, [filePreview]);
     const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
     const [summaryJobActionBusy, setSummaryJobActionBusy] = useState(false);
     const [summaryGenerationNotice, setSummaryGenerationNotice] = useState<string | null>(null);
@@ -3763,13 +3776,30 @@ export const MainLayout: React.FC = () => {
                                 if (!previewType) return;
                                 const url = matrixClient.mxcUrlToHttp(file.matrixMediaMxc);
                                 if (!url) return;
-                                setPreviewZoom(1);
-                                setPreviewOffset({ x: 0, y: 0 });
-                                setFilePreview({
-                                    url,
-                                    type: previewType,
-                                    name: file.matrixMediaName || "notebook-file",
-                                });
+                                void (async () => {
+                                    try {
+                                        const response = await fetch(url);
+                                        if (!response.ok) return;
+                                        const blob = await response.blob();
+                                        const blobUrl = URL.createObjectURL(blob);
+                                        setPreviewZoom(1);
+                                        setPreviewOffset({ x: 0, y: 0 });
+                                        setFilePreview({
+                                            url: blobUrl,
+                                            type: previewType,
+                                            name: file.matrixMediaName || "notebook-file",
+                                            revokeOnClose: true,
+                                        });
+                                    } catch {
+                                        setPreviewZoom(1);
+                                        setPreviewOffset({ x: 0, y: 0 });
+                                        setFilePreview({
+                                            url,
+                                            type: previewType,
+                                            name: file.matrixMediaName || "notebook-file",
+                                        });
+                                    }
+                                })();
                             }}
                             draftFiles={notebookModule.draftFiles}
                             previewBusy={notebookModule.previewBusy}
