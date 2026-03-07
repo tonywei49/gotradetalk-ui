@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import type { TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
 
-type TaskListFilter = "all" | "active" | "completed" | "reminder" | "linked";
+type TaskListFilter = "all" | "reminder" | "linked" | `status:${string}`;
 
 type TaskListProps = {
     tasks: TaskItem[];
@@ -26,13 +26,23 @@ export function TaskList({
     const [filter, setFilter] = useState<TaskListFilter>("all");
     const statusMap = new Map(statuses.map((status) => [status.id, status]));
     const filteredTasks = useMemo(() => tasks.filter((task) => {
-        if (filter === "active") return !task.completedAt;
-        if (filter === "completed") return Boolean(task.completedAt);
         if (filter === "reminder") return Boolean(task.remindAt) && task.remindState !== "notified";
         if (filter === "linked") return Boolean(task.roomId);
+        if (filter.startsWith("status:")) return task.statusId === filter.slice(7);
         return true;
     }), [filter, tasks]);
-    const filters: TaskListFilter[] = ["all", "active", "completed", "reminder", "linked"];
+    const filters = useMemo(
+        () => [
+            { id: "all" as TaskListFilter, label: t("tasks.filters.all") },
+            ...statuses.map((status) => ({
+                id: `status:${status.id}` as TaskListFilter,
+                label: status.name,
+            })),
+            { id: "reminder" as TaskListFilter, label: t("tasks.filters.reminder") },
+            { id: "linked" as TaskListFilter, label: t("tasks.filters.linked") },
+        ],
+        [statuses, t],
+    );
 
     return (
         <div className="flex h-full flex-col bg-white dark:bg-slate-900">
@@ -52,16 +62,16 @@ export function TaskList({
                 <div className="flex flex-wrap gap-2">
                     {filters.map((item) => (
                         <button
-                            key={item}
+                            key={item.id}
                             type="button"
-                            onClick={() => setFilter(item)}
+                            onClick={() => setFilter(item.id)}
                             className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-                                filter === item
+                                filter === item.id
                                     ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
                                     : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200"
                             }`}
                         >
-                            {t(`tasks.filters.${item}`)}
+                            {item.label}
                         </button>
                     ))}
                 </div>
