@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import { ClientEvent, EventType, RoomEvent } from "matrix-js-sdk";
 import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
@@ -94,6 +94,7 @@ const CONTACTS_CACHE_PREFIX = "gtt_contacts_cache_v1:";
 const ROOMS_CACHE_PREFIX = "gtt_rooms_cache_v1:";
 const ROOM_TAGS_CACHE_PREFIX = "gtt_room_tags_v1:";
 const REPLY_PENDING_THRESHOLD_MS = 5 * 60 * 1000;
+const ROOM_LIST_REFRESH_DEBOUNCE_MS = 120;
 
 const ROOM_TAG_OPTIONS = [
     {
@@ -355,6 +356,7 @@ export function RoomList({
     const [timeTick, setTimeTick] = useState(() => Date.now());
     const [roomTagsHydrated, setRoomTagsHydrated] = useState(false);
     const tagMenuRef = useRef<HTMLDivElement | null>(null);
+    const refreshTimerRef = useRef<number | null>(null);
     const contactCacheKey = useMemo(() => {
         const userId = client?.getUserId() ?? "";
         if (!userId) return null;
@@ -371,46 +373,59 @@ export function RoomList({
         return `${ROOM_TAGS_CACHE_PREFIX}${userId}`;
     }, [client?.getUserId()]);
 
-    const refresh = useMemo(() => {
-        if (!client) return null;
-        return () => {
-            const accountData = client.getAccountData(EventType.Direct);
-            const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
-            const directRoomIds = new Set<string>();
-            Object.values(directContent).forEach((roomIds) => {
-                roomIds.forEach((roomId) => directRoomIds.add(roomId));
-            });
-            const hiddenDirectRoomIds = new Set<string>();
-            const myUserId = client.getUserId() ?? "";
-            client.getRooms().forEach((room) => {
-                if (room.getMyMembership() !== "join") return;
-                if (room.isSpaceRoom()) return;
-                const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
-                const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
-                const isDeprecated = Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX));
-                const memberCount = room.getJoinedMemberCount() ?? 0;
-                const shouldHideDirect = isDirect && memberCount <= 2;
-                if (shouldHideDirect && !directRoomIds.has(room.roomId) && !isDeprecated) {
-                    hiddenDirectRoomIds.add(room.roomId);
-                }
-            });
+    const refresh = useCallback(() => {
+        if (!client) return;
+        const accountData = client.getAccountData(EventType.Direct);
+        const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
+        const directRoomIds = new Set<string>();
+        Object.values(directContent).forEach((roomIds) => {
+            roomIds.forEach((roomId) => directRoomIds.add(roomId));
+        });
+        const hiddenDirectRoomIds = new Set<string>();
+        const myUserId = client.getUserId() ?? "";
+        client.getRooms().forEach((room) => {
+            if (room.getMyMembership() !== "join") return;
+            if (room.isSpaceRoom()) return;
+            const memberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
+            const isDirect = Boolean(memberEvent?.getContent()?.is_direct);
+            const isDeprecated = Boolean(room.name?.startsWith(DEPRECATED_DM_PREFIX));
+            const memberCount = room.getJoinedMemberCount() ?? 0;
+            const shouldHideDirect = isDirect && memberCount <= 2;
+            if (shouldHideDirect && !directRoomIds.has(room.roomId) && !isDeprecated) {
+                hiddenDirectRoomIds.add(room.roomId);
+            }
+        });
 
-            const chatRooms = buildChatRooms(client);
-            setRooms(
-                chatRooms
-                    .filter((entry) => !hiddenDirectRoomIds.has(entry.roomId))
-                    .sort((a, b) => b.lastActive - a.lastActive),
-            );
-        };
+        const chatRooms = buildChatRooms(client);
+        setRooms(
+            chatRooms
+                .filter((entry) => !hiddenDirectRoomIds.has(entry.roomId))
+                .sort((a, b) => b.lastActive - a.lastActive),
+        );
     }, [client]);
 
+    const scheduleRefresh = useCallback((options?: { immediate?: boolean }) => {
+        if (!client) return;
+        if (refreshTimerRef.current !== null) {
+            window.clearTimeout(refreshTimerRef.current);
+            refreshTimerRef.current = null;
+        }
+        if (options?.immediate) {
+            refresh();
+            return;
+        }
+        refreshTimerRef.current = window.setTimeout(() => {
+            refreshTimerRef.current = null;
+            refresh();
+        }, ROOM_LIST_REFRESH_DEBOUNCE_MS);
+    }, [client, refresh]);
+
     useEffect(() => {
-        if (!client || !refresh) {
+        if (!client) {
             setRooms(EMPTY_STATE);
             return undefined;
         }
-
-        refresh();
+        scheduleRefresh();
 
         const onTimeline = (
             event: MatrixEvent,
@@ -420,7 +435,7 @@ export function RoomList({
         ): void => {
             if (!room || removed) return;
             if (toStartOfTimeline) return;
-            refresh();
+            scheduleRefresh();
 
             // 在非活動房間，或頁面隱藏時收到新消息播放提示音
             if (event.getType() === EventType.RoomMessage) {
@@ -443,21 +458,21 @@ export function RoomList({
 
         const onAccountData = (event: MatrixEvent): void => {
             if (event.getType() === EventType.Direct) {
-                refresh();
+                scheduleRefresh({ immediate: true });
             }
         };
 
         // 監聽已讀回執事件，更新未讀計數
         const onReceipt = (): void => {
-            refresh();
+            scheduleRefresh();
         };
 
         const onRoom = (): void => {
-            refresh();
+            scheduleRefresh();
         };
 
         const onMembership = (): void => {
-            refresh();
+            scheduleRefresh({ immediate: true });
         };
 
         client.on(RoomEvent.Timeline, onTimeline);
@@ -467,22 +482,17 @@ export function RoomList({
         client.on(RoomEvent.MyMembership, onMembership);
 
         return () => {
+            if (refreshTimerRef.current !== null) {
+                window.clearTimeout(refreshTimerRef.current);
+                refreshTimerRef.current = null;
+            }
             client.off(RoomEvent.Timeline, onTimeline);
             client.off(ClientEvent.AccountData, onAccountData);
             client.off(RoomEvent.Receipt, onReceipt);
             client.off("Room" as any, onRoom);
             client.off(RoomEvent.MyMembership, onMembership);
         };
-    }, [client, refresh, activeRoomId, notificationSoundMode]);
-
-    useEffect(() => {
-        if (!rooms.length) return;
-        if (activeRoomId) return;
-        const nextRoom = rooms.find((room) => room.myMembership !== "invite") ?? rooms[0];
-        if (nextRoom) {
-            onSelectRoom(nextRoom.roomId);
-        }
-    }, [rooms, activeRoomId, onSelectRoom]);
+    }, [client, scheduleRefresh, activeRoomId, notificationSoundMode]);
 
     useEffect(() => {
         if (!roomCacheKey) return;
