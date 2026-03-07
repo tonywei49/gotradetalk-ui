@@ -3753,13 +3753,30 @@ export const MainLayout: React.FC = () => {
                                 if (!matrixClient) return;
                                 const url = matrixClient.mxcUrlToHttp(mxcUrl);
                                 if (!url) return;
-                                const anchor = document.createElement("a");
-                                anchor.href = url;
-                                anchor.download = preferredName || "notebook-file";
-                                anchor.rel = "noopener noreferrer";
-                                document.body.appendChild(anchor);
-                                anchor.click();
-                                document.body.removeChild(anchor);
+                                void (async () => {
+                                    try {
+                                        const response = await fetch(url);
+                                        if (!response.ok) return;
+                                        const blob = await response.blob();
+                                        const blobUrl = URL.createObjectURL(blob);
+                                        const anchor = document.createElement("a");
+                                        anchor.href = blobUrl;
+                                        anchor.download = preferredName || "notebook-file";
+                                        anchor.rel = "noopener noreferrer";
+                                        document.body.appendChild(anchor);
+                                        anchor.click();
+                                        document.body.removeChild(anchor);
+                                        URL.revokeObjectURL(blobUrl);
+                                    } catch {
+                                        const anchor = document.createElement("a");
+                                        anchor.href = url;
+                                        anchor.download = preferredName || "notebook-file";
+                                        anchor.rel = "noopener noreferrer";
+                                        document.body.appendChild(anchor);
+                                        anchor.click();
+                                        document.body.removeChild(anchor);
+                                    }
+                                })();
                             }}
                             onPreviewFile={(file) => {
                                 if (!matrixClient) return;
