@@ -90,29 +90,31 @@ export function TaskList({
                                 <div className="mb-2 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
                                     {task.content || t("tasks.noDetails")}
                                 </div>
-                                {task.roomId && task.roomNameSnapshot && onOpenRoom ? (
-                                    <div className="mb-2">
-                                        <button
-                                            type="button"
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                onOpenRoom(task.roomId as string);
-                                            }}
-                                            className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500 hover:border-emerald-400 hover:text-emerald-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
-                                        >
-                                            {t("tasks.linkedRoomShort", { roomName: task.roomNameSnapshot })}
-                                        </button>
-                                    </div>
-                                ) : null}
                                 <div className="flex items-center justify-between gap-2 text-[11px]">
-                                    <span
-                                        className={`inline-flex rounded-full border px-2 py-0.5 ${getTaskStatusBadgeClass(statusMap.get(task.statusId)?.color)}`}
-                                    >
-                                        {statusMap.get(task.statusId)?.name || t("tasks.unknownStatus")}
-                                    </span>
-                                    <span className="text-slate-400 dark:text-slate-500">
-                                        {task.createdAt}
-                                    </span>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <span
+                                            className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 ${getTaskStatusBadgeClass(statusMap.get(task.statusId)?.color)}`}
+                                        >
+                                            {statusMap.get(task.statusId)?.name || t("tasks.unknownStatus")}
+                                        </span>
+                                    </div>
+                                    <div className="ml-auto flex min-w-0 items-center gap-2">
+                                        {task.roomId && task.roomNameSnapshot && onOpenRoom ? (
+                                            <button
+                                                type="button"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    onOpenRoom(task.roomId as string);
+                                                }}
+                                                className="truncate rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500 hover:border-emerald-400 hover:text-emerald-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
+                                            >
+                                                {t("tasks.linkedRoomShort", { roomName: task.roomNameSnapshot })}
+                                            </button>
+                                        ) : null}
+                                        <span className="shrink-0 text-slate-400 dark:text-slate-500">
+                                            {task.createdAt}
+                                        </span>
+                                    </div>
                                 </div>
                             </button>
                         ))}
