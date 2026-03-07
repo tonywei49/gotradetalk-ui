@@ -179,6 +179,7 @@
         "quickCreate": "Create Work Task",
         "openTaskList": "Open task list",
         "linkedRoom": "Linked room: {{roomName}}",
+        "linkedRoomShort": "Room: {{roomName}}",
         "openRoom": "Open room",
         "reminderTitle": "Task Reminder",
         "remindInFiveMinutes": "Remind in 5 min",

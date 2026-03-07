@@ -179,6 +179,7 @@
         "quickCreate": "新增工作任务",
         "openTaskList": "打开任务列表",
         "linkedRoom": "关联聊天室：{{roomName}}",
+        "linkedRoomShort": "聊天室：{{roomName}}",
         "openRoom": "打开聊天室",
         "reminderTitle": "任务提醒",
         "remindInFiveMinutes": "5分钟后提醒",

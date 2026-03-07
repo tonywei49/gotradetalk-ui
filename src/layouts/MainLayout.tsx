@@ -6,7 +6,7 @@ import {
     UserGroupIcon,
     Cog6ToothIcon,
     FolderIcon,
-    ClipboardDocumentListIcon,
+    ClockIcon,
 } from "@heroicons/react/24/outline";
 import { ClientEvent, EventTimeline, EventType, Preset, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
@@ -89,6 +89,7 @@ type NavBarItemProps = {
     onClick?: () => void;
     badgeCount?: number;
     className?: string;
+    label?: string;
 };
 
 type SharedContactRoomEntry = {
@@ -98,9 +99,11 @@ type SharedContactRoomEntry = {
     lastActive: number;
 };
 
-const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "" }: NavBarItemProps) => (
+const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "", label }: NavBarItemProps) => (
     <div
         onClick={onClick}
+        title={label}
+        aria-label={label}
         className={`
             h-10 w-10 rounded-lg flex items-center justify-center cursor-pointer transition-colors
             lg:h-16 lg:w-full lg:rounded-none
@@ -2632,6 +2635,7 @@ export const MainLayout: React.FC = () => {
                         icon={UserGroupIcon}
                         active={activeTab === "contacts"}
                         badgeCount={inviteBadgeCount}
+                        label={t("roomList.sections.contacts")}
                         onClick={() => {
                             setMobileView("list");
                             setActiveTab("contacts");
@@ -2642,6 +2646,7 @@ export const MainLayout: React.FC = () => {
                         icon={ChatBubbleLeftRightIcon}
                         active={activeTab === "chat"}
                         badgeCount={unreadBadgeCount}
+                        label={t("main.sidebar.rooms")}
                         onClick={() => {
                             setMobileView("list");
                             setActiveTab("chat");
@@ -2652,6 +2657,7 @@ export const MainLayout: React.FC = () => {
                         <NavBarItem
                             icon={BookOpenIcon}
                             active={activeTab === "notebook"}
+                            label={t("chat.notebook.panelTitle")}
                             onClick={() => {
                                 setMobileView("list");
                                 setActiveTab("notebook");
@@ -2662,6 +2668,7 @@ export const MainLayout: React.FC = () => {
                     <NavBarItem
                         icon={FolderIcon}
                         active={activeTab === "files"}
+                        label={t("layout.filesTitle")}
                         onClick={() => {
                             setMobileView("list");
                             setActiveTab("files");
@@ -2669,8 +2676,9 @@ export const MainLayout: React.FC = () => {
                         className="order-4 lg:order-none"
                     />
                     <NavBarItem
-                        icon={ClipboardDocumentListIcon}
+                        icon={ClockIcon}
                         active={activeTab === "tasks"}
+                        label={t("tasks.title")}
                         onClick={() => {
                             setMobileView("list");
                             setActiveTab("tasks");
@@ -2680,6 +2688,7 @@ export const MainLayout: React.FC = () => {
                     <NavBarItem
                         icon={Cog6ToothIcon}
                         active={activeTab === "settings"}
+                        label={t("layout.settings")}
                         onClick={() => {
                             setActiveTab("settings");
                             setSettingsDetail("none");
@@ -3024,6 +3033,11 @@ export const MainLayout: React.FC = () => {
                         }}
                         onCreateTask={() => {
                             taskModule.createTask();
+                            setMobileView("detail");
+                        }}
+                        onOpenRoom={(roomId) => {
+                            setActiveRoomId(roomId);
+                            setActiveTab("chat");
                             setMobileView("detail");
                         }}
                     />
