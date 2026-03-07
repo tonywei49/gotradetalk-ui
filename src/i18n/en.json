@@ -209,7 +209,8 @@
             "active": "Active",
             "completed": "Completed",
             "reminder": "With Reminder",
-            "linked": "Linked Room"
+            "linked": "Linked Room",
+            "more": "More filters"
         }
     },
     "layout": {

@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TaskItem, TaskStatus } from "../types";
 import { getTaskStatusBadgeClass } from "../statusStyles";
 
@@ -24,6 +24,8 @@ export function TaskList({
 }: TaskListProps) {
     const { t } = useTranslation();
     const [filter, setFilter] = useState<TaskListFilter>("all");
+    const [showMoreFilters, setShowMoreFilters] = useState(false);
+    const moreFiltersRef = useRef<HTMLDivElement | null>(null);
     const statusMap = new Map(statuses.map((status) => [status.id, status]));
     const filteredTasks = useMemo(() => tasks.filter((task) => {
         if (filter === "reminder") return Boolean(task.remindAt) && task.remindState !== "notified";
@@ -31,18 +33,34 @@ export function TaskList({
         if (filter.startsWith("status:")) return task.statusId === filter.slice(7);
         return true;
     }), [filter, tasks]);
-    const filters = useMemo(
+    const primaryFilters = useMemo(
         () => [
             { id: "all" as TaskListFilter, label: t("tasks.filters.all") },
-            ...statuses.map((status) => ({
-                id: `status:${status.id}` as TaskListFilter,
-                label: status.name,
-            })),
             { id: "reminder" as TaskListFilter, label: t("tasks.filters.reminder") },
             { id: "linked" as TaskListFilter, label: t("tasks.filters.linked") },
         ],
+        [t],
+    );
+    const statusFilters = useMemo(
+        () =>
+            statuses.map((status) => ({
+                id: `status:${status.id}` as TaskListFilter,
+                label: status.name,
+            })),
         [statuses, t],
     );
+    const moreFiltersActive = filter.startsWith("status:");
+
+    useEffect(() => {
+        if (!showMoreFilters) return undefined;
+        const handlePointerDown = (event: MouseEvent): void => {
+            const target = event.target as Node | null;
+            if (moreFiltersRef.current?.contains(target ?? null)) return;
+            setShowMoreFilters(false);
+        };
+        document.addEventListener("mousedown", handlePointerDown);
+        return () => document.removeEventListener("mousedown", handlePointerDown);
+    }, [showMoreFilters]);
 
     return (
         <div className="flex h-full flex-col bg-white dark:bg-slate-900">
@@ -60,7 +78,7 @@ export function TaskList({
             </div>
             <div className="border-b border-gray-100 px-3 py-2 dark:border-slate-800">
                 <div className="flex flex-wrap gap-2">
-                    {filters.map((item) => (
+                    {primaryFilters.map((item) => (
                         <button
                             key={item.id}
                             type="button"
@@ -74,6 +92,41 @@ export function TaskList({
                             {item.label}
                         </button>
                     ))}
+                    <div ref={moreFiltersRef} className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setShowMoreFilters((prev) => !prev)}
+                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                                moreFiltersActive || showMoreFilters
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
+                                    : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200"
+                            }`}
+                            aria-label={t("tasks.filters.more")}
+                        >
+                            ...
+                        </button>
+                        {showMoreFilters ? (
+                            <div className="absolute left-0 top-[calc(100%+8px)] z-20 min-w-[140px] rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                                {statusFilters.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setFilter(item.id);
+                                            setShowMoreFilters(false);
+                                        }}
+                                        className={`block w-full rounded-lg px-3 py-2 text-left text-[11px] font-semibold ${
+                                            filter === item.id
+                                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
+                                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                                        }`}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : null}
+                    </div>
                 </div>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">

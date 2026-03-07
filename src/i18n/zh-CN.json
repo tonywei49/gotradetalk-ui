@@ -209,7 +209,8 @@
             "active": "未完成",
             "completed": "已完成",
             "reminder": "有提醒",
-            "linked": "关联聊天室"
+            "linked": "关联聊天室",
+            "more": "更多筛选"
         }
     },
     "layout": {
