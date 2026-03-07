@@ -558,6 +558,9 @@ export const MainLayout: React.FC = () => {
     );
     const [notificationSoundMode, setNotificationSoundMode] = useState<NotificationSoundMode>("classic");
     const [notificationSoundHydrated, setNotificationSoundHydrated] = useState(false);
+    const taskTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
+    const taskAccessToken = !taskTokenExpired && hubAccessToken ? hubAccessToken : matrixAccessToken;
+    const taskHsUrl = !taskTokenExpired && hubAccessToken ? null : matrixHsUrl;
     const activeRoomName = useMemo(() => {
         if (!matrixClient || !activeRoomId) return null;
         const room = matrixClient.getRoom(activeRoomId);
@@ -568,6 +571,9 @@ export const MainLayout: React.FC = () => {
         userId: matrixCredentials?.user_id ?? null,
         activeRoomId,
         activeRoomName,
+        accessToken: taskAccessToken,
+        hsUrl: taskHsUrl,
+        matrixUserId: matrixCredentials?.user_id ?? null,
     });
     const taskUi = useTaskUI({
         taskModule,

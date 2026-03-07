@@ -25,3 +25,8 @@ export function writeStoredTasks(storage: TaskStorageLike, storageKey: string | 
     if (!storageKey) return;
     storage.setItem(storageKey, JSON.stringify(tasks));
 }
+
+export function clearStoredTasks(storage: Storage, storageKey: string | null): void {
+    if (!storageKey) return;
+    storage.removeItem(storageKey);
+}

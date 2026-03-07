@@ -555,6 +555,123 @@ export async function downloadChatSummaryJob(params: {
     return response.blob();
 }
 
+export type HubTaskItem = {
+    id: string;
+    title: string;
+    content: string;
+    statusId: string;
+    remindAt: string | null;
+    remindState: "pending" | "snoozed" | "notified";
+    snoozedUntil: string | null;
+    roomId: string | null;
+    roomNameSnapshot: string | null;
+    createdBy: string | null;
+    createdAt: string;
+    updatedAt: string;
+    completedAt: string | null;
+};
+
+export type HubTaskPayload = {
+    title?: string;
+    content?: string;
+    statusId?: string;
+    remindAt?: string | null;
+    remindState?: "pending" | "snoozed" | "notified";
+    snoozedUntil?: string | null;
+    roomId?: string | null;
+    roomNameSnapshot?: string | null;
+    createdBy?: string | null;
+    completedAt?: string | null;
+};
+
+function buildHubAuthQuery(params?: { hsUrl?: string | null; matrixUserId?: string | null }): Record<string, string> {
+    const query: Record<string, string> = {};
+    if (params?.hsUrl) query.hs_url = params.hsUrl;
+    if (params?.matrixUserId) query.matrix_user_id = params.matrixUserId;
+    return query;
+}
+
+function buildHubAuthHeaders(params?: { matrixAccessToken?: string | null }): Record<string, string> | undefined {
+    if (!params?.matrixAccessToken) return undefined;
+    return { "X-Matrix-Access-Token": params.matrixAccessToken };
+}
+
+export async function listTasks(params: {
+    accessToken: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
+}): Promise<{ items: HubTaskItem[] }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query = buildHubAuthQuery(params);
+    const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/tasks"), query) : joinUrl(hubBaseUrl, "/tasks");
+    return getJson<{ items: HubTaskItem[] }>(url, params.accessToken, buildHubAuthHeaders(params));
+}
+
+export async function createTask(params: {
+    accessToken: string;
+    body: HubTaskPayload;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
+}): Promise<HubTaskItem> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query = buildHubAuthQuery(params);
+    const url = Object.keys(query).length ? withQuery(joinUrl(hubBaseUrl, "/tasks"), query) : joinUrl(hubBaseUrl, "/tasks");
+    return postJson<HubTaskItem>(url, params.body, params.accessToken, buildHubAuthHeaders(params));
+}
+
+export async function updateTask(params: {
+    accessToken: string;
+    id: string;
+    body: HubTaskPayload;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
+}): Promise<HubTaskItem> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query = buildHubAuthQuery(params);
+    const base = joinUrl(hubBaseUrl, `/tasks/${encodeURIComponent(params.id)}`);
+    const url = Object.keys(query).length ? withQuery(base, query) : base;
+    const response = await fetch(url, {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${params.accessToken}`,
+            ...(buildHubAuthHeaders(params) || {}),
+        },
+        body: JSON.stringify(params.body),
+    });
+    if (!response.ok) {
+        throw new Error(await readResponseMessage(response));
+    }
+    return (await response.json()) as HubTaskItem;
+}
+
+export async function deleteTask(params: {
+    accessToken: string;
+    id: string;
+    hsUrl?: string | null;
+    matrixUserId?: string | null;
+    matrixAccessToken?: string | null;
+}): Promise<{ ok: boolean; id: string }> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query = buildHubAuthQuery(params);
+    const base = joinUrl(hubBaseUrl, `/tasks/${encodeURIComponent(params.id)}`);
+    const url = Object.keys(query).length ? withQuery(base, query) : base;
+    const response = await fetch(url, {
+        method: "DELETE",
+        headers: {
+            Authorization: `Bearer ${params.accessToken}`,
+            ...(buildHubAuthHeaders(params) || {}),
+        },
+    });
+    if (!response.ok) {
+        throw new Error(await readResponseMessage(response));
+    }
+    return (await response.json()) as { ok: boolean; id: string };
+}
+
 async function getJson<T>(url: string, accessToken?: string, extraHeaders?: Record<string, string>): Promise<T> {
     const response = await fetch(url, {
         method: "GET",
