@@ -315,6 +315,7 @@ export function RoomList({
     const [roomTags, setRoomTags] = useState<Record<string, RoomTagColorId>>({});
     const [openTagRoomId, setOpenTagRoomId] = useState<string | null>(null);
     const [timeTick, setTimeTick] = useState(() => Date.now());
+    const [roomTagsHydrated, setRoomTagsHydrated] = useState(false);
     const tagMenuRef = useRef<HTMLDivElement | null>(null);
     const contactCacheKey = useMemo(() => {
         const userId = client?.getUserId() ?? "";
@@ -330,7 +331,7 @@ export function RoomList({
         const userId = client?.getUserId() ?? "";
         if (!userId) return null;
         return `${ROOM_TAGS_CACHE_PREFIX}${userId}`;
-    }, [client]);
+    }, [client?.getUserId()]);
 
     const refresh = useMemo(() => {
         if (!client) return null;
@@ -484,28 +485,36 @@ export function RoomList({
     }, []);
 
     useEffect(() => {
-        if (!roomTagCacheKey) return;
+        if (!roomTagCacheKey) {
+            setRoomTags({});
+            setRoomTagsHydrated(false);
+            return;
+        }
         try {
             const raw = localStorage.getItem(roomTagCacheKey);
             if (!raw) {
                 setRoomTags({});
+                setRoomTagsHydrated(true);
                 return;
             }
             const parsed = JSON.parse(raw) as Record<string, RoomTagColorId>;
             setRoomTags(parsed && typeof parsed === "object" ? parsed : {});
+            setRoomTagsHydrated(true);
         } catch {
             setRoomTags({});
+            setRoomTagsHydrated(true);
         }
     }, [roomTagCacheKey]);
 
     useEffect(() => {
         if (!roomTagCacheKey) return;
+        if (!roomTagsHydrated) return;
         try {
             localStorage.setItem(roomTagCacheKey, JSON.stringify(roomTags));
         } catch {
             // ignore tag cache write failures
         }
-    }, [roomTagCacheKey, roomTags]);
+    }, [roomTagCacheKey, roomTags, roomTagsHydrated]);
 
     useEffect(() => {
         if (!openTagRoomId) return undefined;
