@@ -3013,135 +3013,12 @@ export const MainLayout: React.FC = () => {
                 ) : activeTab === "account" ? (
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="flex items-center gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setMobileView("list")}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                    aria-label={t("layout.backToList")}
-                                >
-                                    &lt;
-                                </button>
-                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                    {t("layout.accountSettings")}
-                                </div>
+                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                {t("layout.accountSettings")}
                             </div>
                         </div>
-                        <div className="p-4 space-y-3">
-                            <button
-                                type="button"
-                                onClick={() => avatarUploadInputRef.current?.click()}
-                                disabled={avatarUploading}
-                                className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm text-slate-700 hover:bg-gray-50 disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {avatarUploading ? t("common.loading") : t("layout.uploadAvatar")}
-                            </button>
-                            {avatarUploadFeedback && (
-                                <div
-                                    className={`text-xs ${avatarUploadFeedback.includes("failed")
-                                            ? "text-rose-500"
-                                            : "text-emerald-600 dark:text-emerald-300"
-                                        }`}
-                                >
-                                    {avatarUploadFeedback}
-                                </div>
-                            )}
-                            <input
-                                ref={avatarUploadInputRef}
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(event) => {
-                                    void onUploadAvatar(event);
-                                }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setAccountEditorMode((prev) => (prev === "password" ? "none" : "password"));
-                                    setAccountEditorError(null);
-                                    setAccountEditorSuccess(null);
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.changePassword")}
-                            </button>
-                            {accountEditorMode === "password" && (
-                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-                                    <div className="grid gap-3">
-                                        <input
-                                            type="password"
-                                            value={currentPasswordDraft}
-                                            onChange={(event) => setCurrentPasswordDraft(event.target.value)}
-                                            placeholder={t("auth.fields.currentPasswordLabel")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            autoComplete="current-password"
-                                        />
-                                        <input
-                                            type="password"
-                                            value={newPasswordDraft}
-                                            onChange={(event) => setNewPasswordDraft(event.target.value)}
-                                            placeholder={t("auth.fields.newPasswordLabel")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            autoComplete="new-password"
-                                        />
-                                        <input
-                                            type="password"
-                                            value={confirmPasswordDraft}
-                                            onChange={(event) => setConfirmPasswordDraft(event.target.value)}
-                                            placeholder={t("auth.fields.confirmPasswordLabel")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            autoComplete="new-password"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => void handleSubmitPassword()}
-                                            disabled={accountEditorBusy}
-                                            className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
-                                        >
-                                            {accountEditorBusy ? t("common.loading") : t("common.confirm")}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setAccountEditorMode((prev) => (prev === "name" ? "none" : "name"));
-                                    setAccountEditorError(null);
-                                    setAccountEditorSuccess(null);
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.changeName")}
-                            </button>
-                            {accountEditorMode === "name" && (
-                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-                                    <div className="grid gap-3">
-                                        <input
-                                            type="text"
-                                            value={displayNameDraft}
-                                            onChange={(event) => setDisplayNameDraft(event.target.value)}
-                                            placeholder={t("layout.changeName")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => void handleSubmitDisplayName()}
-                                            disabled={accountEditorBusy}
-                                            className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
-                                        >
-                                            {accountEditorBusy ? t("common.loading") : t("common.confirm")}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {accountEditorError && (
-                                <div className="text-xs text-rose-600 dark:text-rose-300">{accountEditorError}</div>
-                            )}
-                            {accountEditorSuccess && (
-                                <div className="text-xs text-emerald-600 dark:text-emerald-300">{accountEditorSuccess}</div>
-                            )}
+                        <div className="flex-1 flex items-center justify-center px-4 text-sm text-slate-400 dark:text-slate-500">
+                            {t("layout.accountSettings")}
                         </div>
                     </>
                 ) : activeTab === "notebook" ? (
@@ -4224,6 +4101,140 @@ export const MainLayout: React.FC = () => {
                                         >
                                             {t("layout.translationDefaultOriginal")}
                                         </button>
+                                    </div>
+                                </div>
+                            </>
+                        ) : activeTab === "account" ? (
+                            <>
+                                <div className="px-6 py-4">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileView("list")}
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                            aria-label={t("layout.backToList")}
+                                        >
+                                            &lt;
+                                        </button>
+                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                            {t("layout.accountSettings")}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => avatarUploadInputRef.current?.click()}
+                                            disabled={avatarUploading}
+                                            className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm text-slate-700 hover:bg-gray-50 disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                                        >
+                                            {avatarUploading ? t("common.loading") : t("layout.uploadAvatar")}
+                                        </button>
+                                        {avatarUploadFeedback && (
+                                            <div
+                                                className={`text-xs ${avatarUploadFeedback.includes("failed")
+                                                    ? "text-rose-500"
+                                                    : "text-emerald-600 dark:text-emerald-300"
+                                                    }`}
+                                            >
+                                                {avatarUploadFeedback}
+                                            </div>
+                                        )}
+                                        <input
+                                            ref={avatarUploadInputRef}
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(event) => {
+                                                void onUploadAvatar(event);
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAccountEditorMode((prev) => (prev === "password" ? "none" : "password"));
+                                                setAccountEditorError(null);
+                                                setAccountEditorSuccess(null);
+                                            }}
+                                            className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                                        >
+                                            {t("layout.changePassword")}
+                                        </button>
+                                        {accountEditorMode === "password" && (
+                                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+                                                <div className="grid gap-3">
+                                                    <input
+                                                        type="password"
+                                                        value={currentPasswordDraft}
+                                                        onChange={(event) => setCurrentPasswordDraft(event.target.value)}
+                                                        placeholder={t("auth.fields.currentPasswordLabel")}
+                                                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                                        autoComplete="current-password"
+                                                    />
+                                                    <input
+                                                        type="password"
+                                                        value={newPasswordDraft}
+                                                        onChange={(event) => setNewPasswordDraft(event.target.value)}
+                                                        placeholder={t("auth.fields.newPasswordLabel")}
+                                                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                                        autoComplete="new-password"
+                                                    />
+                                                    <input
+                                                        type="password"
+                                                        value={confirmPasswordDraft}
+                                                        onChange={(event) => setConfirmPasswordDraft(event.target.value)}
+                                                        placeholder={t("auth.fields.confirmPasswordLabel")}
+                                                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                                        autoComplete="new-password"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void handleSubmitPassword()}
+                                                        disabled={accountEditorBusy}
+                                                        className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
+                                                    >
+                                                        {accountEditorBusy ? t("common.loading") : t("common.confirm")}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAccountEditorMode((prev) => (prev === "name" ? "none" : "name"));
+                                                setAccountEditorError(null);
+                                                setAccountEditorSuccess(null);
+                                            }}
+                                            className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                                        >
+                                            {t("layout.changeName")}
+                                        </button>
+                                        {accountEditorMode === "name" && (
+                                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+                                                <div className="grid gap-3">
+                                                    <input
+                                                        type="text"
+                                                        value={displayNameDraft}
+                                                        onChange={(event) => setDisplayNameDraft(event.target.value)}
+                                                        placeholder={t("layout.changeName")}
+                                                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void handleSubmitDisplayName()}
+                                                        disabled={accountEditorBusy}
+                                                        className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
+                                                    >
+                                                        {accountEditorBusy ? t("common.loading") : t("common.confirm")}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {accountEditorError && (
+                                            <div className="text-xs text-rose-600 dark:text-rose-300">{accountEditorError}</div>
+                                        )}
+                                        {accountEditorSuccess && (
+                                            <div className="text-xs text-emerald-600 dark:text-emerald-300">{accountEditorSuccess}</div>
+                                        )}
                                     </div>
                                 </div>
                             </>
