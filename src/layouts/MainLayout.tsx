@@ -7,6 +7,9 @@ import {
     Cog6ToothIcon,
     FolderIcon,
     ClockIcon,
+    PuzzlePieceIcon,
+    SparklesIcon,
+    CommandLineIcon,
 } from "@heroicons/react/24/outline";
 import { ClientEvent, EventTimeline, EventType, Preset, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
@@ -80,6 +83,7 @@ import {
     NotebookServiceError,
 } from "../services/notebookApi";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
+import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -124,6 +128,24 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "", l
         </div>
     </div>
 );
+
+function resolvePluginNavIcon(icon?: PluginIconKey): React.ComponentType<React.SVGProps<SVGSVGElement>> {
+    switch (icon) {
+        case "sparkles":
+            return SparklesIcon;
+        case "commandLine":
+            return CommandLineIcon;
+        case "book":
+            return BookOpenIcon;
+        case "folder":
+            return FolderIcon;
+        case "cog":
+            return Cog6ToothIcon;
+        case "puzzle":
+        default:
+            return PuzzlePieceIcon;
+    }
+}
 
 function parseMxcUri(mxcUrl: string): { serverName: string; mediaId: string } | null {
     const match = /^mxc:\/\/([^/]+)\/(.+)$/.exec(mxcUrl);
@@ -459,6 +481,9 @@ const FILE_HISTORY_MAX_ROUNDS = 6;
 
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
+    const { runtimeContext, platformState, tools } = usePluginHost();
+    const pluginNavItems = usePluginSlot("appNav");
+    const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
@@ -536,10 +561,14 @@ export const MainLayout: React.FC = () => {
     const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
     const [mobileView, setMobileView] = useState<"list" | "detail">("list");
     const [settingsDetail, setSettingsDetail] = useState<
-        "none" | "chat-language" | "translation-default"
+        "none" | "chat-language" | "translation-default" | `plugin:${string}:${string}`
     >("none");
     const [notebookSidebarMode, setNotebookSidebarMode] = useState<"notebook" | "chatSummary">("notebook");
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
+    const activePluginSettingsSection = useMemo(() => {
+        if (!settingsDetail.startsWith("plugin:")) return null;
+        return pluginSettingsSections.find((section) => `plugin:${section.pluginId}:${section.id}` === settingsDetail) ?? null;
+    }, [pluginSettingsSections, settingsDetail]);
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
     const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
     const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original" | "bilingual">("translated");
@@ -2841,6 +2870,26 @@ export const MainLayout: React.FC = () => {
                         }}
                         className="order-5 lg:order-none"
                     />
+                    {pluginNavItems.map((item) => (
+                        <NavBarItem
+                            key={`${item.pluginId}:${item.id}`}
+                            icon={resolvePluginNavIcon(item.icon)}
+                            active={false}
+                            badgeCount={item.badgeCount}
+                            label={item.label}
+                            onClick={() =>
+                                item.onSelect?.({
+                                    userType,
+                                    matrixUserId: matrixCredentials?.user_id ?? null,
+                                    matrixUserLocalId: formatMatrixUserLocalId(matrixCredentials?.user_id),
+                                    matrixHomeServer: matrixCredentials?.hs_url ?? null,
+                                    hasHubSession: Boolean(hubSession?.access_token),
+                                    platformManaged: true,
+                                })
+                            }
+                            className="lg:order-none"
+                        />
+                    ))}
                     <NavBarItem
                         icon={Cog6ToothIcon}
                         active={activeTab === "settings"}
@@ -2967,6 +3016,34 @@ export const MainLayout: React.FC = () => {
                             >
                                 {t("layout.translationDefaultContent")}
                             </button>
+                            {pluginSettingsSections.length > 0 && (
+                                <div className="space-y-2 rounded-lg border border-dashed border-emerald-200 px-3 py-3 dark:border-emerald-900/60">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                        Plugins
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                                        Source: {platformState.source} · State: {platformState.syncState}
+                                    </div>
+                                    {pluginSettingsSections.map((section) => (
+                                        <button
+                                            key={`${section.pluginId}:${section.id}`}
+                                            type="button"
+                                            onClick={() => {
+                                                setSettingsDetail(`plugin:${section.pluginId}:${section.id}`);
+                                                setMobileView("detail");
+                                            }}
+                                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
+                                        >
+                                            <div className="font-medium">{section.label}</div>
+                                            {section.description && (
+                                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                    {section.description}
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
                                 <div className="mb-2 text-sm text-slate-700 dark:text-slate-100">
                                     {t("layout.notificationSound")}
@@ -4215,6 +4292,39 @@ export const MainLayout: React.FC = () => {
                                             {t("layout.translationDefaultOriginal")}
                                         </button>
                                     </div>
+                                </div>
+                            </>
+                        ) : activeTab === "settings" && activePluginSettingsSection ? (
+                            <>
+                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
+                                    {activePluginSettingsSection.pluginName}
+                                </div>
+                                <div className="px-6 pb-6">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMobileView("list")}
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                            aria-label={t("layout.backToList")}
+                                        >
+                                            &lt;
+                                        </button>
+                                        <div>
+                                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                {activePluginSettingsSection.label}
+                                            </div>
+                                            {activePluginSettingsSection.description && (
+                                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                                                    {activePluginSettingsSection.description}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {activePluginSettingsSection.render?.(runtimeContext, platformState, tools) ?? (
+                                        <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                            This plugin section has no UI yet.
+                                        </div>
+                                    )}
                                 </div>
                             </>
                         ) : (
