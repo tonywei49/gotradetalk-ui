@@ -221,6 +221,44 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
     return withoutPrefix.slice(0, colonIndex);
 }
 
+async function changeMatrixPassword(
+    hsUrl: string,
+    accessToken: string,
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+): Promise<void> {
+    const url = new URL("/_matrix/client/v3/account/password", hsUrl);
+    const response = await fetch(url.toString(), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+            auth: {
+                type: "m.login.password",
+                identifier: {
+                    type: "m.id.user",
+                    user: userId,
+                },
+                password: currentPassword,
+            },
+            new_password: newPassword,
+            logout_devices: false,
+        }),
+    });
+    if (!response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            const data = (await response.json()) as { error?: string };
+            if (data?.error) throw new Error(data.error);
+        }
+        const text = await response.text();
+        throw new Error(text || `Request failed (${response.status})`);
+    }
+}
+
 function resolveRoomListDisplayName(room: Room, myUserId: string | null): string {
     const fallback = room.name || room.getCanonicalAlias() || room.roomId;
     const explicitNameEvent = room.currentState.getStateEvents(EventType.RoomName, "");
@@ -531,6 +569,14 @@ export const MainLayout: React.FC = () => {
     const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
     const [avatarUploading, setAvatarUploading] = useState(false);
     const [avatarUploadFeedback, setAvatarUploadFeedback] = useState<string | null>(null);
+    const [accountEditorMode, setAccountEditorMode] = useState<"none" | "name" | "password">("none");
+    const [displayNameDraft, setDisplayNameDraft] = useState("");
+    const [currentPasswordDraft, setCurrentPasswordDraft] = useState("");
+    const [newPasswordDraft, setNewPasswordDraft] = useState("");
+    const [confirmPasswordDraft, setConfirmPasswordDraft] = useState("");
+    const [accountEditorBusy, setAccountEditorBusy] = useState(false);
+    const [accountEditorError, setAccountEditorError] = useState<string | null>(null);
+    const [accountEditorSuccess, setAccountEditorSuccess] = useState<string | null>(null);
     const [notebookApiBaseUrlOverride, setNotebookApiBaseUrlOverride] = useState<string | null>(null);
     const [notebookUploadLimitMb, setNotebookUploadLimitMb] = useState<number>(20);
     const [hubMeResolved, setHubMeResolved] = useState(false);
@@ -789,6 +835,79 @@ export const MainLayout: React.FC = () => {
             setChatReceiveLanguage(previous);
         }
     };
+
+    const handleSubmitDisplayName = useCallback(async (): Promise<void> => {
+        if (!matrixClient || !matrixCredentials?.user_id) return;
+        const trimmed = displayNameDraft.trim();
+        if (!trimmed) {
+            setAccountEditorError(t("layout.accountNameRequired", "Please enter a name."));
+            setAccountEditorSuccess(null);
+            return;
+        }
+        setAccountEditorBusy(true);
+        setAccountEditorError(null);
+        setAccountEditorSuccess(null);
+        try {
+            await matrixClient.setDisplayName(trimmed);
+            setAccountEditorSuccess(t("layout.accountNameUpdated", "Name updated."));
+            setMeProfile((prev) => (prev ? { ...prev, display_name: trimmed } : prev));
+            setAccountEditorMode("none");
+        } catch (error) {
+            setAccountEditorError(error instanceof Error ? error.message : t("layout.accountUpdateFailed", "Update failed."));
+        } finally {
+            setAccountEditorBusy(false);
+        }
+    }, [displayNameDraft, matrixClient, matrixCredentials?.user_id, t]);
+
+    const handleSubmitPassword = useCallback(async (): Promise<void> => {
+        if (!matrixCredentials?.hs_url || !matrixCredentials?.access_token || !matrixCredentials?.user_id) return;
+        if (!currentPasswordDraft.trim() || !newPasswordDraft.trim() || !confirmPasswordDraft.trim()) {
+            setAccountEditorError(t("auth.errors.emptyPassword"));
+            setAccountEditorSuccess(null);
+            return;
+        }
+        if (newPasswordDraft !== confirmPasswordDraft) {
+            setAccountEditorError(t("auth.errors.passwordMismatch"));
+            setAccountEditorSuccess(null);
+            return;
+        }
+        const hasLetters = /[A-Za-z]/.test(newPasswordDraft);
+        const hasDigits = /\d/.test(newPasswordDraft);
+        if (newPasswordDraft.length < 10 || !hasLetters || !hasDigits) {
+            setAccountEditorError(t("auth.errors.passwordWeak"));
+            setAccountEditorSuccess(null);
+            return;
+        }
+        setAccountEditorBusy(true);
+        setAccountEditorError(null);
+        setAccountEditorSuccess(null);
+        try {
+            await changeMatrixPassword(
+                matrixCredentials.hs_url,
+                matrixCredentials.access_token,
+                matrixCredentials.user_id,
+                currentPasswordDraft,
+                newPasswordDraft,
+            );
+            setAccountEditorSuccess(t("layout.accountPasswordUpdated", "Password updated."));
+            setCurrentPasswordDraft("");
+            setNewPasswordDraft("");
+            setConfirmPasswordDraft("");
+            setAccountEditorMode("none");
+        } catch (error) {
+            setAccountEditorError(error instanceof Error ? error.message : t("layout.accountUpdateFailed", "Update failed."));
+        } finally {
+            setAccountEditorBusy(false);
+        }
+    }, [
+        confirmPasswordDraft,
+        currentPasswordDraft,
+        matrixCredentials?.access_token,
+        matrixCredentials?.hs_url,
+        matrixCredentials?.user_id,
+        newPasswordDraft,
+        t,
+    ]);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -1217,6 +1336,22 @@ export const MainLayout: React.FC = () => {
             setContactsRefreshToken((prev) => prev + 1);
         }
     }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab !== "account") {
+            setAccountEditorMode("none");
+            setAccountEditorError(null);
+            setAccountEditorSuccess(null);
+            setAccountEditorBusy(false);
+            return;
+        }
+        setDisplayNameDraft(meProfile?.display_name || accountId);
+        setCurrentPasswordDraft("");
+        setNewPasswordDraft("");
+        setConfirmPasswordDraft("");
+        setAccountEditorError(null);
+        setAccountEditorSuccess(null);
+    }, [activeTab, accountId, meProfile?.display_name]);
 
     useEffect(() => {
         if (activeTab === "notebook" && !notebookCapabilityState.canUseNotebookBasic) {
@@ -2639,6 +2774,7 @@ export const MainLayout: React.FC = () => {
                                 type="button"
                                 onClick={() => {
                                     setActiveTab("account");
+                                    setMobileView("detail");
                                     setShowAccountMenu(false);
                                 }}
                                 className="w-full px-3 py-2 text-left text-slate-700 hover:bg-gray-50 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -2877,8 +3013,18 @@ export const MainLayout: React.FC = () => {
                 ) : activeTab === "account" ? (
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {t("layout.accountSettings")}
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setMobileView("list")}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
+                                    aria-label={t("layout.backToList")}
+                                >
+                                    &lt;
+                                </button>
+                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                    {t("layout.accountSettings")}
+                                </div>
                             </div>
                         </div>
                         <div className="p-4 space-y-3">
@@ -2911,16 +3057,91 @@ export const MainLayout: React.FC = () => {
                             />
                             <button
                                 type="button"
+                                onClick={() => {
+                                    setAccountEditorMode((prev) => (prev === "password" ? "none" : "password"));
+                                    setAccountEditorError(null);
+                                    setAccountEditorSuccess(null);
+                                }}
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
                                 {t("layout.changePassword")}
                             </button>
+                            {accountEditorMode === "password" && (
+                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+                                    <div className="grid gap-3">
+                                        <input
+                                            type="password"
+                                            value={currentPasswordDraft}
+                                            onChange={(event) => setCurrentPasswordDraft(event.target.value)}
+                                            placeholder={t("auth.fields.currentPasswordLabel")}
+                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            autoComplete="current-password"
+                                        />
+                                        <input
+                                            type="password"
+                                            value={newPasswordDraft}
+                                            onChange={(event) => setNewPasswordDraft(event.target.value)}
+                                            placeholder={t("auth.fields.newPasswordLabel")}
+                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            autoComplete="new-password"
+                                        />
+                                        <input
+                                            type="password"
+                                            value={confirmPasswordDraft}
+                                            onChange={(event) => setConfirmPasswordDraft(event.target.value)}
+                                            placeholder={t("auth.fields.confirmPasswordLabel")}
+                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            autoComplete="new-password"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleSubmitPassword()}
+                                            disabled={accountEditorBusy}
+                                            className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
+                                        >
+                                            {accountEditorBusy ? t("common.loading") : t("common.confirm")}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             <button
                                 type="button"
+                                onClick={() => {
+                                    setAccountEditorMode((prev) => (prev === "name" ? "none" : "name"));
+                                    setAccountEditorError(null);
+                                    setAccountEditorSuccess(null);
+                                }}
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
                             >
                                 {t("layout.changeName")}
                             </button>
+                            {accountEditorMode === "name" && (
+                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+                                    <div className="grid gap-3">
+                                        <input
+                                            type="text"
+                                            value={displayNameDraft}
+                                            onChange={(event) => setDisplayNameDraft(event.target.value)}
+                                            placeholder={t("layout.changeName")}
+                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleSubmitDisplayName()}
+                                            disabled={accountEditorBusy}
+                                            className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
+                                        >
+                                            {accountEditorBusy ? t("common.loading") : t("common.confirm")}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {accountEditorError && (
+                                <div className="text-xs text-rose-600 dark:text-rose-300">{accountEditorError}</div>
+                            )}
+                            {accountEditorSuccess && (
+                                <div className="text-xs text-emerald-600 dark:text-emerald-300">{accountEditorSuccess}</div>
+                            )}
                         </div>
                     </>
                 ) : activeTab === "notebook" ? (
