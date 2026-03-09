@@ -581,6 +581,18 @@
         "directPeerLeftNotice": "The other member left this room. New messages will not be delivered.",
         "directPeerLeftPlaceholder": "The other member left this room.",
         "mentionSuggestions": "Mention someone",
+        "voice": {
+            "unsupported": "Recording is not supported in this browser or app environment.",
+            "startFailed": "Failed to start recording. Please check microphone permission.",
+            "recordingReady": "Voice message is ready ({{duration}}).",
+            "recordingCancelled": "Voice recording cancelled.",
+            "finishRecordingFirst": "Finish or cancel the current recording first.",
+            "stopRecording": "Stop recording",
+            "startRecording": "Start recording",
+            "recordingNow": "Recording {{duration}}",
+            "cancelRecording": "Cancel recording",
+            "finishRecording": "Finish and send"
+        },
         "notebook": {
             "useKnowledgeBase": "Use Knowledge Base",
             "retry": "Retry",

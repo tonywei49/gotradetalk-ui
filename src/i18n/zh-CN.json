@@ -581,6 +581,18 @@
         "directPeerLeftNotice": "对方已离开此聊天室，继续发送的新消息不会送达对方。",
         "directPeerLeftPlaceholder": "对方已离开此聊天室",
         "mentionSuggestions": "选择提及对象",
+        "voice": {
+            "unsupported": "目前瀏覽器或應用環境不支援錄音。",
+            "startFailed": "啟動錄音失敗，請檢查麥克風權限。",
+            "recordingReady": "語音訊息已準備完成（{{duration}}）。",
+            "recordingCancelled": "已取消語音錄音。",
+            "finishRecordingFirst": "請先完成或取消目前的錄音。",
+            "stopRecording": "結束錄音",
+            "startRecording": "開始錄音",
+            "recordingNow": "錄音中 {{duration}}",
+            "cancelRecording": "取消錄音",
+            "finishRecording": "完成並發送"
+        },
         "notebook": {
             "useKnowledgeBase": "調用知識庫",
             "retry": "重試",
