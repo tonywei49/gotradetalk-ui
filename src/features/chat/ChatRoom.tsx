@@ -8,7 +8,6 @@ import {
     EllipsisVerticalIcon,
     FaceSmileIcon,
     PaperClipIcon,
-    MicrophoneIcon,
     ChevronLeftIcon,
     SparklesIcon,
     ArrowsPointingOutIcon,
@@ -75,7 +74,6 @@ import {
     type ChatSearchMessageHit,
     type ChatSearchRoomResponse,
 } from "./chatSearchApi";
-import { voiceCaptureEnabled } from "../../config";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -241,33 +239,6 @@ function formatMessageTimestampLabel(ts: number): string {
         return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     }
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`;
-}
-
-function formatRecordingDuration(totalSeconds: number): string {
-    const safeSeconds = Math.max(0, totalSeconds);
-    const minutes = Math.floor(safeSeconds / 60);
-    const seconds = safeSeconds % 60;
-    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function getPreferredAudioMimeType(): string {
-    if (typeof MediaRecorder === "undefined") return "audio/mp4";
-    const candidates = [
-        "audio/mp4;codecs=mp4a.40.2",
-        "audio/mp4",
-        "audio/x-m4a",
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/ogg;codecs=opus",
-    ];
-    return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "audio/webm";
-}
-
-function getAudioFileExtension(mimeType: string): string {
-    const normalized = mimeType.toLowerCase();
-    if (normalized.includes("ogg")) return "ogg";
-    if (normalized.includes("mp4") || normalized.includes("m4a")) return "m4a";
-    return "webm";
 }
 
 function sanitizeQuoteText(value: string): string {
@@ -1020,11 +991,6 @@ export const ChatRoom: React.FC = () => {
     const lastReadReceiptEventByRoomRef = useRef<Record<string, string>>({});
     const [composerText, setComposerText] = useState("");
     const [quotedMessage, setQuotedMessage] = useState<QuotedMessageDraft | null>(null);
-    const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-    const [recordingSeconds, setRecordingSeconds] = useState(0);
-    const [voiceRecordingBusy, setVoiceRecordingBusy] = useState(false);
-    const [voiceRecordingError, setVoiceRecordingError] = useState<string | null>(null);
-    const [voiceRecordingErrorFading, setVoiceRecordingErrorFading] = useState(false);
     const [scrollLoading, setScrollLoading] = useState(false);
     const [showScrollToBottom, setShowScrollToBottom] = useState(false);
     const [showActionsMenu, setShowActionsMenu] = useState(false);
@@ -1071,15 +1037,6 @@ export const ChatRoom: React.FC = () => {
     const roomSearchButtonRef = useRef<HTMLButtonElement | null>(null);
     const roomSearchPanelRef = useRef<HTMLDivElement | null>(null);
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const mediaStreamRef = useRef<MediaStream | null>(null);
-    const recordingChunksRef = useRef<Blob[]>([]);
-    const recordingStartedAtRef = useRef<number | null>(null);
-    const recordingStopModeRef = useRef<"save" | "cancel">("save");
-    const recordingRoomIdRef = useRef<string | null>(null);
-    const voiceHoldPointerActiveRef = useRef(false);
-    const voiceHoldPendingStopRef = useRef<"save" | "cancel" | null>(null);
-    const ignoreNextVoiceClickRef = useRef(false);
     const mentionMenuRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const retryFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1957,10 +1914,6 @@ export const ChatRoom: React.FC = () => {
 
     const onSend = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
-        if (isRecordingVoice) {
-            pushToast("warn", t("chat.voice.finishRecordingFirst"));
-            return;
-        }
         if (isDirectPeerAbsent) {
             pushToast("warn", t("chat.directPeerLeftNotice"));
             return;
@@ -2062,18 +2015,6 @@ export const ChatRoom: React.FC = () => {
     useEffect(() => {
         setQuotedMessage(null);
     }, [activeRoomId]);
-
-    useEffect(() => {
-        return () => {
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-                recordingStopModeRef.current = "cancel";
-                mediaRecorderRef.current.stop();
-            }
-            if (mediaStreamRef.current) {
-                mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-            }
-        };
-    }, []);
 
     const sendMessageFileToNotebook = async (event: MatrixEvent): Promise<void> => {
         if (!notebookAuth || !canUseNotebookBasic) return;
@@ -2282,158 +2223,6 @@ export const ChatRoom: React.FC = () => {
         setUploadError(null);
         fileInputRef.current?.click();
     };
-
-    const resetVoiceRecorderState = useCallback(() => {
-        setIsRecordingVoice(false);
-        setVoiceRecordingBusy(false);
-        setRecordingSeconds(0);
-        recordingChunksRef.current = [];
-        recordingStartedAtRef.current = null;
-        recordingRoomIdRef.current = null;
-        voiceHoldPendingStopRef.current = null;
-        voiceHoldPointerActiveRef.current = false;
-        mediaRecorderRef.current = null;
-        if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        }
-        mediaStreamRef.current = null;
-    }, []);
-
-    const startVoiceRecording = useCallback(async (): Promise<void> => {
-        if (!activeRoomId || !matrixClient || isDeprecatedRoom || isDirectPeerAbsent || isRecordingVoice || voiceRecordingBusy) return;
-        if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-            const message = t("chat.voice.unsupported");
-            setVoiceRecordingError(message);
-            pushToast("error", message);
-            return;
-        }
-        try {
-            setVoiceRecordingBusy(true);
-            setVoiceRecordingError(null);
-            setVoiceRecordingErrorFading(false);
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mimeType = getPreferredAudioMimeType();
-            const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-            mediaStreamRef.current = stream;
-            mediaRecorderRef.current = recorder;
-            recordingChunksRef.current = [];
-            recordingStopModeRef.current = "save";
-            recordingStartedAtRef.current = Date.now();
-            recordingRoomIdRef.current = activeRoomId;
-            recorder.addEventListener("dataavailable", (event) => {
-                if (event.data && event.data.size > 0) {
-                    recordingChunksRef.current.push(event.data);
-                }
-            });
-            recorder.addEventListener("stop", () => {
-                const stopMode = recordingStopModeRef.current;
-                const roomId = recordingRoomIdRef.current;
-                const recorderMimeType = recorder.mimeType || mimeType || "audio/webm";
-                const chunks = [...recordingChunksRef.current];
-                const durationSeconds = recordingStartedAtRef.current
-                    ? Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000))
-                    : Math.max(1, recordingSeconds);
-                resetVoiceRecorderState();
-                if (stopMode === "cancel" || !roomId || chunks.length === 0) return;
-                const blob = new Blob(chunks, { type: recorderMimeType });
-                const extension = getAudioFileExtension(recorderMimeType);
-                const fileName = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`;
-                const file = new File([blob], fileName, { type: recorderMimeType, lastModified: Date.now() });
-                void uploadDraftAttachment(file, roomId, { durationMs: durationSeconds * 1000 }).then(() => {
-                    pushToast("success", t("chat.voice.recordingReady", { duration: formatRecordingDuration(durationSeconds) }));
-                });
-            });
-            recorder.start();
-            setIsRecordingVoice(true);
-            setRecordingSeconds(0);
-            const pendingStopMode = voiceHoldPendingStopRef.current;
-            if (pendingStopMode) {
-                voiceHoldPendingStopRef.current = null;
-                window.setTimeout(() => {
-                    const activeRecorder = mediaRecorderRef.current;
-                    if (!activeRecorder || activeRecorder.state === "inactive") return;
-                    recordingStopModeRef.current = pendingStopMode;
-                    activeRecorder.stop();
-                }, 0);
-            }
-        } catch (error) {
-            resetVoiceRecorderState();
-            const fallback = t("chat.voice.startFailed");
-            const message = error instanceof Error && error.message ? error.message : fallback;
-            setVoiceRecordingErrorFading(false);
-            setVoiceRecordingError(message);
-            pushToast("error", message);
-        } finally {
-            setVoiceRecordingBusy(false);
-        }
-    }, [activeRoomId, isDeprecatedRoom, isDirectPeerAbsent, isRecordingVoice, matrixClient, pushToast, recordingSeconds, resetVoiceRecorderState, t, voiceRecordingBusy]);
-
-    const stopVoiceRecording = useCallback((mode: "save" | "cancel"): void => {
-        const recorder = mediaRecorderRef.current;
-        if (!recorder) return;
-        recordingStopModeRef.current = mode;
-        if (recorder.state !== "inactive") {
-            recorder.stop();
-        } else {
-            resetVoiceRecorderState();
-        }
-        if (mode === "cancel") {
-            pushToast("warn", t("chat.voice.recordingCancelled"));
-        }
-    }, [pushToast, resetVoiceRecorderState, t]);
-
-    useEffect(() => {
-        if (!isRecordingVoice) return;
-        if (recordingRoomIdRef.current === activeRoomId) return;
-        stopVoiceRecording("cancel");
-    }, [activeRoomId, isRecordingVoice, stopVoiceRecording]);
-
-    const toggleVoiceRecording = useCallback(() => {
-        if (isRecordingVoice) {
-            stopVoiceRecording("save");
-            return;
-        }
-        void startVoiceRecording();
-    }, [isRecordingVoice, startVoiceRecording, stopVoiceRecording]);
-
-    const onVoiceButtonClick = useCallback(() => {
-        if (ignoreNextVoiceClickRef.current) {
-            ignoreNextVoiceClickRef.current = false;
-            return;
-        }
-        toggleVoiceRecording();
-    }, [toggleVoiceRecording]);
-
-    const onVoiceButtonPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-        if (event.pointerType === "mouse") return;
-        ignoreNextVoiceClickRef.current = true;
-        voiceHoldPointerActiveRef.current = true;
-        if (!isRecordingVoice && !voiceRecordingBusy) {
-            void startVoiceRecording();
-        }
-    }, [isRecordingVoice, startVoiceRecording, voiceRecordingBusy]);
-
-    const onVoiceButtonPointerUp = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-        if (event.pointerType === "mouse") return;
-        if (!voiceHoldPointerActiveRef.current) return;
-        voiceHoldPointerActiveRef.current = false;
-        if (isRecordingVoice) {
-            stopVoiceRecording("save");
-            return;
-        }
-        voiceHoldPendingStopRef.current = "save";
-    }, [isRecordingVoice, stopVoiceRecording]);
-
-    const onVoiceButtonPointerCancel = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-        if (event.pointerType === "mouse") return;
-        if (!voiceHoldPointerActiveRef.current) return;
-        voiceHoldPointerActiveRef.current = false;
-        if (isRecordingVoice) {
-            stopVoiceRecording("cancel");
-            return;
-        }
-        voiceHoldPendingStopRef.current = "cancel";
-    }, [isRecordingVoice, stopVoiceRecording]);
 
     const uploadDraftAttachmentById = async (
         roomId: string,
@@ -2674,34 +2463,6 @@ export const ChatRoom: React.FC = () => {
     useEffect(() => {
         adjustComposerHeight();
     }, [composerText, activeRoomId]);
-
-    useEffect(() => {
-        if (!isRecordingVoice) return;
-        const timer = window.setInterval(() => {
-            const startedAt = recordingStartedAtRef.current;
-            if (!startedAt) return;
-            setRecordingSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-        }, 300);
-        return () => {
-            window.clearInterval(timer);
-        };
-    }, [isRecordingVoice]);
-
-    useEffect(() => {
-        if (!voiceRecordingError) return;
-        setVoiceRecordingErrorFading(false);
-        const fadeTimer = window.setTimeout(() => {
-            setVoiceRecordingErrorFading(true);
-        }, 2600);
-        const timer = window.setTimeout(() => {
-            setVoiceRecordingError(null);
-            setVoiceRecordingErrorFading(false);
-        }, 3000);
-        return () => {
-            window.clearTimeout(fadeTimer);
-            window.clearTimeout(timer);
-        };
-    }, [voiceRecordingError]);
 
     const visibleEmojis = useMemo(() => {
         const merged = [...recentEmojis, ...EMOJI_LIST];
@@ -3264,20 +3025,6 @@ export const ChatRoom: React.FC = () => {
                     >
                         <PaperClipIcon className="w-6 h-6" />
                     </button>
-                    {voiceCaptureEnabled && (
-                        <button
-                            type="button"
-                            onClick={onVoiceButtonClick}
-                            onPointerDown={onVoiceButtonPointerDown}
-                            onPointerUp={onVoiceButtonPointerUp}
-                            onPointerCancel={onVoiceButtonPointerCancel}
-                            className={`hover:text-[#2F5C56] dark:hover:text-emerald-400 ${isRecordingVoice ? "text-rose-500 dark:text-rose-400" : ""}`}
-                            disabled={isDeprecatedRoom || isDirectPeerAbsent || voiceRecordingBusy}
-                            title={isRecordingVoice ? t("chat.voice.stopRecording") : t("chat.voice.startRecording")}
-                        >
-                            <MicrophoneIcon className="w-6 h-6" />
-                        </button>
-                    )}
                     {taskStatuses && taskQuickDraft && onTaskQuickDraftChange && onCreateRoomTask && (
                         <button
                             type="button"
@@ -3315,41 +3062,6 @@ export const ChatRoom: React.FC = () => {
                             }}
                             onClose={() => setShowTaskQuickCreate(false)}
                         />
-                    </div>
-                )}
-
-                {voiceCaptureEnabled && (isRecordingVoice || voiceRecordingError) && (
-                    <div className={`mb-3 rounded-xl border px-3 py-2 text-sm ${
-                        voiceRecordingError
-                            ? `border-rose-200 bg-rose-50 text-rose-700 transition-opacity duration-300 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200 ${voiceRecordingErrorFading ? "opacity-0" : "opacity-100"}`
-                            : "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-200"
-                    }`}>
-                        {voiceRecordingError ? (
-                            <div>{voiceRecordingError}</div>
-                        ) : (
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2">
-                                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500" />
-                                    <span>{t("chat.voice.recordingNow", { duration: formatRecordingDuration(recordingSeconds) })}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => stopVoiceRecording("cancel")}
-                                        className="rounded-md border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/40"
-                                    >
-                                        {t("chat.voice.cancelRecording")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => stopVoiceRecording("save")}
-                                        className="rounded-md bg-[#2F5C56] px-2 py-1 text-xs font-semibold text-white hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
-                                    >
-                                        {t("chat.voice.finishRecording")}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
 
