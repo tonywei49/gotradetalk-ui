@@ -35,7 +35,6 @@ import {
     pretranslateDirectToClient,
     pretranslateRoomToClients,
     sendReadyAttachments,
-    type SentAttachmentResult,
     sendTextMessage,
     type ReadyAttachment,
 } from "./chatService";
@@ -75,13 +74,7 @@ import {
     type ChatSearchMessageHit,
     type ChatSearchRoomResponse,
 } from "./chatSearchApi";
-import {
-    VoiceApiError,
-    createVoiceTranscodeTask,
-    fetchVoicePlaybackBlob,
-    getVoiceTaskStatus,
-    type VoiceTaskRecord,
-} from "./voiceApi";
+import { voiceCaptureEnabled } from "../../config";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -92,7 +85,6 @@ const EMOJI_LIST: string[] = [
 ];
 
 type MessageBubbleProps = {
-    roomId: string;
     event: MatrixEvent;
     isMe: boolean;
     status: EventStatus | null;
@@ -118,7 +110,6 @@ type MessageBubbleProps = {
     sendFileToNotebookBusy?: boolean;
     onCopyMessage?: (event: MatrixEvent, displayText: string) => void;
     onRecallMessage?: (event: MatrixEvent) => void;
-    hubAccessToken?: string | null;
 };
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -272,216 +263,7 @@ function getAudioFileExtension(mimeType: string): string {
     return "webm";
 }
 
-function mapVoiceApiErrorToMessage(t: ReturnType<typeof useTranslation>["t"], error: unknown): string {
-    if (error instanceof VoiceApiError) {
-        switch (error.code) {
-            case "INVALID_AUTH_TOKEN":
-                return t("chat.voice.invalidAuth");
-            case "FORBIDDEN":
-                return t("chat.voice.forbidden");
-            case "VOICE_NOT_READY":
-                return t("chat.voice.processing");
-            case "VOICE_TRANSCODE_FAILED":
-                return t("chat.voice.transcodeFailed");
-            case "VOICE_UNSUPPORTED_SOURCE":
-                return t("chat.voice.unsupportedSource");
-            case "VOICE_SOURCE_FETCH_FAILED":
-                return t("chat.voice.sourceFetchFailed");
-            case "VOICE_STORAGE_FAILED":
-                return t("chat.voice.storageFailed");
-            case "VOICE_NOT_FOUND":
-                return t("chat.voice.notFound");
-            default:
-                return error.message || t("chat.voice.playbackFailed");
-        }
-    }
-    return error instanceof Error && error.message ? error.message : t("chat.voice.playbackFailed");
-}
-
-const VoiceMessagePlayer = ({
-    roomId,
-    event,
-    isMe,
-    hubAccessToken,
-}: {
-    roomId: string;
-    event: MatrixEvent;
-    isMe: boolean;
-    hubAccessToken?: string | null;
-}) => {
-    const { t } = useTranslation();
-    const content = event.getContent() as { body?: string; info?: { mimetype?: string; duration?: number }; url?: string } | undefined;
-    const eventId = event.getId() || "";
-    const sourceMxc = typeof content?.url === "string" ? content.url : "";
-    const durationMs = typeof content?.info?.duration === "number" ? content.info.duration : null;
-    const durationLabel = durationMs ? formatRecordingDuration(Math.max(1, Math.round(durationMs / 1000))) : null;
-    const [voiceTask, setVoiceTask] = useState<VoiceTaskRecord | null>(null);
-    const [voiceBusy, setVoiceBusy] = useState(false);
-    const [voiceError, setVoiceError] = useState<string | null>(null);
-    const [playbackObjectUrl, setPlaybackObjectUrl] = useState<string | null>(null);
-    const [playerKey, setPlayerKey] = useState(0);
-    const objectUrlRef = useRef<string | null>(null);
-    const pollTimerRef = useRef<number | null>(null);
-    const pollStartedAtRef = useRef<number | null>(null);
-
-    const clearPolling = useCallback(() => {
-        if (pollTimerRef.current) {
-            window.clearTimeout(pollTimerRef.current);
-            pollTimerRef.current = null;
-        }
-        pollStartedAtRef.current = null;
-    }, []);
-
-    const clearObjectUrl = useCallback(() => {
-        if (objectUrlRef.current) {
-            URL.revokeObjectURL(objectUrlRef.current);
-            objectUrlRef.current = null;
-        }
-        setPlaybackObjectUrl(null);
-    }, []);
-
-    useEffect(() => () => {
-        clearPolling();
-        clearObjectUrl();
-    }, [clearObjectUrl, clearPolling]);
-
-    const ensurePlaybackBlob = useCallback(async (task: VoiceTaskRecord) => {
-        if (!hubAccessToken || !task.playback_url) {
-            setVoiceError(t("chat.voice.invalidAuth"));
-            return;
-        }
-        if (playbackObjectUrl) return;
-        const { objectUrl } = await fetchVoicePlaybackBlob(hubAccessToken, task.playback_url);
-        clearObjectUrl();
-        objectUrlRef.current = objectUrl;
-        setPlaybackObjectUrl(objectUrl);
-        setPlayerKey((prev) => prev + 1);
-    }, [clearObjectUrl, hubAccessToken, playbackObjectUrl, t]);
-
-    const pollVoiceTask = useCallback(async function pollVoiceTaskInternal(voiceMessageId: string) {
-        if (!hubAccessToken) {
-            setVoiceError(t("chat.voice.invalidAuth"));
-            return;
-        }
-        const startedAt = pollStartedAtRef.current ?? Date.now();
-        pollStartedAtRef.current = startedAt;
-        try {
-            const status = await getVoiceTaskStatus(hubAccessToken, voiceMessageId);
-            setVoiceTask(status);
-            if (status.status === "ready") {
-                clearPolling();
-                await ensurePlaybackBlob(status);
-                setVoiceBusy(false);
-                return;
-            }
-            if (status.status === "failed") {
-                clearPolling();
-                setVoiceBusy(false);
-                setVoiceError(status.error_message || mapVoiceApiErrorToMessage(t, new VoiceApiError(status.error_code || "VOICE_TRANSCODE_FAILED", status.error_message || "")));
-                return;
-            }
-            if (Date.now() - startedAt >= 60000) {
-                clearPolling();
-                setVoiceBusy(false);
-                setVoiceError(t("chat.voice.processingTimeout"));
-                return;
-            }
-            pollTimerRef.current = window.setTimeout(() => {
-                void pollVoiceTaskInternal(voiceMessageId);
-            }, 1500);
-        } catch (error) {
-            clearPolling();
-            setVoiceBusy(false);
-            setVoiceError(mapVoiceApiErrorToMessage(t, error));
-        }
-    }, [clearPolling, ensurePlaybackBlob, hubAccessToken, t]);
-
-    const ensureVoiceReady = useCallback(async () => {
-        if (!eventId || !sourceMxc || !hubAccessToken) {
-            setVoiceError(t("chat.voice.invalidAuth"));
-            return;
-        }
-        if (voiceBusy) return;
-        setVoiceBusy(true);
-        setVoiceError(null);
-        try {
-            const created = await createVoiceTranscodeTask({
-                accessToken: hubAccessToken,
-                roomId,
-                eventId,
-                sourceMxc,
-                durationMs: durationMs ?? undefined,
-                mimeType: content?.info?.mimetype,
-            });
-            setVoiceTask(created);
-            if (created.status === "ready") {
-                await ensurePlaybackBlob(created);
-                setVoiceBusy(false);
-                return;
-            }
-            if (created.status === "failed") {
-                setVoiceBusy(false);
-                setVoiceError(created.error_message || t("chat.voice.transcodeFailed"));
-                return;
-            }
-            pollStartedAtRef.current = Date.now();
-            pollTimerRef.current = window.setTimeout(() => {
-                void pollVoiceTask(created.voice_message_id);
-            }, 1500);
-        } catch (error) {
-            setVoiceBusy(false);
-            setVoiceError(mapVoiceApiErrorToMessage(t, error));
-        }
-    }, [content?.info?.mimetype, durationMs, ensurePlaybackBlob, eventId, hubAccessToken, pollVoiceTask, roomId, sourceMxc, t, voiceBusy]);
-
-    const statusLabel = voiceBusy || voiceTask?.status === "pending" || voiceTask?.status === "processing"
-        ? t("chat.voice.processing")
-        : voiceError
-            ? t("chat.voice.failed")
-            : durationLabel || t("chat.voice.readyToPlay");
-
-    if (playbackObjectUrl) {
-        return (
-            <div className="space-y-2">
-                <audio key={playerKey} controls preload="metadata" className="w-64">
-                    <source src={playbackObjectUrl} type="audio/mp4" />
-                </audio>
-                <div className={`text-[11px] ${isMe ? "text-emerald-100" : "text-slate-500 dark:text-slate-300"}`}>
-                    {durationLabel || t("chat.voice.readyToPlay")}
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <button
-            type="button"
-            onClick={() => void ensureVoiceReady()}
-            className={`flex min-w-[220px] items-center justify-between gap-3 rounded-xl px-4 py-3 ${
-                isMe ? "bg-white/10 text-white" : "bg-slate-700 text-white"
-            }`}
-            disabled={voiceBusy}
-        >
-            <div className="flex items-center gap-3">
-                <span className="text-lg">▶</span>
-                <div className="flex flex-col items-start">
-                    <span className="text-sm font-semibold">{voiceError || statusLabel}</span>
-                    {voiceError && (
-                        <span className={`text-[11px] ${isMe ? "text-emerald-100" : "text-slate-200"}`}>
-                            {t("chat.voice.tapToRetry")}
-                        </span>
-                    )}
-                </div>
-            </div>
-            <span className={`text-sm font-semibold ${isMe ? "text-emerald-100" : "text-slate-100"}`}>
-                {durationLabel || "··"}
-            </span>
-        </button>
-    );
-};
-
 const MessageBubble = ({
-    roomId,
     event,
     isMe,
     status,
@@ -507,7 +289,6 @@ const MessageBubble = ({
     sendFileToNotebookBusy,
     onCopyMessage,
     onRecallMessage,
-    hubAccessToken,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const [showFileMenu, setShowFileMenu] = useState(false);
@@ -768,12 +549,21 @@ const MessageBubble = ({
                                 />
                             </button>
                         ) : isAudio ? (
-                            <VoiceMessagePlayer
-                                roomId={roomId}
-                                event={event}
-                                isMe={isMe}
-                                hubAccessToken={hubAccessToken}
-                            />
+                            <div className="space-y-2">
+                                <audio controls preload="metadata" className="w-64">
+                                    <source src={mediaUrl} type={content?.info?.mimetype || undefined} />
+                                </audio>
+                                <a
+                                    href={mediaUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`text-[11px] underline ${
+                                        isMe ? "text-emerald-100" : "text-slate-500 dark:text-slate-300"
+                                    }`}
+                                >
+                                    {t("chat.downloadFile")} {messageText || "audio"}
+                                </a>
+                            </div>
                         ) : isFile && mediaUrl ? (
                             isPdf ? (
                                 <button
@@ -2188,25 +1978,11 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: translateMatrixUserId,
             },
         });
-        const sentAttachments = await sendReadyAttachments(
+        await sendReadyAttachments(
             matrixClient,
             activeRoomId,
             readyAttachments.map((item) => ({ ...item, mxcUrl: item.mxcUrl! })) as ReadyAttachment[],
         );
-        if (hubAccessToken) {
-            sentAttachments
-                .filter((item: SentAttachmentResult) => item.msgtype === MsgType.Audio && item.eventId && item.mxcUrl)
-                .forEach((item) => {
-                    void createVoiceTranscodeTask({
-                        accessToken: hubAccessToken,
-                        roomId: activeRoomId,
-                        eventId: item.eventId as string,
-                        sourceMxc: item.mxcUrl,
-                        durationMs: item.durationMs,
-                        mimeType: item.mimeType,
-                    }).catch(() => undefined);
-                });
-        }
         if (readyAttachments.length > 0 && activeRoomId) {
             const roomId = activeRoomId;
             setPendingAttachmentsByRoom((prev) =>
@@ -3278,7 +3054,6 @@ export const ChatRoom: React.FC = () => {
                             className={highlightedEventId === eventId ? "rounded-xl ring-2 ring-emerald-400/70" : ""}
                         >
                             <MessageBubble
-                                roomId={activeRoomId}
                                 event={event}
                                 isMe={isMe}
                                 status={status}
@@ -3312,7 +3087,6 @@ export const ChatRoom: React.FC = () => {
                                 onRecallMessage={(targetEvent) => {
                                     void onRecallMessageEvent(targetEvent);
                                 }}
-                                hubAccessToken={hubAccessToken}
                                 onSetTranslationMode={(mode) => {
                                     const key = getMessageEventKey(event);
                                     setTranslationView((prev) => ({ ...prev, [key]: mode }));
@@ -3408,18 +3182,20 @@ export const ChatRoom: React.FC = () => {
                     >
                         <PaperClipIcon className="w-6 h-6" />
                     </button>
-                    <button
-                        type="button"
-                        onClick={onVoiceButtonClick}
-                        onPointerDown={onVoiceButtonPointerDown}
-                        onPointerUp={onVoiceButtonPointerUp}
-                        onPointerCancel={onVoiceButtonPointerCancel}
-                        className={`hover:text-[#2F5C56] dark:hover:text-emerald-400 ${isRecordingVoice ? "text-rose-500 dark:text-rose-400" : ""}`}
-                        disabled={isDeprecatedRoom || isDirectPeerAbsent || voiceRecordingBusy}
-                        title={isRecordingVoice ? t("chat.voice.stopRecording") : t("chat.voice.startRecording")}
-                    >
-                        <MicrophoneIcon className="w-6 h-6" />
-                    </button>
+                    {voiceCaptureEnabled && (
+                        <button
+                            type="button"
+                            onClick={onVoiceButtonClick}
+                            onPointerDown={onVoiceButtonPointerDown}
+                            onPointerUp={onVoiceButtonPointerUp}
+                            onPointerCancel={onVoiceButtonPointerCancel}
+                            className={`hover:text-[#2F5C56] dark:hover:text-emerald-400 ${isRecordingVoice ? "text-rose-500 dark:text-rose-400" : ""}`}
+                            disabled={isDeprecatedRoom || isDirectPeerAbsent || voiceRecordingBusy}
+                            title={isRecordingVoice ? t("chat.voice.stopRecording") : t("chat.voice.startRecording")}
+                        >
+                            <MicrophoneIcon className="w-6 h-6" />
+                        </button>
+                    )}
                     {taskStatuses && taskQuickDraft && onTaskQuickDraftChange && onCreateRoomTask && (
                         <button
                             type="button"
@@ -3460,7 +3236,7 @@ export const ChatRoom: React.FC = () => {
                     </div>
                 )}
 
-                {(isRecordingVoice || voiceRecordingError) && (
+                {voiceCaptureEnabled && (isRecordingVoice || voiceRecordingError) && (
                     <div className={`mb-3 rounded-xl border px-3 py-2 text-sm ${
                         voiceRecordingError
                             ? `border-rose-200 bg-rose-50 text-rose-700 transition-opacity duration-300 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200 ${voiceRecordingErrorFading ? "opacity-0" : "opacity-100"}`
