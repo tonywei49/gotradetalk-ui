@@ -8,6 +8,7 @@ export type PendingAttachment = {
     fileName: string;
     fileSize: number;
     mimeType: string;
+    durationMs?: number;
     sourceFile?: File;
     msgtype: MsgType;
     isPdf: boolean;
@@ -22,6 +23,7 @@ type PersistedPendingAttachment = {
     fileName: string;
     fileSize: number;
     mimeType: string;
+    durationMs?: number;
     msgtype: MsgType;
     isPdf: boolean;
     mxcUrl: string | null;
@@ -50,6 +52,7 @@ function readPersistedPendingAttachments(userId: string): Record<string, Persist
                     typeof item.fileName === "string" &&
                     typeof item.fileSize === "number" &&
                     typeof item.mimeType === "string" &&
+                    (typeof item.durationMs === "number" || typeof item.durationMs === "undefined") &&
                     typeof item.msgtype === "string" &&
                     typeof item.isPdf === "boolean" &&
                     (typeof item.mxcUrl === "string" || item.mxcUrl === null) &&
@@ -114,6 +117,7 @@ export function useAttachmentDrafts(params: {
                 fileName: item.fileName,
                 fileSize: item.fileSize,
                 mimeType: item.mimeType,
+                durationMs: item.durationMs,
                 sourceFile: undefined,
                 msgtype: item.msgtype,
                 isPdf: item.isPdf,
@@ -140,6 +144,7 @@ export function useAttachmentDrafts(params: {
                         fileName: item.fileName,
                         fileSize: item.fileSize,
                         mimeType: item.mimeType,
+                        durationMs: item.durationMs,
                         msgtype: item.msgtype,
                         isPdf: item.isPdf,
                         mxcUrl: isReady ? (item.mxcUrl as string) : null,

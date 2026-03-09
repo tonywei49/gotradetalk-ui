@@ -16,6 +16,8 @@ type MessageActionsMenuProps = {
     onAssistFromContext?: () => void;
     onSendFileToNotebook?: () => void;
     onRecallMessage?: () => void;
+    openUpward?: boolean;
+    align?: "left" | "right";
 };
 
 export function MessageActionsMenu({
@@ -33,6 +35,8 @@ export function MessageActionsMenu({
     onAssistFromContext,
     onSendFileToNotebook,
     onRecallMessage,
+    openUpward = false,
+    align = "right",
 }: MessageActionsMenuProps) {
     const { t } = useTranslation();
     const showSwitchToOriginal = translationMode === "translated";
@@ -40,7 +44,11 @@ export function MessageActionsMenu({
     const showBilingualOption = translationMode !== "bilingual";
 
     return (
-        <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+        <div
+            className={`absolute z-20 w-40 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                align === "left" ? "left-0" : "right-0"
+            } ${openUpward ? "bottom-full mb-1" : "top-full mt-1"}`}
+        >
             {canToggleTranslation && (
                 <>
                     {showSwitchToOriginal && (

@@ -29,8 +29,11 @@ export async function sendFileMessageEvent(
     matrixClient: MatrixClient,
     roomId: string,
     content: Record<string, unknown>,
-): Promise<void> {
-    await matrixClient.sendEvent(roomId, EventType.RoomMessage, content as never);
+): Promise<string | undefined> {
+    const result = (await matrixClient.sendEvent(roomId, EventType.RoomMessage, content as never)) as
+        | { event_id?: string }
+        | undefined;
+    return result?.event_id;
 }
 
 export async function resendMessageEvent(

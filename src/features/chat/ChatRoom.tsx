@@ -35,6 +35,7 @@ import {
     pretranslateDirectToClient,
     pretranslateRoomToClients,
     sendReadyAttachments,
+    type SentAttachmentResult,
     sendTextMessage,
     type ReadyAttachment,
 } from "./chatService";
@@ -74,6 +75,13 @@ import {
     type ChatSearchMessageHit,
     type ChatSearchRoomResponse,
 } from "./chatSearchApi";
+import {
+    VoiceApiError,
+    createVoiceTranscodeTask,
+    fetchVoicePlaybackBlob,
+    getVoiceTaskStatus,
+    type VoiceTaskRecord,
+} from "./voiceApi";
 
 const EMOJI_LIST: string[] = [
     "😀", "😃", "😄", "😁", "😆", "😊", "🙂", "😉", "😍", "😘", "😎", "🤩",
@@ -84,6 +92,7 @@ const EMOJI_LIST: string[] = [
 ];
 
 type MessageBubbleProps = {
+    roomId: string;
     event: MatrixEvent;
     isMe: boolean;
     status: EventStatus | null;
@@ -109,6 +118,7 @@ type MessageBubbleProps = {
     sendFileToNotebookBusy?: boolean;
     onCopyMessage?: (event: MatrixEvent, displayText: string) => void;
     onRecallMessage?: (event: MatrixEvent) => void;
+    hubAccessToken?: string | null;
 };
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -230,9 +240,9 @@ function formatMessageTimestampLabel(ts: number): string {
         date.getMonth() === now.getMonth() &&
         date.getDate() === now.getDate();
     if (isToday) {
-        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     }
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
 
 function formatRecordingDuration(totalSeconds: number): string {
@@ -262,7 +272,216 @@ function getAudioFileExtension(mimeType: string): string {
     return "webm";
 }
 
+function mapVoiceApiErrorToMessage(t: ReturnType<typeof useTranslation>["t"], error: unknown): string {
+    if (error instanceof VoiceApiError) {
+        switch (error.code) {
+            case "INVALID_AUTH_TOKEN":
+                return t("chat.voice.invalidAuth");
+            case "FORBIDDEN":
+                return t("chat.voice.forbidden");
+            case "VOICE_NOT_READY":
+                return t("chat.voice.processing");
+            case "VOICE_TRANSCODE_FAILED":
+                return t("chat.voice.transcodeFailed");
+            case "VOICE_UNSUPPORTED_SOURCE":
+                return t("chat.voice.unsupportedSource");
+            case "VOICE_SOURCE_FETCH_FAILED":
+                return t("chat.voice.sourceFetchFailed");
+            case "VOICE_STORAGE_FAILED":
+                return t("chat.voice.storageFailed");
+            case "VOICE_NOT_FOUND":
+                return t("chat.voice.notFound");
+            default:
+                return error.message || t("chat.voice.playbackFailed");
+        }
+    }
+    return error instanceof Error && error.message ? error.message : t("chat.voice.playbackFailed");
+}
+
+const VoiceMessagePlayer = ({
+    roomId,
+    event,
+    isMe,
+    hubAccessToken,
+}: {
+    roomId: string;
+    event: MatrixEvent;
+    isMe: boolean;
+    hubAccessToken?: string | null;
+}) => {
+    const { t } = useTranslation();
+    const content = event.getContent() as { body?: string; info?: { mimetype?: string; duration?: number }; url?: string } | undefined;
+    const eventId = event.getId() || "";
+    const sourceMxc = typeof content?.url === "string" ? content.url : "";
+    const durationMs = typeof content?.info?.duration === "number" ? content.info.duration : null;
+    const durationLabel = durationMs ? formatRecordingDuration(Math.max(1, Math.round(durationMs / 1000))) : null;
+    const [voiceTask, setVoiceTask] = useState<VoiceTaskRecord | null>(null);
+    const [voiceBusy, setVoiceBusy] = useState(false);
+    const [voiceError, setVoiceError] = useState<string | null>(null);
+    const [playbackObjectUrl, setPlaybackObjectUrl] = useState<string | null>(null);
+    const [playerKey, setPlayerKey] = useState(0);
+    const objectUrlRef = useRef<string | null>(null);
+    const pollTimerRef = useRef<number | null>(null);
+    const pollStartedAtRef = useRef<number | null>(null);
+
+    const clearPolling = useCallback(() => {
+        if (pollTimerRef.current) {
+            window.clearTimeout(pollTimerRef.current);
+            pollTimerRef.current = null;
+        }
+        pollStartedAtRef.current = null;
+    }, []);
+
+    const clearObjectUrl = useCallback(() => {
+        if (objectUrlRef.current) {
+            URL.revokeObjectURL(objectUrlRef.current);
+            objectUrlRef.current = null;
+        }
+        setPlaybackObjectUrl(null);
+    }, []);
+
+    useEffect(() => () => {
+        clearPolling();
+        clearObjectUrl();
+    }, [clearObjectUrl, clearPolling]);
+
+    const ensurePlaybackBlob = useCallback(async (task: VoiceTaskRecord) => {
+        if (!hubAccessToken || !task.playback_url) {
+            setVoiceError(t("chat.voice.invalidAuth"));
+            return;
+        }
+        if (playbackObjectUrl) return;
+        const { objectUrl } = await fetchVoicePlaybackBlob(hubAccessToken, task.playback_url);
+        clearObjectUrl();
+        objectUrlRef.current = objectUrl;
+        setPlaybackObjectUrl(objectUrl);
+        setPlayerKey((prev) => prev + 1);
+    }, [clearObjectUrl, hubAccessToken, playbackObjectUrl, t]);
+
+    const pollVoiceTask = useCallback(async function pollVoiceTaskInternal(voiceMessageId: string) {
+        if (!hubAccessToken) {
+            setVoiceError(t("chat.voice.invalidAuth"));
+            return;
+        }
+        const startedAt = pollStartedAtRef.current ?? Date.now();
+        pollStartedAtRef.current = startedAt;
+        try {
+            const status = await getVoiceTaskStatus(hubAccessToken, voiceMessageId);
+            setVoiceTask(status);
+            if (status.status === "ready") {
+                clearPolling();
+                await ensurePlaybackBlob(status);
+                setVoiceBusy(false);
+                return;
+            }
+            if (status.status === "failed") {
+                clearPolling();
+                setVoiceBusy(false);
+                setVoiceError(status.error_message || mapVoiceApiErrorToMessage(t, new VoiceApiError(status.error_code || "VOICE_TRANSCODE_FAILED", status.error_message || "")));
+                return;
+            }
+            if (Date.now() - startedAt >= 60000) {
+                clearPolling();
+                setVoiceBusy(false);
+                setVoiceError(t("chat.voice.processingTimeout"));
+                return;
+            }
+            pollTimerRef.current = window.setTimeout(() => {
+                void pollVoiceTaskInternal(voiceMessageId);
+            }, 1500);
+        } catch (error) {
+            clearPolling();
+            setVoiceBusy(false);
+            setVoiceError(mapVoiceApiErrorToMessage(t, error));
+        }
+    }, [clearPolling, ensurePlaybackBlob, hubAccessToken, t]);
+
+    const ensureVoiceReady = useCallback(async () => {
+        if (!eventId || !sourceMxc || !hubAccessToken) {
+            setVoiceError(t("chat.voice.invalidAuth"));
+            return;
+        }
+        if (voiceBusy) return;
+        setVoiceBusy(true);
+        setVoiceError(null);
+        try {
+            const created = await createVoiceTranscodeTask({
+                accessToken: hubAccessToken,
+                roomId,
+                eventId,
+                sourceMxc,
+                durationMs: durationMs ?? undefined,
+                mimeType: content?.info?.mimetype,
+            });
+            setVoiceTask(created);
+            if (created.status === "ready") {
+                await ensurePlaybackBlob(created);
+                setVoiceBusy(false);
+                return;
+            }
+            if (created.status === "failed") {
+                setVoiceBusy(false);
+                setVoiceError(created.error_message || t("chat.voice.transcodeFailed"));
+                return;
+            }
+            pollStartedAtRef.current = Date.now();
+            pollTimerRef.current = window.setTimeout(() => {
+                void pollVoiceTask(created.voice_message_id);
+            }, 1500);
+        } catch (error) {
+            setVoiceBusy(false);
+            setVoiceError(mapVoiceApiErrorToMessage(t, error));
+        }
+    }, [content?.info?.mimetype, durationMs, ensurePlaybackBlob, eventId, hubAccessToken, pollVoiceTask, roomId, sourceMxc, t, voiceBusy]);
+
+    const statusLabel = voiceBusy || voiceTask?.status === "pending" || voiceTask?.status === "processing"
+        ? t("chat.voice.processing")
+        : voiceError
+            ? t("chat.voice.failed")
+            : durationLabel || t("chat.voice.readyToPlay");
+
+    if (playbackObjectUrl) {
+        return (
+            <div className="space-y-2">
+                <audio key={playerKey} controls preload="metadata" className="w-64">
+                    <source src={playbackObjectUrl} type="audio/mp4" />
+                </audio>
+                <div className={`text-[11px] ${isMe ? "text-emerald-100" : "text-slate-500 dark:text-slate-300"}`}>
+                    {durationLabel || t("chat.voice.readyToPlay")}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={() => void ensureVoiceReady()}
+            className={`flex min-w-[220px] items-center justify-between gap-3 rounded-xl px-4 py-3 ${
+                isMe ? "bg-white/10 text-white" : "bg-slate-700 text-white"
+            }`}
+            disabled={voiceBusy}
+        >
+            <div className="flex items-center gap-3">
+                <span className="text-lg">▶</span>
+                <div className="flex flex-col items-start">
+                    <span className="text-sm font-semibold">{voiceError || statusLabel}</span>
+                    {voiceError && (
+                        <span className={`text-[11px] ${isMe ? "text-emerald-100" : "text-slate-200"}`}>
+                            {t("chat.voice.tapToRetry")}
+                        </span>
+                    )}
+                </div>
+            </div>
+            <span className={`text-sm font-semibold ${isMe ? "text-emerald-100" : "text-slate-100"}`}>
+                {durationLabel || "··"}
+            </span>
+        </button>
+    );
+};
+
 const MessageBubble = ({
+    roomId,
     event,
     isMe,
     status,
@@ -288,12 +507,17 @@ const MessageBubble = ({
     sendFileToNotebookBusy,
     onCopyMessage,
     onRecallMessage,
+    hubAccessToken,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const [showFileMenu, setShowFileMenu] = useState(false);
     const [showQuickActionMenu, setShowQuickActionMenu] = useState(false);
+    const [showQuickActionMenuUpward, setShowQuickActionMenuUpward] = useState(false);
+    const [showFileMenuUpward, setShowFileMenuUpward] = useState(false);
     const quickActionMenuRef = useRef<HTMLDivElement | null>(null);
     const fileMenuRef = useRef<HTMLDivElement | null>(null);
+    const quickActionButtonRef = useRef<HTMLButtonElement | null>(null);
+    const fileActionButtonRef = useRef<HTMLButtonElement | null>(null);
     const content = event.getContent() as { body?: string; msgtype?: string; info?: { mimetype?: string } } | undefined;
     const messageText = content?.body ?? "";
     const isSending =
@@ -326,6 +550,7 @@ const MessageBubble = ({
     const canRetryTranslation = Boolean(isText && !isMe && onRetryTranslation && (translationError || translationSuspect));
     const canAssistFromContext = Boolean(
         canUseNotebookAssist &&
+        isText &&
         event.getType() === EventType.RoomMessage &&
         content?.msgtype !== MsgType.Notice &&
         anchorEventId &&
@@ -334,7 +559,13 @@ const MessageBubble = ({
     const rawMxc = typeof (content as { url?: unknown } | undefined)?.url === "string"
         ? String((content as { url?: string }).url)
         : "";
-    const canSendFileToNotebook = Boolean(canUseNotebookBasic && isFileLike && rawMxc.startsWith("mxc://") && onSendFileToNotebook);
+    const canSendFileToNotebook = Boolean(
+        canUseNotebookBasic &&
+        isFileLike &&
+        !isAudioMsg &&
+        rawMxc.startsWith("mxc://") &&
+        onSendFileToNotebook,
+    );
     const canRecallMessage = Boolean(
         onRecallMessage &&
         isMe &&
@@ -371,6 +602,24 @@ const MessageBubble = ({
         };
     }, [showQuickActionMenu, showFileMenu]);
 
+    useEffect(() => {
+        if (!showQuickActionMenu) return;
+        const trigger = quickActionButtonRef.current;
+        if (!trigger) return;
+        const rect = trigger.getBoundingClientRect();
+        const estimatedMenuHeight = 220;
+        setShowQuickActionMenuUpward(window.innerHeight - rect.bottom < estimatedMenuHeight);
+    }, [showQuickActionMenu]);
+
+    useEffect(() => {
+        if (!showFileMenu) return;
+        const trigger = fileActionButtonRef.current;
+        if (!trigger) return;
+        const rect = trigger.getBoundingClientRect();
+        const estimatedMenuHeight = 80;
+        setShowFileMenuUpward(window.innerHeight - rect.bottom < estimatedMenuHeight);
+    }, [showFileMenu]);
+
     return (
         <div className={`flex w-full mb-3 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
             {/* Avatar (Incoming only) */}
@@ -385,20 +634,69 @@ const MessageBubble = ({
             <div className={`flex flex-col max-w-[70%] ${isMe ? "items-end" : "items-start"}`}>
                 {/* Sender Name (Incoming only) */}
                 {!isMe && (
-                    <span className="text-[11px] text-gray-500 mb-1 ml-1 dark:text-slate-400">{senderLabel}</span>
+                    <div className="mb-1 ml-1 flex items-center gap-2 text-[11px] text-gray-500 dark:text-slate-400">
+                        <span>{senderLabel}</span>
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500">{timeLabel}</span>
+                    </div>
                 )}
 
                 <div className="flex items-end gap-2">
-                    {/* Read Status & Time (Outgoing: Left of bubble) */}
-                    {isMe && (
-                        <div className="flex flex-col items-end justify-end text-[9px] text-gray-400 min-w-[56px] mb-1">
-                            {isFailed && <span className="text-rose-500 font-medium">{t("chat.failed")}</span>}
-                            <span className="text-gray-400 dark:text-slate-500">{timeLabel}</span>
+                    {isMe && hasQuickActions && (
+                        <div ref={quickActionMenuRef} className="relative self-end mb-1">
+                            <button
+                                ref={quickActionButtonRef}
+                                type="button"
+                                onClick={() => setShowQuickActionMenu((prev) => !prev)}
+                                className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                                aria-label={t("chat.messageActions")}
+                            >
+                                <EllipsisVerticalIcon className="h-4 w-4" />
+                            </button>
+                            {showQuickActionMenu && (
+                                <MessageActionsMenu
+                                    canToggleTranslation={canToggleTranslation}
+                                    translationLoading={translationLoading}
+                                    translationMode={effectiveTranslationMode}
+                                    canRetryTranslation={canRetryTranslation}
+                                    canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
+                                    canSendFileToNotebook={canSendFileToNotebook}
+                                    sendFileToNotebookBusy={sendFileToNotebookBusy}
+                                    openUpward={showQuickActionMenuUpward}
+                                    align="left"
+                                    onSetTranslationMode={(mode) => {
+                                        setShowQuickActionMenu(false);
+                                        onSetTranslationMode?.(mode);
+                                    }}
+                                    onRetryTranslation={() => {
+                                        setShowQuickActionMenu(false);
+                                        onRetryTranslation?.();
+                                    }}
+                                    onCopyMessage={() => {
+                                        setShowQuickActionMenu(false);
+                                        onCopyMessage?.(event, displayText);
+                                    }}
+                                    onAssistFromContext={() => {
+                                        if (!anchorEventId) return;
+                                        setShowQuickActionMenu(false);
+                                        onAssistFromContext?.(anchorEventId);
+                                    }}
+                                    onSendFileToNotebook={() => {
+                                        setShowQuickActionMenu(false);
+                                        onSendFileToNotebook?.(event);
+                                    }}
+                                    canRecallMessage={canRecallMessage}
+                                    onRecallMessage={() => {
+                                        setShowQuickActionMenu(false);
+                                        onRecallMessage?.(event);
+                                    }}
+                                />
+                            )}
                         </div>
                     )}
                     {isMe && isFileLike && canDeleteFile && onDeleteFile && (
                         <div ref={fileMenuRef} className="relative self-end mb-1">
                             <button
+                                ref={fileActionButtonRef}
                                 type="button"
                                 data-testid={`chat-file-action-trigger-${eventId}`}
                                 onClick={() => setShowFileMenu((prev) => !prev)}
@@ -409,7 +707,9 @@ const MessageBubble = ({
                                 <EllipsisVerticalIcon className="h-4 w-4" />
                             </button>
                             {showFileMenu && (
-                                <div className="absolute right-0 z-20 mt-1 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                <div className={`absolute z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                                    showFileMenuUpward ? "bottom-full left-0 mb-1" : "top-full left-0 mt-1"
+                                }`}>
                                     <button
                                         type="button"
                                         data-testid={`chat-file-delete-${eventId}`}
@@ -468,7 +768,12 @@ const MessageBubble = ({
                                 />
                             </button>
                         ) : isAudio ? (
-                            <audio src={mediaUrl} controls className="w-64" />
+                            <VoiceMessagePlayer
+                                roomId={roomId}
+                                event={event}
+                                isMe={isMe}
+                                hubAccessToken={hubAccessToken}
+                            />
                         ) : isFile && mediaUrl ? (
                             isPdf ? (
                                 <button
@@ -518,13 +823,10 @@ const MessageBubble = ({
                         )}
                     </div>
 
-                    {/* Time (Incoming: Right of bubble) */}
-                    {!isMe && (
-                        <span className="text-[9px] text-gray-400 self-end mb-1 dark:text-slate-500">{timeLabel}</span>
-                    )}
-                    {hasQuickActions && (
+                    {!isMe && hasQuickActions && (
                         <div ref={quickActionMenuRef} className="relative self-end mb-1">
                             <button
+                                ref={quickActionButtonRef}
                                 type="button"
                                 onClick={() => setShowQuickActionMenu((prev) => !prev)}
                                 className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -541,6 +843,8 @@ const MessageBubble = ({
                                     canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
+                                    openUpward={showQuickActionMenuUpward}
+                                    align="right"
                                     onSetTranslationMode={(mode) => {
                                         setShowQuickActionMenu(false);
                                         onSetTranslationMode?.(mode);
@@ -574,6 +878,7 @@ const MessageBubble = ({
                     {!isMe && isFileLike && canDeleteFile && onDeleteFile && (
                         <div ref={fileMenuRef} className="relative self-end mb-1">
                             <button
+                                ref={fileActionButtonRef}
                                 type="button"
                                 data-testid={`chat-file-action-trigger-${eventId}`}
                                 onClick={() => setShowFileMenu((prev) => !prev)}
@@ -584,7 +889,9 @@ const MessageBubble = ({
                                 <EllipsisVerticalIcon className="h-4 w-4" />
                             </button>
                             {showFileMenu && (
-                                <div className="absolute right-0 z-20 mt-1 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                <div className={`absolute right-0 z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                                    showFileMenuUpward ? "bottom-full mb-1" : "top-full mt-1"
+                                }`}>
                                     <button
                                         type="button"
                                         data-testid={`chat-file-delete-${eventId}`}
@@ -1881,11 +2188,25 @@ export const ChatRoom: React.FC = () => {
                 matrixUserId: translateMatrixUserId,
             },
         });
-        await sendReadyAttachments(
+        const sentAttachments = await sendReadyAttachments(
             matrixClient,
             activeRoomId,
             readyAttachments.map((item) => ({ ...item, mxcUrl: item.mxcUrl! })) as ReadyAttachment[],
         );
+        if (hubAccessToken) {
+            sentAttachments
+                .filter((item: SentAttachmentResult) => item.msgtype === MsgType.Audio && item.eventId && item.mxcUrl)
+                .forEach((item) => {
+                    void createVoiceTranscodeTask({
+                        accessToken: hubAccessToken,
+                        roomId: activeRoomId,
+                        eventId: item.eventId as string,
+                        sourceMxc: item.mxcUrl,
+                        durationMs: item.durationMs,
+                        mimeType: item.mimeType,
+                    }).catch(() => undefined);
+                });
+        }
         if (readyAttachments.length > 0 && activeRoomId) {
             const roomId = activeRoomId;
             setPendingAttachmentsByRoom((prev) =>
@@ -2163,7 +2484,7 @@ export const ChatRoom: React.FC = () => {
                 const extension = getAudioFileExtension(recorderMimeType);
                 const fileName = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`;
                 const file = new File([blob], fileName, { type: recorderMimeType, lastModified: Date.now() });
-                void uploadDraftAttachment(file, roomId).then(() => {
+                void uploadDraftAttachment(file, roomId, { durationMs: durationSeconds * 1000 }).then(() => {
                     pushToast("success", t("chat.voice.recordingReady", { duration: formatRecordingDuration(durationSeconds) }));
                 });
             });
@@ -2335,7 +2656,11 @@ export const ChatRoom: React.FC = () => {
         }
     };
 
-    const uploadDraftAttachment = async (file: File, explicitRoomId?: string): Promise<void> => {
+    const uploadDraftAttachment = async (
+        file: File,
+        explicitRoomId?: string,
+        metadata?: { durationMs?: number },
+    ): Promise<void> => {
         const roomId = explicitRoomId ?? activeRoomId;
         if (!matrixClient || !roomId || isDeprecatedRoom) return;
         const attachmentId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -2360,6 +2685,7 @@ export const ChatRoom: React.FC = () => {
                     fileName: file.name,
                     fileSize: file.size,
                     mimeType,
+                    durationMs: metadata?.durationMs,
                     sourceFile: file,
                     msgtype,
                     isPdf: isPdfFile,
@@ -2952,6 +3278,7 @@ export const ChatRoom: React.FC = () => {
                             className={highlightedEventId === eventId ? "rounded-xl ring-2 ring-emerald-400/70" : ""}
                         >
                             <MessageBubble
+                                roomId={activeRoomId}
                                 event={event}
                                 isMe={isMe}
                                 status={status}
@@ -2985,6 +3312,7 @@ export const ChatRoom: React.FC = () => {
                                 onRecallMessage={(targetEvent) => {
                                     void onRecallMessageEvent(targetEvent);
                                 }}
+                                hubAccessToken={hubAccessToken}
                                 onSetTranslationMode={(mode) => {
                                     const key = getMessageEventKey(event);
                                     setTranslationView((prev) => ({ ...prev, [key]: mode }));

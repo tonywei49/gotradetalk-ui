@@ -591,7 +591,20 @@
             "startRecording": "開始錄音",
             "recordingNow": "錄音中 {{duration}}",
             "cancelRecording": "取消錄音",
-            "finishRecording": "完成並發送"
+            "finishRecording": "完成並發送",
+            "processing": "語音處理中...",
+            "processingTimeout": "語音仍在處理中，請稍後重試。",
+            "failed": "語音處理失敗",
+            "tapToRetry": "點擊重試",
+            "readyToPlay": "可播放",
+            "playbackFailed": "語音播放失敗。",
+            "invalidAuth": "語音驗證失敗，請重新登入。",
+            "forbidden": "你沒有權限播放這段語音。",
+            "transcodeFailed": "語音轉碼失敗。",
+            "unsupportedSource": "這段語音來源格式不支援。",
+            "sourceFetchFailed": "語音原始檔下載失敗。",
+            "storageFailed": "語音檔案儲存失敗。",
+            "notFound": "找不到這段語音。"
         },
         "notebook": {
             "useKnowledgeBase": "調用知識庫",

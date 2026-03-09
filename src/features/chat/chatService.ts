@@ -15,6 +15,11 @@ export type ReadyAttachment = {
     msgtype: MsgType;
     isPdf: boolean;
     mxcUrl: string;
+    durationMs?: number;
+};
+
+export type SentAttachmentResult = ReadyAttachment & {
+    eventId?: string;
 };
 
 type TranslateContext = {
@@ -38,11 +43,15 @@ export async function sendReadyAttachments(
     matrixClient: MatrixClient,
     roomId: string,
     attachments: ReadyAttachment[],
-): Promise<void> {
+): Promise<SentAttachmentResult[]> {
+    const results: SentAttachmentResult[] = [];
     for (const attachment of attachments) {
-        const info: { mimetype?: string; size: number } = { size: attachment.fileSize };
+        const info: { mimetype?: string; size: number; duration?: number } = { size: attachment.fileSize };
         if (attachment.mimeType) info.mimetype = attachment.mimeType;
         if (attachment.isPdf && !info.mimetype) info.mimetype = "application/pdf";
+        if (attachment.msgtype === MsgType.Audio && typeof attachment.durationMs === "number" && attachment.durationMs > 0) {
+            info.duration = attachment.durationMs;
+        }
 
         const content: Record<string, unknown> = {
             body: attachment.fileName,
@@ -50,8 +59,10 @@ export async function sendReadyAttachments(
             url: attachment.mxcUrl,
             info,
         };
-        await sendFileMessageEvent(matrixClient, roomId, content);
+        const eventId = await sendFileMessageEvent(matrixClient, roomId, content);
+        results.push({ ...attachment, eventId });
     }
+    return results;
 }
 
 export function pretranslateDirectToClient(params: {
