@@ -570,7 +570,7 @@ export const MainLayout: React.FC = () => {
         return pluginSettingsSections.find((section) => `plugin:${section.pluginId}:${section.id}` === settingsDetail) ?? null;
     }, [pluginSettingsSections, settingsDetail]);
     const [chatReceiveLanguage, setChatReceiveLanguage] = useState<string>("en");
-    const [pendingChatReceiveLanguage, setPendingChatReceiveLanguage] = useState<string>("en");
+    const [chatReceiveLanguageSaving, setChatReceiveLanguageSaving] = useState(false);
     const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original" | "bilingual">("translated");
     const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
     const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
@@ -853,6 +853,7 @@ export const MainLayout: React.FC = () => {
 
     const handleChatReceiveLanguageChange = async (value: string): Promise<void> => {
         const previous = chatReceiveLanguage;
+        setChatReceiveLanguageSaving(true);
         setChatReceiveLanguage(value);
         try {
             if (userType === "client" && meUpdateToken) {
@@ -862,6 +863,8 @@ export const MainLayout: React.FC = () => {
             }
         } catch {
             setChatReceiveLanguage(previous);
+        } finally {
+            setChatReceiveLanguageSaving(false);
         }
     };
 
@@ -1088,7 +1091,6 @@ export const MainLayout: React.FC = () => {
                 }
                 if (response.profile?.translation_locale) {
                     setChatReceiveLanguage(response.profile.translation_locale);
-                    setPendingChatReceiveLanguage(response.profile.translation_locale);
                 }
             } catch {
                 if (!isActive) return;
@@ -2999,7 +3001,6 @@ export const MainLayout: React.FC = () => {
                                 type="button"
                                 onClick={() => {
                                     setSettingsDetail("chat-language");
-                                    setPendingChatReceiveLanguage(chatReceiveLanguage);
                                     setMobileView("detail");
                                 }}
                                 className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -4203,8 +4204,19 @@ export const MainLayout: React.FC = () => {
                                             <button
                                                 key={option.value}
                                                 type="button"
-                                                onClick={() => setPendingChatReceiveLanguage(option.value)}
-                                                className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${pendingChatReceiveLanguage === option.value
+                                                disabled={chatReceiveLanguageSaving}
+                                                onClick={() => {
+                                                    if (chatReceiveLanguageSaving || chatReceiveLanguage === option.value) {
+                                                        setSettingsDetail("none");
+                                                        setMobileView("list");
+                                                        return;
+                                                    }
+                                                    void handleChatReceiveLanguageChange(option.value).then(() => {
+                                                        setSettingsDetail("none");
+                                                        setMobileView("list");
+                                                    });
+                                                }}
+                                                className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${chatReceiveLanguage === option.value
                                                     ? "border-yellow-400 text-yellow-600 dark:text-yellow-300"
                                                     : "border-gray-200"
                                                     }`}
@@ -4213,20 +4225,6 @@ export const MainLayout: React.FC = () => {
                                             </button>
                                         ))}
                                     </div>
-                                </div>
-                                <div className="mt-auto px-6 pb-6">
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            void handleChatReceiveLanguageChange(pendingChatReceiveLanguage).then(() => {
-                                                setSettingsDetail("none");
-                                                setMobileView("list");
-                                            })
-                                        }
-                                        className="w-full rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-[#244a45] dark:bg-emerald-500 dark:hover:bg-emerald-400"
-                                    >
-                                        {t("common.confirm")}
-                                    </button>
                                 </div>
                             </>
                         ) : activeTab === "settings" && settingsDetail === "translation-default" ? (
