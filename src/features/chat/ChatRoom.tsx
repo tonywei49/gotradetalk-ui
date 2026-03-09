@@ -243,12 +243,14 @@ function formatRecordingDuration(totalSeconds: number): string {
 }
 
 function getPreferredAudioMimeType(): string {
-    if (typeof MediaRecorder === "undefined") return "audio/webm";
+    if (typeof MediaRecorder === "undefined") return "audio/mp4";
     const candidates = [
+        "audio/mp4;codecs=mp4a.40.2",
+        "audio/mp4",
+        "audio/x-m4a",
         "audio/webm;codecs=opus",
         "audio/webm",
         "audio/ogg;codecs=opus",
-        "audio/mp4",
     ];
     return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "audio/webm";
 }
@@ -336,7 +338,6 @@ const MessageBubble = ({
     const canRecallMessage = Boolean(
         onRecallMessage &&
         isMe &&
-        isText &&
         event.getType() === EventType.RoomMessage &&
         content?.msgtype !== MsgType.Notice &&
         event.getId(),
@@ -919,6 +920,9 @@ export const ChatRoom: React.FC = () => {
     const recordingStartedAtRef = useRef<number | null>(null);
     const recordingStopModeRef = useRef<"save" | "cancel">("save");
     const recordingRoomIdRef = useRef<string | null>(null);
+    const voiceHoldPointerActiveRef = useRef(false);
+    const voiceHoldPendingStopRef = useRef<"save" | "cancel" | null>(null);
+    const ignoreNextVoiceClickRef = useRef(false);
     const mentionMenuRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const retryFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2043,13 +2047,9 @@ export const ChatRoom: React.FC = () => {
         const eventId = event.getId();
         if (!matrixClient || !activeRoomId || !eventId || !userId) return;
         const content = event.getContent() as { msgtype?: string } | undefined;
-        const isTextMessage = event.getType() === EventType.RoomMessage
-            && content?.msgtype !== MsgType.Notice
-            && content?.msgtype !== MsgType.File
-            && content?.msgtype !== MsgType.Image
-            && content?.msgtype !== MsgType.Video
-            && content?.msgtype !== MsgType.Audio;
-        if (event.getSender() !== userId || !isTextMessage) return;
+        const isRecallableMessage = event.getType() === EventType.RoomMessage
+            && content?.msgtype !== MsgType.Notice;
+        if (event.getSender() !== userId || !isRecallableMessage) return;
         try {
             await redactMessageEvent(matrixClient, activeRoomId, eventId);
             pushToast("success", t("chat.recallMessageSuccess"));
@@ -2114,6 +2114,8 @@ export const ChatRoom: React.FC = () => {
         recordingChunksRef.current = [];
         recordingStartedAtRef.current = null;
         recordingRoomIdRef.current = null;
+        voiceHoldPendingStopRef.current = null;
+        voiceHoldPointerActiveRef.current = false;
         mediaRecorderRef.current = null;
         if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -2168,6 +2170,16 @@ export const ChatRoom: React.FC = () => {
             recorder.start();
             setIsRecordingVoice(true);
             setRecordingSeconds(0);
+            const pendingStopMode = voiceHoldPendingStopRef.current;
+            if (pendingStopMode) {
+                voiceHoldPendingStopRef.current = null;
+                window.setTimeout(() => {
+                    const activeRecorder = mediaRecorderRef.current;
+                    if (!activeRecorder || activeRecorder.state === "inactive") return;
+                    recordingStopModeRef.current = pendingStopMode;
+                    activeRecorder.stop();
+                }, 0);
+            }
         } catch (error) {
             resetVoiceRecorderState();
             const fallback = t("chat.voice.startFailed");
@@ -2207,6 +2219,45 @@ export const ChatRoom: React.FC = () => {
         }
         void startVoiceRecording();
     }, [isRecordingVoice, startVoiceRecording, stopVoiceRecording]);
+
+    const onVoiceButtonClick = useCallback(() => {
+        if (ignoreNextVoiceClickRef.current) {
+            ignoreNextVoiceClickRef.current = false;
+            return;
+        }
+        toggleVoiceRecording();
+    }, [toggleVoiceRecording]);
+
+    const onVoiceButtonPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+        if (event.pointerType === "mouse") return;
+        ignoreNextVoiceClickRef.current = true;
+        voiceHoldPointerActiveRef.current = true;
+        if (!isRecordingVoice && !voiceRecordingBusy) {
+            void startVoiceRecording();
+        }
+    }, [isRecordingVoice, startVoiceRecording, voiceRecordingBusy]);
+
+    const onVoiceButtonPointerUp = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+        if (event.pointerType === "mouse") return;
+        if (!voiceHoldPointerActiveRef.current) return;
+        voiceHoldPointerActiveRef.current = false;
+        if (isRecordingVoice) {
+            stopVoiceRecording("save");
+            return;
+        }
+        voiceHoldPendingStopRef.current = "save";
+    }, [isRecordingVoice, stopVoiceRecording]);
+
+    const onVoiceButtonPointerCancel = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+        if (event.pointerType === "mouse") return;
+        if (!voiceHoldPointerActiveRef.current) return;
+        voiceHoldPointerActiveRef.current = false;
+        if (isRecordingVoice) {
+            stopVoiceRecording("cancel");
+            return;
+        }
+        voiceHoldPendingStopRef.current = "cancel";
+    }, [isRecordingVoice, stopVoiceRecording]);
 
     const uploadDraftAttachmentById = async (
         roomId: string,
@@ -3031,7 +3082,10 @@ export const ChatRoom: React.FC = () => {
                     </button>
                     <button
                         type="button"
-                        onClick={toggleVoiceRecording}
+                        onClick={onVoiceButtonClick}
+                        onPointerDown={onVoiceButtonPointerDown}
+                        onPointerUp={onVoiceButtonPointerUp}
+                        onPointerCancel={onVoiceButtonPointerCancel}
                         className={`hover:text-[#2F5C56] dark:hover:text-emerald-400 ${isRecordingVoice ? "text-rose-500 dark:text-rose-400" : ""}`}
                         disabled={isDeprecatedRoom || isDirectPeerAbsent || voiceRecordingBusy}
                         title={isRecordingVoice ? t("chat.voice.stopRecording") : t("chat.voice.startRecording")}
