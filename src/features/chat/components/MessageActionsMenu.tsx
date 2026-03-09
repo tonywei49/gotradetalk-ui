@@ -43,8 +43,8 @@ export function MessageActionsMenu({
     align = "right",
 }: MessageActionsMenuProps) {
     const { t } = useTranslation();
-    const showSwitchToOriginal = translationMode === "translated";
-    const showSwitchToTranslated = translationMode === "original";
+    const showSwitchToOriginal = translationMode === "translated" || translationMode === "bilingual";
+    const showSwitchToTranslated = translationMode === "original" || translationMode === "bilingual";
     const showBilingualOption = translationMode !== "bilingual";
 
     return (
