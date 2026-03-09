@@ -32,7 +32,11 @@ type CreateVoiceTaskParams = {
 };
 
 function buildVoiceUrl(path: string): string {
-    return new URL(path, hubApiBaseUrl).toString();
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    if (/^https?:\/\//i.test(hubApiBaseUrl)) {
+        return new URL(normalizedPath, hubApiBaseUrl).toString();
+    }
+    return `${hubApiBaseUrl.replace(/\/$/, "")}${normalizedPath}`;
 }
 
 async function parseVoiceJson<T>(response: Response): Promise<T> {
