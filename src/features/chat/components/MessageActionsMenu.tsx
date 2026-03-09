@@ -6,6 +6,7 @@ type MessageActionsMenuProps = {
     translationLoading?: boolean;
     translationMode?: TranslationDisplayMode;
     canRetryTranslation?: boolean;
+    canQuoteMessage?: boolean;
     canAssistFromContext: boolean;
     canSendFileToNotebook: boolean;
     canRecallMessage?: boolean;
@@ -13,6 +14,7 @@ type MessageActionsMenuProps = {
     onSetTranslationMode: (mode: TranslationDisplayMode) => void;
     onRetryTranslation?: () => void;
     onCopyMessage: () => void;
+    onQuoteMessage?: () => void;
     onAssistFromContext?: () => void;
     onSendFileToNotebook?: () => void;
     onRecallMessage?: () => void;
@@ -25,6 +27,7 @@ export function MessageActionsMenu({
     translationLoading,
     translationMode,
     canRetryTranslation,
+    canQuoteMessage,
     canAssistFromContext,
     canSendFileToNotebook,
     canRecallMessage,
@@ -32,6 +35,7 @@ export function MessageActionsMenu({
     onSetTranslationMode,
     onRetryTranslation,
     onCopyMessage,
+    onQuoteMessage,
     onAssistFromContext,
     onSendFileToNotebook,
     onRecallMessage,
@@ -99,6 +103,15 @@ export function MessageActionsMenu({
             >
                 {t("chat.copyMessage")}
             </button>
+            {canQuoteMessage && (
+                <button
+                    type="button"
+                    className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                    onClick={onQuoteMessage}
+                >
+                    {t("chat.quoteMessage")}
+                </button>
+            )}
             {canAssistFromContext && (
                 <button
                     type="button"

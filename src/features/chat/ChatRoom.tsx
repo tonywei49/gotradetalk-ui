@@ -14,6 +14,7 @@ import {
     ArrowsPointingOutIcon,
     ArrowsPointingInIcon,
     ClockIcon,
+    XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { PaperAirplaneIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
 import type { MatrixEvent } from "matrix-js-sdk";
@@ -109,7 +110,13 @@ type MessageBubbleProps = {
     onSendFileToNotebook?: (event: MatrixEvent) => void;
     sendFileToNotebookBusy?: boolean;
     onCopyMessage?: (event: MatrixEvent, displayText: string) => void;
+    onQuoteMessage?: (event: MatrixEvent) => void;
     onRecallMessage?: (event: MatrixEvent) => void;
+};
+
+type QuotedMessageDraft = {
+    senderLabel: string;
+    preview: string;
 };
 
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -263,6 +270,46 @@ function getAudioFileExtension(mimeType: string): string {
     return "webm";
 }
 
+function sanitizeQuoteText(value: string): string {
+    return value
+        .replace(/\s+/g, " ")
+        .replace(/^>+\s*/g, "")
+        .trim();
+}
+
+function getQuotedMessagePreview(event: MatrixEvent, fallbackText?: string): string {
+    const content = event.getContent() as { body?: string; msgtype?: string; info?: { duration?: number } } | undefined;
+    const body = sanitizeQuoteText(String(fallbackText || content?.body || ""));
+    const durationSeconds = Math.max(1, Math.round((content?.info?.duration || 0) / 1000));
+
+    switch (content?.msgtype) {
+        case MsgType.Image:
+            return body ? `[圖片] ${body}` : "[圖片]";
+        case MsgType.Video:
+            return body ? `[影片] ${body}` : "[影片]";
+        case MsgType.Audio:
+            return durationSeconds > 0 ? `[語音] ${durationSeconds}秒` : "[語音]";
+        case MsgType.File:
+            return body ? `[檔案] ${body}` : "[檔案]";
+        default:
+            return body;
+    }
+}
+
+function buildQuotedMessageBody(quote: QuotedMessageDraft, nextText: string): string {
+    const preview = sanitizeQuoteText(quote.preview);
+    const safeLines = preview
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 3);
+    const quoteBlock = safeLines.length > 0
+        ? safeLines.map((line) => `> ${line}`).join("\n")
+        : "> ";
+    const senderLine = `> ${quote.senderLabel}`;
+    return `${senderLine}\n${quoteBlock}\n\n${nextText.trim()}`;
+}
+
 const MessageBubble = ({
     event,
     isMe,
@@ -288,6 +335,7 @@ const MessageBubble = ({
     onSendFileToNotebook,
     sendFileToNotebookBusy,
     onCopyMessage,
+    onQuoteMessage,
     onRecallMessage,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
@@ -354,7 +402,8 @@ const MessageBubble = ({
         content?.msgtype !== MsgType.Notice &&
         event.getId(),
     );
-    const hasQuickActions = Boolean(onCopyMessage) || canToggleTranslation || canAssistFromContext || canSendFileToNotebook || canRecallMessage;
+    const canQuoteMessage = Boolean(onQuoteMessage);
+    const hasQuickActions = Boolean(onCopyMessage) || canQuoteMessage || canToggleTranslation || canAssistFromContext || canSendFileToNotebook || canRecallMessage;
     const displayText = showTranslated
         ? hasTranslatedText
             ? (translatedText as string)
@@ -439,6 +488,7 @@ const MessageBubble = ({
                                     translationLoading={translationLoading}
                                     translationMode={effectiveTranslationMode}
                                     canRetryTranslation={canRetryTranslation}
+                                    canQuoteMessage={canQuoteMessage}
                                     canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
@@ -455,6 +505,10 @@ const MessageBubble = ({
                                     onCopyMessage={() => {
                                         setShowQuickActionMenu(false);
                                         onCopyMessage?.(event, displayText);
+                                    }}
+                                    onQuoteMessage={() => {
+                                        setShowQuickActionMenu(false);
+                                        onQuoteMessage?.(event);
                                     }}
                                     onAssistFromContext={() => {
                                         if (!anchorEventId) return;
@@ -630,6 +684,7 @@ const MessageBubble = ({
                                     translationLoading={translationLoading}
                                     translationMode={effectiveTranslationMode}
                                     canRetryTranslation={canRetryTranslation}
+                                    canQuoteMessage={canQuoteMessage}
                                     canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
@@ -646,6 +701,10 @@ const MessageBubble = ({
                                     onCopyMessage={() => {
                                         setShowQuickActionMenu(false);
                                         onCopyMessage?.(event, displayText);
+                                    }}
+                                    onQuoteMessage={() => {
+                                        setShowQuickActionMenu(false);
+                                        onQuoteMessage?.(event);
                                     }}
                                     onAssistFromContext={() => {
                                         if (!anchorEventId) return;
@@ -960,6 +1019,7 @@ export const ChatRoom: React.FC = () => {
     const skipRoomResetOnFirstMountRef = useRef(true);
     const lastReadReceiptEventByRoomRef = useRef<Record<string, string>>({});
     const [composerText, setComposerText] = useState("");
+    const [quotedMessage, setQuotedMessage] = useState<QuotedMessageDraft | null>(null);
     const [isRecordingVoice, setIsRecordingVoice] = useState(false);
     const [recordingSeconds, setRecordingSeconds] = useState(0);
     const [voiceRecordingBusy, setVoiceRecordingBusy] = useState(false);
@@ -1920,8 +1980,9 @@ export const ChatRoom: React.FC = () => {
             return;
         }
         if (!trimmed && readyAttachments.length === 0) return;
+        const finalText = trimmed && quotedMessage ? buildQuotedMessageBody(quotedMessage, trimmed) : trimmed;
         const mentionedUserIds = mentionCandidates
-            .filter((candidate) => new RegExp(`(^|\\s)@${escapeRegExp(candidate.localpart)}(?=\\s|$)`, "i").test(trimmed))
+            .filter((candidate) => new RegExp(`(^|\\s)@${escapeRegExp(candidate.localpart)}(?=\\s|$)`, "i").test(finalText))
             .map((candidate) => candidate.userId);
         const mentionContent =
             mentionedUserIds.length > 0
@@ -1933,10 +1994,11 @@ export const ChatRoom: React.FC = () => {
                 : undefined;
         if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
         setComposerText("");
+        setQuotedMessage(null);
         setActiveMention(null);
         setUploadError(null);
         let sentEventId: string | undefined;
-        if (trimmed) sentEventId = await sendTextMessage(matrixClient, activeRoomId, trimmed, mentionContent);
+        if (finalText) sentEventId = await sendTextMessage(matrixClient, activeRoomId, finalText, mentionContent);
         const peerLang = (directPeerContact?.translation_locale || directPeerContact?.locale || "").trim();
         const shouldPretranslateForClient =
             userType === "staff" &&
@@ -1945,7 +2007,7 @@ export const ChatRoom: React.FC = () => {
             Boolean(translateAccessToken && peerLang && sentEventId);
         pretranslateDirectToClient({
             enabled: shouldPretranslateForClient,
-            text: trimmed,
+            text: finalText,
             messageId: sentEventId,
             roomId: activeRoomId,
             peerLanguage: peerLang,
@@ -1964,7 +2026,7 @@ export const ChatRoom: React.FC = () => {
             Boolean(translateAccessToken && sentEventId);
         pretranslateRoomToClients({
             enabled: shouldPretranslateForRoomClients,
-            text: trimmed,
+            text: finalText,
             messageId: sentEventId,
             roomId: activeRoomId,
             memberIds: joinedMembers.map((member) => member.userId),
@@ -1996,6 +2058,10 @@ export const ChatRoom: React.FC = () => {
             userId,
         });
     };
+
+    useEffect(() => {
+        setQuotedMessage(null);
+    }, [activeRoomId]);
 
     useEffect(() => {
         return () => {
@@ -2059,6 +2125,19 @@ export const ChatRoom: React.FC = () => {
         } catch {
             pushToast("error", t("chat.copyMessageFailed"));
         }
+    };
+
+    const quoteMessage = (event: MatrixEvent): void => {
+        const sender = event.getSender();
+        const senderMember = sender ? room?.getMember(sender) : null;
+        const senderLabel = getUserLabel(sender, senderMember?.name);
+        const preview = getQuotedMessagePreview(event);
+        if (!preview) return;
+        setQuotedMessage({
+            senderLabel,
+            preview,
+        });
+        composerRef.current?.focus();
     };
 
     const onRegenerateAssist = async (): Promise<void> => {
@@ -3084,6 +3163,9 @@ export const ChatRoom: React.FC = () => {
                                 onCopyMessage={(targetEvent, text) => {
                                     void copyMessageContent(targetEvent, text);
                                 }}
+                                onQuoteMessage={(targetEvent) => {
+                                    quoteMessage(targetEvent);
+                                }}
                                 onRecallMessage={(targetEvent) => {
                                     void onRecallMessageEvent(targetEvent);
                                 }}
@@ -3482,6 +3564,24 @@ export const ChatRoom: React.FC = () => {
                         }}
                     />
                     <div className="relative flex-1">
+                        {quotedMessage && (
+                            <div className="mb-2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="font-semibold text-slate-700 dark:text-slate-100">{quotedMessage.senderLabel}</div>
+                                        <div className="truncate">{quotedMessage.preview}</div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setQuotedMessage(null)}
+                                        className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                                        aria-label={t("chat.clearQuotedMessage")}
+                                    >
+                                        <XMarkIcon className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                         <textarea
                             ref={composerRef}
                             data-testid="chat-composer-input"

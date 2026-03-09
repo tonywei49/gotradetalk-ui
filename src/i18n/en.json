@@ -501,6 +501,8 @@
         "copyMessage": "Copy",
         "copyMessageSuccess": "Message copied.",
         "copyMessageFailed": "Failed to copy message.",
+        "quoteMessage": "Quote",
+        "clearQuotedMessage": "Clear quote",
         "recallMessage": "Recall",
         "recallMessageSuccess": "Message recalled.",
         "recallMessageFailed": "Failed to recall message.",

@@ -501,6 +501,8 @@
         "copyMessage": "複製",
         "copyMessageSuccess": "已複製訊息內容。",
         "copyMessageFailed": "複製失敗。",
+        "quoteMessage": "引用",
+        "clearQuotedMessage": "清除引用",
         "recallMessage": "撤回",
         "recallMessageSuccess": "已撤回訊息。",
         "recallMessageFailed": "撤回訊息失敗。",
