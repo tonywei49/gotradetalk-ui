@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import "./i18n";
 import "./index.css";
 import { App } from "./App";
+import { installDesktopHttpBridge } from "./desktop/installDesktopHttpBridge";
+
+installDesktopHttpBridge();
 
 createRoot(document.getElementById("root")!).render(
     <StrictMode>

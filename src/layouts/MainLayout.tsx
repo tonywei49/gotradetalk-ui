@@ -84,6 +84,8 @@ import {
 } from "../services/notebookApi";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
 import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
+import { checkDesktopUpdaterOnce, isTauriDesktop } from "../desktop/useDesktopUpdater";
+import { useToastStore } from "../stores/ToastStore";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -633,6 +635,9 @@ export const MainLayout: React.FC = () => {
     );
     const [notificationSoundMode, setNotificationSoundMode] = useState<NotificationSoundMode>("classic");
     const [notificationSoundHydrated, setNotificationSoundHydrated] = useState(false);
+    const [checkingDesktopUpdate, setCheckingDesktopUpdate] = useState(false);
+    const pushToast = useToastStore((state) => state.pushToast);
+    const desktopUpdaterAvailable = useMemo(() => isTauriDesktop(), []);
     const taskTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const taskAccessToken = !taskTokenExpired && hubAccessToken ? hubAccessToken : matrixAccessToken;
     const taskHsUrl = !taskTokenExpired && hubAccessToken ? null : matrixHsUrl;
@@ -1187,6 +1192,15 @@ export const MainLayout: React.FC = () => {
             setCapabilityError(null);
         }).catch((error) => {
             if (!alive) return;
+            console.error("Notebook capability load failed", {
+                error,
+                status: error instanceof NotebookServiceError ? error.status : null,
+                code: error instanceof NotebookServiceError ? error.code : null,
+                message: error instanceof Error ? error.message : String(error),
+                notebookApiBaseUrlOverride,
+                matrixHsUrl,
+                matrixUserId: matrixCredentials?.user_id ?? null,
+            });
             setCapabilityValues([]);
             setCapabilityLoaded(true);
             if (error instanceof NotebookServiceError) {
@@ -1212,9 +1226,21 @@ export const MainLayout: React.FC = () => {
                     return;
                 }
                 if (error.status >= 500) {
+                    if (isTauriDesktop()) {
+                        setCapabilityError(
+                            `Notebook ${error.status} ${error.code}: ${error.message} @ ${notebookApiBaseUrlOverride || "no-base-url"}`,
+                        );
+                        return;
+                    }
                     setCapabilityError(t("layout.notebook.systemBusy"));
                     return;
                 }
+            }
+            if (isTauriDesktop() && error instanceof Error) {
+                setCapabilityError(
+                    `Notebook init failed: ${error.message} @ ${notebookApiBaseUrlOverride || "no-base-url"}`,
+                );
+                return;
             }
             setCapabilityError(t("layout.notebook.capabilityLoadFailed"));
         });
@@ -3079,6 +3105,32 @@ export const MainLayout: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
+                            {desktopUpdaterAvailable && (
+                                <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
+                                    <div className="mb-2 text-sm text-slate-700 dark:text-slate-100">
+                                        Desktop Updates
+                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={checkingDesktopUpdate}
+                                        onClick={() => {
+                                            if (checkingDesktopUpdate) return;
+                                            setCheckingDesktopUpdate(true);
+                                            void checkDesktopUpdaterOnce(pushToast)
+                                                .catch((error) => {
+                                                    console.warn("Manual desktop updater check failed:", error);
+                                                    pushToast("error", "Failed to check for desktop updates.", 4000);
+                                                })
+                                                .finally(() => {
+                                                    setCheckingDesktopUpdate(false);
+                                                });
+                                        }}
+                                        className="rounded-md border border-gray-200 px-3 py-1 text-xs text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                                    >
+                                        {checkingDesktopUpdate ? "Checking..." : "Check for updates"}
+                                    </button>
+                                </div>
+                            )}
                             <button
                                 type="button"
                                 onClick={onLogout}

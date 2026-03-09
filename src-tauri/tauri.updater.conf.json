@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxQjBGM0RCRTdCMjdCMDIKUldRQ2U3TG4yL093WVVkZysrVkhNUVZwTDZJeHRDbnRuZWUxbzh0V2Y5Z25QcW4xQkc5Y3hnWlEK",
+      "endpoints": []
+    }
+  }
+}

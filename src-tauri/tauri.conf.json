@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "GoTradeTalk",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.gotradetalk.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "GoTradeTalk Client",
-        "width": 800,
-        "height": 600,
+        "title": "GoTradeTalk",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1200,
+        "minHeight": 720,
         "resizable": true,
         "fullscreen": false
       }
@@ -25,6 +27,10 @@
   },
   "bundle": {
     "active": true,
+    "category": "SocialNetworking",
+    "shortDescription": "GoTradeTalk desktop client",
+    "longDescription": "Desktop packaging for the GoTradeTalk chat client.",
+    "publisher": "GoTradeTalk",
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -33,5 +39,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxQjBGM0RCRTdCMjdCMDIKUldRQ2U3TG4yL093WVVkZysrVkhNUVZwTDZJeHRDbnRuZWUxbzh0V2Y5Z25QcW4xQkc5Y3hnWlEK",
+      "endpoints": []
+    }
   }
 }

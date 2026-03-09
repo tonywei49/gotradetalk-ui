@@ -26,5 +26,8 @@ export const notebookApiBaseUrl =
 export const defaultPublicHs =
     (import.meta.env.VITE_DEFAULT_PUBLIC_HS as string | undefined) ?? "https://matrix.gotradetalk.com";
 
+export const desktopWebOrigin =
+    (import.meta.env.VITE_DESKTOP_WEB_ORIGIN as string | undefined) ?? "https://chat.gotradetalk.com";
+
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;

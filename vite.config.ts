@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
     return {
         plugins: [react(), tailwindcss()],
         server: {
+            strictPort: true,
             proxy: {
                 "/api": {
                     target: hubTarget,

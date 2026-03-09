@@ -1,4 +1,5 @@
 import { notebookApiBaseUrl } from "../config";
+import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
 
 export type NotebookApiErrorCode =
     | "MANAGED_BY_PLATFORM"
@@ -251,7 +252,7 @@ async function readError(response: Response): Promise<NotebookServiceError> {
 
 async function getJson<T>(auth: NotebookApiAuth, path: string, query?: Record<string, string>): Promise<T> {
     assertHubJwtToken(auth);
-    const response = await fetch(buildUrl(path, auth, query), {
+    const response = await fetchWithDesktopSupport(buildUrl(path, auth, query), {
         method: "GET",
         cache: "no-store",
         headers: {
@@ -264,7 +265,7 @@ async function getJson<T>(auth: NotebookApiAuth, path: string, query?: Record<st
 
 async function postJson<T>(auth: NotebookApiAuth, path: string, body: Record<string, unknown>): Promise<T> {
     assertHubJwtToken(auth);
-    const response = await fetch(buildUrl(path, auth), {
+    const response = await fetchWithDesktopSupport(buildUrl(path, auth), {
         method: "POST",
         headers: {
             Authorization: `Bearer ${auth.accessToken}`,
@@ -278,7 +279,7 @@ async function postJson<T>(auth: NotebookApiAuth, path: string, body: Record<str
 
 async function patchJson<T>(auth: NotebookApiAuth, path: string, body: Record<string, unknown>): Promise<T> {
     assertHubJwtToken(auth);
-    const response = await fetch(buildUrl(path, auth), {
+    const response = await fetchWithDesktopSupport(buildUrl(path, auth), {
         method: "PATCH",
         headers: {
             Authorization: `Bearer ${auth.accessToken}`,
@@ -292,7 +293,7 @@ async function patchJson<T>(auth: NotebookApiAuth, path: string, body: Record<st
 
 async function deleteRequest<T>(auth: NotebookApiAuth, path: string): Promise<T> {
     assertHubJwtToken(auth);
-    const response = await fetch(buildUrl(path, auth), {
+    const response = await fetchWithDesktopSupport(buildUrl(path, auth), {
         method: "DELETE",
         headers: {
             Authorization: `Bearer ${auth.accessToken}`,
@@ -480,7 +481,7 @@ export async function assistFromContext(
     input: AssistFromContextRequest,
 ): Promise<NotebookAssistResponseDto> {
     assertHubJwtToken(auth);
-    const response = await fetch(buildUrl("/chat/assist/from-context", auth), {
+    const response = await fetchWithDesktopSupport(buildUrl("/chat/assist/from-context", auth), {
         method: "POST",
         headers: {
             Authorization: `Bearer ${auth.accessToken}`,
