@@ -36,6 +36,33 @@ export function normalizeHubLanguage(language?: string | null): string | undefin
     return normalized === "zh-TW" ? "Traditional Chinese" : normalized;
 }
 
+export function isLikelyTargetLanguageMessage(
+    messageBody?: string | null,
+    targetLanguage?: string | null,
+): boolean {
+    const text = (messageBody ?? "").trim();
+    const normalizedTarget = normalizeHubLanguage(targetLanguage)?.toLowerCase() ?? "";
+    if (!text || !normalizedTarget) return false;
+
+    const hasCjk = /[\u3400-\u9fff]/.test(text);
+    const hasLatinWord = /[A-Za-z]{3,}/.test(text);
+
+    if (
+        normalizedTarget === "zh-cn" ||
+        normalizedTarget === "zh-tw" ||
+        normalizedTarget === "traditional chinese" ||
+        normalizedTarget === "chinese"
+    ) {
+        return hasCjk;
+    }
+
+    if (normalizedTarget === "en" || normalizedTarget.startsWith("en-") || normalizedTarget === "english") {
+        return hasLatinWord && !hasCjk;
+    }
+
+    return false;
+}
+
 export function resolveSourceLangHint(
     sourceLanguage?: string | null,
     targetLanguage?: string | null,

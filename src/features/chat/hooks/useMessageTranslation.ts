@@ -3,7 +3,12 @@ import type { MatrixEvent, Room } from "matrix-js-sdk";
 import { hubTranslate } from "../../../api/hub";
 import type { ContactEntry } from "../../../api/contacts";
 import { createTranslationCacheStore } from "../translationCache";
-import { normalizeHubLanguage, resolveSourceLangHint, shouldTranslateIncomingMessage } from "../translationPolicy";
+import {
+    isLikelyTargetLanguageMessage,
+    normalizeHubLanguage,
+    resolveSourceLangHint,
+    shouldTranslateIncomingMessage,
+} from "../translationPolicy";
 
 const TRANSLATION_CACHE_STORAGE_KEY = "gtt_translation_cache_v2";
 const TRANSLATION_CACHE_MAX_ITEMS = 1500;
@@ -137,6 +142,19 @@ export function useMessageTranslation(params: Params) {
             const roomId = activeRoomId ?? "";
             const requestKey = `${roomId}|${messageId}|${targetLanguage}|${messageText}`;
             if (inflightRef.current.has(requestKey)) return;
+
+            if (isLikelyTargetLanguageMessage(messageText, targetLanguage)) {
+                setTranslationMap((prev) => ({
+                    ...prev,
+                    [key]: { text: null, loading: false, error: false, suspect: false },
+                }));
+                setTranslationView((prev) =>
+                    prev[key] === undefined
+                        ? { ...prev, [key]: "original" }
+                        : prev,
+                );
+                return;
+            }
 
             if (!forceRetry && roomId && targetLanguage) {
                 const cachedText = translationCacheStore.read(roomId, messageId, targetLanguage, messageText);

@@ -2,6 +2,7 @@ import { MsgType, type MatrixClient } from "matrix-js-sdk";
 import { hubTranslate } from "../../api/hub";
 import {
     collectRoomClientTargetLanguages,
+    isLikelyTargetLanguageMessage,
     normalizeHubLanguage,
     resolveSourceLangHint,
 } from "./translationPolicy";
@@ -77,6 +78,7 @@ export function pretranslateDirectToClient(params: {
     if (!enabled || !messageId || !translate.accessToken) return;
     const normalizedTargetLang = normalizeHubLanguage(peerLanguage) ?? (peerLanguage ?? "").trim();
     if (!normalizedTargetLang) return;
+    if (isLikelyTargetLanguageMessage(text, normalizedTargetLang)) return;
     const normalizedSourceLangHint = resolveSourceLangHint(translate.sourceLang, normalizedTargetLang);
 
     void hubTranslate({
@@ -122,6 +124,7 @@ export function pretranslateRoomToClients(params: {
 
     targetLangs.forEach((lang) => {
         const normalizedTargetLang = normalizeHubLanguage(lang) ?? lang;
+        if (isLikelyTargetLanguageMessage(text, normalizedTargetLang)) return;
         const normalizedSourceLangHint = resolveSourceLangHint(translate.sourceLang, normalizedTargetLang);
         void hubTranslate({
             accessToken: translate.accessToken as string,
