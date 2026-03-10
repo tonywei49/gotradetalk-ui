@@ -613,7 +613,7 @@ export function NotebookSidebar({
                 )}
                 {mode === "notebook" && listRefreshing && items.length > 0 && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-200">
-                        正在同步中...
+                        {t("layout.notebook.syncing")}
                     </div>
                 )}
                 {mode === "notebook" && listState === "loading" && items.length === 0 && (

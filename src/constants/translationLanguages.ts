@@ -22,6 +22,7 @@ export const translationLanguageOptions: TranslationLanguageOption[] = [
     { value: "es", label: "Español" },
     { value: "pt", label: "Português" },
     { value: "it", label: "Italiano" },
+    { value: "el", label: "Ελληνικά" },
     { value: "tr", label: "Türkçe" },
     { value: "nl", label: "Nederlands" },
     { value: "pl", label: "Polski" },

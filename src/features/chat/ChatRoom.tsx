@@ -2810,7 +2810,7 @@ export const ChatRoom: React.FC = () => {
             >
                 {showingCachedEvents && (
                     <div className="mb-4 rounded-xl border border-emerald-200/70 bg-emerald-50/80 px-4 py-2 text-xs text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300">
-                        {t("chat.syncingLatestMessages", { defaultValue: "正在同步最新消息..." })}
+                        {t("chat.syncingLatestMessages")}
                     </div>
                 )}
                 {isDeprecatedRoom && (
