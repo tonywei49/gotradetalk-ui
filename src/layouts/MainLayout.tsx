@@ -3049,7 +3049,7 @@ export const MainLayout: React.FC = () => {
                             >
                                 {t("layout.translationDefaultContent")}
                             </button>
-                            {pluginSettingsSections.length > 0 && (
+                            {false && pluginSettingsSections.length > 0 && (
                                 <div className="space-y-2 rounded-lg border border-dashed border-emerald-200 px-3 py-3 dark:border-emerald-900/60">
                                     <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                                         Plugins
