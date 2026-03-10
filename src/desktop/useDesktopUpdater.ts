@@ -27,21 +27,11 @@ type PushToast = (type: ToastType, message: string, durationMs?: number) => void
 
 type DesktopUpdateCheckOptions = {
     notifyWhenCurrent: boolean;
+    installWhenAvailable: boolean;
 };
 
 export function isTauriDesktop(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-function formatUpdatePrompt(check: DesktopUpdateCheck): string {
-    const summary = `A new desktop version ${check.version} is available.\nCurrent version: ${check.currentVersion}.`;
-    const notes = check.notes?.trim();
-    if (!notes) {
-        return `${summary}\n\nDownload and install it now?`;
-    }
-
-    const compactNotes = notes.length > 280 ? `${notes.slice(0, 280)}...` : notes;
-    return `${summary}\n\nRelease notes:\n${compactNotes}\n\nDownload and install it now?`;
 }
 
 async function runDesktopUpdateCheck(
@@ -68,8 +58,7 @@ async function runDesktopUpdateCheck(
     }
 
     pushToast("warn", `Update ${check.version} is available.`, 5000);
-    const confirmed = window.confirm(formatUpdatePrompt(check));
-    if (!confirmed) return "idle";
+    if (!options.installWhenAvailable) return "idle";
 
     pushToast("warn", `Downloading update ${check.version}...`, 5000);
     const result = await invoke<DesktopInstallResult>("desktop_install_update");
@@ -81,7 +70,10 @@ async function runDesktopUpdateCheck(
 
 export async function checkDesktopUpdaterOnce(pushToast: PushToast): Promise<"disabled" | "idle" | "installed"> {
     if (!isTauriDesktop()) return "disabled";
-    return runDesktopUpdateCheck(pushToast, { notifyWhenCurrent: true });
+    return runDesktopUpdateCheck(pushToast, {
+        notifyWhenCurrent: true,
+        installWhenAvailable: true,
+    });
 }
 
 export function useDesktopUpdater() {
@@ -96,7 +88,10 @@ export function useDesktopUpdater() {
 
         void (async () => {
             try {
-                await runDesktopUpdateCheck(pushToast, { notifyWhenCurrent: false });
+                await runDesktopUpdateCheck(pushToast, {
+                    notifyWhenCurrent: false,
+                    installWhenAvailable: false,
+                });
                 if (cancelled) return;
             } catch (error) {
                 console.warn("Desktop updater check failed:", error);
