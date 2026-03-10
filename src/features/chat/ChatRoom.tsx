@@ -242,6 +242,17 @@ function formatMessageTimestampLabel(ts: number): string {
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
 
+function formatTypingIndicatorLabel(labels: string[], t: ReturnType<typeof useTranslation>["t"]): string {
+    if (labels.length === 0) return "";
+    if (labels.length === 1) {
+        return t("chat.typingSingle", { name: labels[0] });
+    }
+    if (labels.length === 2) {
+        return t("chat.typingPair", { first: labels[0], second: labels[1] });
+    }
+    return t("chat.typingMultiple", { name: labels[0], count: labels.length - 1 });
+}
+
 function sanitizeQuoteText(value: string): string {
     return value
         .replace(/\s+/g, " ")
@@ -1032,6 +1043,7 @@ export const ChatRoom: React.FC = () => {
     const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
     const [activeMention, setActiveMention] = useState<{ start: number; end: number; query: string } | null>(null);
     const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+    const [typingMemberLabels, setTypingMemberLabels] = useState<string[]>([]);
     const [showTaskQuickCreate, setShowTaskQuickCreate] = useState(false);
     const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1044,6 +1056,10 @@ export const ChatRoom: React.FC = () => {
     const mentionMenuRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const retryFileInputRef = useRef<HTMLInputElement | null>(null);
+    const typingIdleTimerRef = useRef<number | null>(null);
+    const typingHeartbeatTimerRef = useRef<number | null>(null);
+    const typingRoomRef = useRef<string | null>(null);
+    const typingLastSentAtRef = useRef(0);
     const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
@@ -1236,6 +1252,55 @@ export const ChatRoom: React.FC = () => {
         }
         return localpart || displayName || userId || t("common.unknown");
     };
+    const updateTypingMemberLabels = useCallback(() => {
+        if (!room || !userId) {
+            setTypingMemberLabels([]);
+            return;
+        }
+        const labels = room
+            .getMembers()
+            .filter((member) => member.typing && member.userId !== userId)
+            .map((member) => getUserLabel(member.userId, member.name))
+            .filter(Boolean);
+        setTypingMemberLabels(labels);
+    }, [room, userId]);
+    const stopTypingNotice = useCallback((roomId?: string | null) => {
+        if (typingIdleTimerRef.current) {
+            window.clearTimeout(typingIdleTimerRef.current);
+            typingIdleTimerRef.current = null;
+        }
+        if (typingHeartbeatTimerRef.current) {
+            window.clearInterval(typingHeartbeatTimerRef.current);
+            typingHeartbeatTimerRef.current = null;
+        }
+        const targetRoomId = typingRoomRef.current ?? roomId ?? null;
+        if (matrixClient && targetRoomId) {
+            void matrixClient.sendTyping(targetRoomId, false, 0).catch(() => undefined);
+        }
+        typingRoomRef.current = null;
+        typingLastSentAtRef.current = 0;
+    }, [matrixClient]);
+    const startTypingNotice = useCallback((roomId: string) => {
+        if (!matrixClient || !userId) return;
+        const now = Date.now();
+        const shouldSend =
+            typingRoomRef.current !== roomId || now - typingLastSentAtRef.current >= 3000;
+        if (typingRoomRef.current && typingRoomRef.current !== roomId) {
+            void matrixClient.sendTyping(typingRoomRef.current, false, 0).catch(() => undefined);
+        }
+        typingRoomRef.current = roomId;
+        if (shouldSend) {
+            typingLastSentAtRef.current = now;
+            void matrixClient.sendTyping(roomId, true, 5000).catch(() => undefined);
+        }
+        if (!typingHeartbeatTimerRef.current) {
+            typingHeartbeatTimerRef.current = window.setInterval(() => {
+                if (!typingRoomRef.current) return;
+                typingLastSentAtRef.current = Date.now();
+                void matrixClient.sendTyping(typingRoomRef.current, true, 5000).catch(() => undefined);
+            }, 4000);
+        }
+    }, [matrixClient, userId]);
     const emojiStorageKey = useMemo(() => `gtt_recent_emojis:${userId ?? "guest"}`, [userId]);
 
     const getMatrixHost = (hsUrl: string | null): string | null => {
@@ -1477,6 +1542,45 @@ export const ChatRoom: React.FC = () => {
     };
 
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));
+    useEffect(() => {
+        updateTypingMemberLabels();
+        if (!matrixClient) return;
+        const handleTyping = (): void => {
+            updateTypingMemberLabels();
+        };
+        matrixClient.on("RoomMember.typing" as never, handleTyping as never);
+        return () => {
+            matrixClient.off("RoomMember.typing" as never, handleTyping as never);
+        };
+    }, [matrixClient, updateTypingMemberLabels]);
+
+    useEffect(() => {
+        if (!activeRoomId || isDeprecatedRoom || isDirectPeerAbsent) {
+            stopTypingNotice();
+            return;
+        }
+        const hasDraft = composerText.trim().length > 0;
+        if (!hasDraft) {
+            stopTypingNotice(activeRoomId);
+            return;
+        }
+        startTypingNotice(activeRoomId);
+        if (typingIdleTimerRef.current) {
+            window.clearTimeout(typingIdleTimerRef.current);
+        }
+        typingIdleTimerRef.current = window.setTimeout(() => {
+            stopTypingNotice(activeRoomId);
+        }, 2000);
+        return () => {
+            if (typingIdleTimerRef.current) {
+                window.clearTimeout(typingIdleTimerRef.current);
+                typingIdleTimerRef.current = null;
+            }
+        };
+    }, [activeRoomId, composerText, isDeprecatedRoom, isDirectPeerAbsent, startTypingNotice, stopTypingNotice]);
+
+    useEffect(() => () => stopTypingNotice(), [stopTypingNotice]);
+
     const joinedMembers = room?.getJoinedMembers() ?? [];
     const invitedMembers = room?.getMembersWithMembership("invite") ?? [];
     const memberCount = joinedMembers.length;
@@ -1950,6 +2054,7 @@ export const ChatRoom: React.FC = () => {
                 }
                 : undefined;
         if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
+        stopTypingNotice(activeRoomId);
         setComposerText("");
         setQuotedMessage(null);
         setActiveMention(null);
@@ -3220,6 +3325,14 @@ export const ChatRoom: React.FC = () => {
                 )}
 
                 {/* Input Area */}
+                {typingMemberLabels.length > 0 && (
+                    <div className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        <TranslationTypingIndicator isMe={false} />
+                        <span className="truncate">
+                            {formatTypingIndicatorLabel(typingMemberLabels, t)}
+                        </span>
+                    </div>
+                )}
                 <div className="flex gap-3 items-end">
                     <input
                         ref={fileInputRef}
