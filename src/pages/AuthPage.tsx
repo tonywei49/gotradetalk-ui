@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -137,13 +137,6 @@ export function AuthPage() {
             data.subscription.unsubscribe();
         };
     }, [navigate]);
-
-    const hsPreview = useMemo(() => {
-        const trimmed = companySlug.trim().toLowerCase();
-        const normalizedTld = normalizeCompanyTld(companyTld);
-        if (!trimmed) return "https://matrix.{slug}.com";
-        return `https://matrix.${trimmed}.${normalizedTld}`;
-    }, [companySlug, companyTld]);
 
     const onSwitchLanguage = (language: DisplayLanguage): void => {
         setLanguage(language);
@@ -566,7 +559,6 @@ export function AuthPage() {
                                 autoComplete="current-password"
                             />
                         </label>
-                        <div className="gt_hint">{t("auth.notes.companyHint", { hs: hsPreview })}</div>
                         <div className="gt_actions">
                             <button type="submit" className="gt_primary" disabled={companyBusy}>
                                 {companyBusy ? t("auth.company.loginBusy") : t("auth.company.loginAction")}

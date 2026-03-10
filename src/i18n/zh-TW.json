@@ -11,7 +11,7 @@
     "auth": {
         "tabs": {
             "client": "我是客戶",
-            "company": "我是員工"
+            "company": "我是公司"
         },
         "client": {
             "title": "客戶入口",
@@ -40,7 +40,7 @@
             "resetBack": "返回登入"
         },
         "company": {
-            "title": "員工入口",
+            "title": "公司入口",
             "subtitle": "使用公司 Matrix 帳號登入",
             "loginAction": "登入",
             "loginBusy": "登入中...",

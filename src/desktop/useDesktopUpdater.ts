@@ -52,6 +52,9 @@ async function runDesktopUpdateCheck(
     if (!status.enabled) {
         if (status.reason) {
             console.info("Desktop updater disabled:", status.reason);
+            if (options.notifyWhenCurrent) {
+                pushToast("warn", `Desktop updater is unavailable for this build: ${status.reason}`, 4500);
+            }
         }
         return "disabled";
     }
