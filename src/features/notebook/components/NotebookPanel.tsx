@@ -1,4 +1,5 @@
 import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../types";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useRef, useState } from "react";
 import { NotebookParsedSection } from "./NotebookParsedSection";
@@ -44,8 +45,7 @@ type NotebookPanelProps = {
     onChunkSettingsChange?: (settings: ChunkSettings) => void;
 };
 
-function indexHint(item: NotebookItem): { tone: string; text: string } {
-    const { t } = useTranslation();
+function indexHint(item: NotebookItem, t: TFunction): { tone: string; text: string } {
     if (!item.isIndexable) {
         return {
             tone: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
@@ -137,7 +137,7 @@ export function NotebookPanel({
             tone: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
             text: t("layout.notebook.draftHint", "Draft not saved yet. Finish the content and choose to save it as knowledge or note."),
         }
-        : indexHint(selectedItem as NotebookItem);
+        : indexHint(selectedItem as NotebookItem, t);
     const isCompanyReadOnly = Boolean(!isCreatingDraft && (selectedItem?.sourceScope === "company" || selectedItem?.readOnly));
 
     return (
