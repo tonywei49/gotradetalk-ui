@@ -37,6 +37,7 @@ import { CreateRoomModal } from "../features/groups/CreateRoomModal";
 // RoomDetailsPanel 將在 ChatRoom 中整合使用
 // import { RoomDetailsPanel, isRoomWithMultipleMembers } from "../features/groups/RoomDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
+import { displayLanguageOptions, isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import {
     ensureNotificationSoundEnabled,
     isNotificationSoundSupported,
@@ -621,10 +622,7 @@ export const MainLayout: React.FC = () => {
     const accountSubtitle = accountSubtitleParts.length
         ? accountSubtitleParts.join(" · ")
         : t("layout.accountSubtitleFallback");
-    const displayLangOptions = [
-        { value: "en", label: t("language.english") },
-        { value: "zh-CN", label: t("language.chineseSimplified") },
-    ];
+    const displayLangOptions = displayLanguageOptions;
     const localeTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const translationDefaultStorageKey = useMemo(
         () => `gtt_translation_default_view:${matrixCredentials?.user_id ?? "guest"}`,
@@ -841,7 +839,7 @@ export const MainLayout: React.FC = () => {
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
         setDisplayLanguage(value);
-        if (value === "en" || value === "zh-CN") {
+        if (isSupportedDisplayLanguage(value)) {
             setLanguage(value);
         }
         try {
@@ -852,7 +850,7 @@ export const MainLayout: React.FC = () => {
             }
         } catch {
             setDisplayLanguage(previous);
-            if (previous === "en" || previous === "zh-CN") {
+            if (isSupportedDisplayLanguage(previous)) {
                 setLanguage(previous);
             }
         }
@@ -1098,7 +1096,7 @@ export const MainLayout: React.FC = () => {
                 setNotebookApiBaseUrlOverride(response.notebook_api_base_url ?? null);
                 if (response.profile?.locale) {
                     setDisplayLanguage(response.profile.locale);
-                    if (response.profile.locale === "en" || response.profile.locale === "zh-CN") {
+                    if (isSupportedDisplayLanguage(response.profile.locale)) {
                         setLanguage(response.profile.locale);
                     }
                 }

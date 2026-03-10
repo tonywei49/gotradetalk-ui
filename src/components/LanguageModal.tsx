@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { displayLanguageOptions, type DisplayLanguage } from "../constants/displayLanguages";
 import "./LanguageModal.css";
 
 type LanguageModalProps = {
     open: boolean;
-    onSave: (language: "en" | "zh-CN") => Promise<void>;
+    onSave: (language: DisplayLanguage) => Promise<void>;
 };
 
 export function LanguageModal({ open, onSave }: LanguageModalProps) {
     const { t } = useTranslation();
-    const [language, setLanguage] = useState<"en" | "zh-CN" | "">("");
+    const [language, setLanguage] = useState<DisplayLanguage | "">("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -42,26 +43,18 @@ export function LanguageModal({ open, onSave }: LanguageModalProps) {
                 </div>
                 <p className="gt_modalSubtitle">{t("languageModal.subtitle")}</p>
                 <div className="gt_languageOptions">
-                    <label className="gt_languageOption">
-                        <input
-                            type="radio"
-                            name="language"
-                            value="en"
-                            checked={language === "en"}
-                            onChange={() => setLanguage("en")}
-                        />
-                        <span>{t("language.english")}</span>
-                    </label>
-                    <label className="gt_languageOption">
-                        <input
-                            type="radio"
-                            name="language"
-                            value="zh-CN"
-                            checked={language === "zh-CN"}
-                            onChange={() => setLanguage("zh-CN")}
-                        />
-                        <span>{t("language.chineseSimplified")}</span>
-                    </label>
+                    {displayLanguageOptions.map((option) => (
+                        <label key={option.value} className="gt_languageOption">
+                            <input
+                                type="radio"
+                                name="language"
+                                value={option.value}
+                                checked={language === option.value}
+                                onChange={() => setLanguage(option.value)}
+                            />
+                            <span>{option.label}</span>
+                        </label>
+                    ))}
                 </div>
                 {error && <div className="gt_error">{error}</div>}
                 <div className="gt_actions">

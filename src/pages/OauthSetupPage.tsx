@@ -8,6 +8,7 @@ import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
+import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n";
 import { useAuthStore } from "../stores/AuthStore";
@@ -164,7 +165,7 @@ export function OauthSetupPage() {
                     setShowLanguageModal(true);
                     return;
                 }
-                setLanguage(language === "zh-CN" ? "zh-CN" : "en");
+                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
                 setAuthSession({
                     userType: "client",
                     matrixCredentials: response.matrix,

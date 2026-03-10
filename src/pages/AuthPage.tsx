@@ -17,6 +17,7 @@ import {
     updateStaffLanguage,
 } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
+import { displayLanguageOptions, isSupportedDisplayLanguage, type DisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { LanguageModal } from "../components/LanguageModal";
 import { setLanguage } from "../i18n";
@@ -144,7 +145,7 @@ export function AuthPage() {
         return `https://matrix.${trimmed}.${normalizedTld}`;
     }, [companySlug, companyTld]);
 
-    const onSwitchLanguage = (language: "en" | "zh-CN"): void => {
+    const onSwitchLanguage = (language: DisplayLanguage): void => {
         setLanguage(language);
     };
 
@@ -211,7 +212,7 @@ export function AuthPage() {
                     setShowLanguageModal(true);
                     return;
                 }
-                setLanguage(language === "zh-CN" ? "zh-CN" : "en");
+                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
                 setAuthSession({
                     userType: "client",
                     matrixCredentials: response.matrix,
@@ -283,7 +284,7 @@ export function AuthPage() {
                     setShowLanguageModal(true);
                     return;
                 }
-                setLanguage(language === "zh-CN" ? "zh-CN" : "en");
+                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
                 setAuthSession({
                     userType: "staff",
                     matrixCredentials: {
@@ -413,11 +414,14 @@ export function AuthPage() {
                     <select
                         id="gt_lang_select"
                         className="gt_langSelect"
-                        value={i18n.language === "zh-CN" ? "zh-CN" : "en"}
-                        onChange={(event) => onSwitchLanguage(event.target.value as "en" | "zh-CN")}
+                        value={isSupportedDisplayLanguage(i18n.language) ? i18n.language : "en"}
+                        onChange={(event) => onSwitchLanguage(event.target.value as DisplayLanguage)}
                     >
-                        <option value="en">{t("language.english")}</option>
-                        <option value="zh-CN">{t("language.chineseSimplified")}</option>
+                        {displayLanguageOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
                     </select>
                 </div>
             </header>
