@@ -1,4 +1,5 @@
 
+import { useTranslation } from "react-i18next";
 
 export type ChunkSettings = {
     enabled: boolean;
@@ -20,10 +21,19 @@ type ChunkSettingsPanelProps = {
 };
 
 export function ChunkSettingsPanel({ settings, onChange }: ChunkSettingsPanelProps) {
+    const { t } = useTranslation();
+    const strategyOptions = [
+        { value: "smart", label: t("layout.notebook.chunkStrategySmart", "Smart (default)") },
+        { value: "paragraph", label: t("layout.notebook.chunkStrategyParagraph", "Paragraph (\\n\\n)") },
+        { value: "heading", label: t("layout.notebook.chunkStrategyHeading", "Heading (##)") },
+        { value: "custom", label: t("layout.notebook.chunkStrategyCustom", "Custom") },
+    ] as const;
     return (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
             <div className="flex items-center gap-3 mb-2">
-                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">自訂切片設定</span>
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    {t("layout.notebook.chunkCustomSettings", "Custom chunk settings")}
+                </span>
                 <button
                     type="button"
                     onClick={() => onChange({ ...settings, enabled: !settings.enabled })}
@@ -41,14 +51,11 @@ export function ChunkSettingsPanel({ settings, onChange }: ChunkSettingsPanelPro
             {settings.enabled && (
                 <div className="space-y-3 mt-3">
                     <div>
-                        <div className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">切片方式</div>
+                        <div className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                            {t("layout.notebook.chunkStrategyLabel", "Chunk strategy")}
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                            {([
-                                { value: "smart", label: "智能（默認）" },
-                                { value: "paragraph", label: "段落（\\n\\n）" },
-                                { value: "heading", label: "標題（##）" },
-                                { value: "custom", label: "自訂" },
-                            ] as const).map((option) => (
+                            {strategyOptions.map((option) => (
                                 <button
                                     key={option.value}
                                     type="button"
@@ -65,18 +72,22 @@ export function ChunkSettingsPanel({ settings, onChange }: ChunkSettingsPanelPro
                     </div>
                     {settings.strategy === "custom" && (
                         <div>
-                            <div className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">自訂分隔符</div>
+                            <div className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                                {t("layout.notebook.chunkSeparatorLabel", "Custom separator")}
+                            </div>
                             <input
                                 type="text"
                                 value={settings.separator}
                                 onChange={(e) => onChange({ ...settings, separator: e.target.value })}
-                                placeholder="例如: \n\n 或 ---"
+                                placeholder={t("layout.notebook.chunkSeparatorPlaceholder", "For example: \\n\\n or ---")}
                                 className="w-full max-w-[280px] rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
                             />
                         </div>
                     )}
                     <div>
-                        <div className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">每段字數：{settings.chunkSize}</div>
+                        <div className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                            {t("layout.notebook.chunkSizeLabel", "Characters per chunk: {{size}}", { size: settings.chunkSize })}
+                        </div>
                         <input
                             type="range"
                             min={300}

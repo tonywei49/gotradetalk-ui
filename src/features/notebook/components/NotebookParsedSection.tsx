@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { NotebookChunk, NotebookParsedPreview } from "../types";
 import { NOTEBOOK_CHUNKS_PAGE_SIZE } from "../constants";
+import { useTranslation } from "react-i18next";
 
 type NotebookParsedSectionProps = {
     previewBusy: boolean;
@@ -17,6 +18,7 @@ export function NotebookParsedSection({
     chunks,
     chunksTotal,
 }: NotebookParsedSectionProps) {
+    const { t } = useTranslation();
     const [chunkPage, setChunkPage] = useState(1);
 
     const chunkPageCount = useMemo(() => {
@@ -32,17 +34,22 @@ export function NotebookParsedSection({
 
     return (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            <div className="mb-2 font-semibold">Parsed preview & chunks</div>
+            <div className="mb-2 font-semibold">{t("layout.notebook.parsedSectionTitle", "Parsed preview & chunks")}</div>
             {previewBusy ? (
-                <div className="text-slate-500 dark:text-slate-400">Loading parsed result...</div>
+                <div className="text-slate-500 dark:text-slate-400">{t("layout.notebook.parsedLoading", "Loading parsed result...")}</div>
             ) : previewError ? (
                 <div className="text-rose-600 dark:text-rose-300">{previewError}</div>
             ) : !parsedPreview ? (
-                <div className="text-slate-500 dark:text-slate-400">No parsed result yet.</div>
+                <div className="text-slate-500 dark:text-slate-400">{t("layout.notebook.parsedEmpty", "No parsed result yet.")}</div>
             ) : (
                 <div className="space-y-2">
                     <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Total chunks: {parsedPreview.chunkCountTotal} · Sampled: {parsedPreview.chunkCountSampled} · Chars: {parsedPreview.totalChars} · Tokens: {parsedPreview.totalTokens}
+                        {t("layout.notebook.parsedStats", "Total chunks: {{total}} · Sampled: {{sampled}} · Chars: {{chars}} · Tokens: {{tokens}}", {
+                            total: parsedPreview.chunkCountTotal,
+                            sampled: parsedPreview.chunkCountSampled,
+                            chars: parsedPreview.totalChars,
+                            tokens: parsedPreview.totalTokens,
+                        })}
                     </div>
                     <textarea
                         readOnly
@@ -54,7 +61,7 @@ export function NotebookParsedSection({
                         {visibleChunks.map((chunk) => (
                             <div key={chunk.id} className="rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
                                 <div className="mb-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                    #{chunk.chunkIndex} · {chunk.sourceType || "unknown"} {chunk.sourceLocator ? `· ${chunk.sourceLocator}` : ""}
+                                    #{chunk.chunkIndex} · {chunk.sourceType || t("layout.notebook.unknownSource", "unknown")} {chunk.sourceLocator ? `· ${chunk.sourceLocator}` : ""}
                                 </div>
                                 <div className="max-h-24 overflow-auto whitespace-pre-wrap text-[12px] text-slate-700 dark:text-slate-100">
                                     {chunk.chunkText}
@@ -64,7 +71,11 @@ export function NotebookParsedSection({
                         {Math.max(chunks.length, chunksTotal) > NOTEBOOK_CHUNKS_PAGE_SIZE && (
                             <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
                                 <div>
-                                    Page {chunkPageSafe}/{chunkPageCount} · Total {Math.max(chunks.length, chunksTotal)} chunks
+                                    {t("layout.notebook.chunkPagination", "Page {{page}}/{{pageCount}} · Total {{total}} chunks", {
+                                        page: chunkPageSafe,
+                                        pageCount: chunkPageCount,
+                                        total: Math.max(chunks.length, chunksTotal),
+                                    })}
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
@@ -73,7 +84,7 @@ export function NotebookParsedSection({
                                         disabled={chunkPageSafe <= 1}
                                         className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50 dark:border-slate-600"
                                     >
-                                        Prev
+                                        {t("common.prev", "Prev")}
                                     </button>
                                     <button
                                         type="button"
@@ -81,7 +92,7 @@ export function NotebookParsedSection({
                                         disabled={chunkPageSafe >= chunkPageCount}
                                         className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50 dark:border-slate-600"
                                     >
-                                        Next
+                                        {t("common.next", "Next")}
                                     </button>
                                 </div>
                             </div>

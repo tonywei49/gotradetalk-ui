@@ -302,21 +302,21 @@ export function NotebookSidebar({
                                 onClick={() => applyQuickFilter("allSources")}
                                 className={`rounded-full px-2 py-1 ${quickFilter === "allSources" ? "bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}
                             >
-                                全部來源
+                                {t("layout.notebook.filterAllSources", "All sources")}
                             </button>
                             <button
                                 type="button"
                                 onClick={() => applyQuickFilter("knowledge")}
                                 className={`rounded-full px-2 py-1 ${quickFilter === "knowledge" ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"}`}
                             >
-                                知識庫
+                                {t("layout.notebook.filterKnowledge", "Knowledge")}
                             </button>
                             <button
                                 type="button"
                                 onClick={() => applyQuickFilter("note")}
                                 className={`rounded-full px-2 py-1 ${quickFilter === "note" ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}
                             >
-                                記事本
+                                {t("layout.notebook.filterNote", "Note")}
                             </button>
                             {showCompanyFilter && (
                                 <button
@@ -324,7 +324,7 @@ export function NotebookSidebar({
                                     onClick={() => applyQuickFilter("company")}
                                     className={`rounded-full px-2 py-1 ${quickFilter === "company" ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"}`}
                                 >
-                                    公司資料
+                                    {t("layout.notebook.filterCompany", "Company")}
                                 </button>
                             )}
                         </div>
@@ -658,10 +658,14 @@ export function NotebookSidebar({
                             <div className="mt-2 flex items-center justify-between">
                                 <div className="flex items-center gap-1">
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${item.sourceScope === "company" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
-                                        {item.sourceScope === "company" ? "公司資料" : "個人"}
+                                        {item.sourceScope === "company"
+                                            ? t("layout.notebook.itemScopeCompany", "Company")
+                                            : t("layout.notebook.itemScopePersonal", "Personal")}
                                     </span>
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${typeChip(item.isIndexable)}`}>
-                                        {item.isIndexable ? "知識庫" : "記事本"}
+                                        {item.isIndexable
+                                            ? t("layout.notebook.itemTypeKnowledge", "Knowledge")
+                                            : t("layout.notebook.itemTypeNote", "Note")}
                                     </span>
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${indexStateChip(item.indexStatus)}`}>
                                         {item.indexStatus}

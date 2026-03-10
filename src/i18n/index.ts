@@ -13,6 +13,7 @@ import pt from "./pt.json";
 import ru from "./ru.json";
 import vi from "./vi.json";
 import zhCN from "./zh-CN.json";
+import zhTW from "./zh-TW.json";
 
 const STORAGE_KEY = "gt_lang";
 const defaultLanguage: DisplayLanguage = "en";
@@ -36,6 +37,7 @@ void i18n.use(initReactI18next).init({
         ru: { translation: ru },
         vi: { translation: vi },
         "zh-CN": { translation: zhCN },
+        "zh-TW": { translation: zhTW },
     },
     lng: storedLanguage ?? defaultLanguage,
     fallbackLng: defaultLanguage,

@@ -45,33 +45,36 @@ type NotebookPanelProps = {
 };
 
 function indexHint(item: NotebookItem): { tone: string; text: string } {
+    const { t } = useTranslation();
     if (!item.isIndexable) {
         return {
             tone: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
-            text: "目前為記事本模式，不參與知識庫檢索。",
+            text: t("layout.notebook.noteModeHint", "Currently in note mode. This item is not included in knowledge retrieval."),
         };
     }
     if (item.indexStatus === "pending") {
         return {
             tone: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/30 dark:text-amber-200",
-            text: "索引排隊中，稍後可檢索。",
+            text: t("layout.notebook.indexPendingHint", "Index queued. Search will be available soon."),
         };
     }
     if (item.indexStatus === "running") {
         return {
             tone: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/30 dark:text-sky-200",
-            text: "索引中，約數秒可檢索。",
+            text: t("layout.notebook.indexRunningHint", "Indexing in progress. Search will be available in a few seconds."),
         };
     }
     if (item.indexStatus === "failed") {
         return {
             tone: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200",
-            text: item.indexError ? `索引失敗：${item.indexError}` : "索引失敗，請稍後重試。",
+            text: item.indexError
+                ? t("layout.notebook.indexFailedWithError", "Index failed: {{error}}", { error: item.indexError })
+                : t("layout.notebook.indexFailedHint", "Index failed. Please try again later."),
         };
     }
     return {
         tone: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-900/30 dark:text-emerald-200",
-        text: "索引完成，可供檢索。",
+        text: t("layout.notebook.indexSuccessHint", "Index complete. This item is ready for retrieval."),
     };
 }
 
@@ -116,7 +119,7 @@ export function NotebookPanel({
     if (!enabled) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
-                Notebook capability unavailable.
+                {t("layout.notebook.capabilityUnavailable", "Notebook capability unavailable.")}
             </div>
         );
     }
@@ -124,7 +127,7 @@ export function NotebookPanel({
     if (!selectedItem && !isCreatingDraft) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
-                Select or create a notebook item.
+                {t("layout.notebook.selectItemEmpty", "Select or create a notebook item.")}
             </div>
         );
     }
@@ -132,7 +135,7 @@ export function NotebookPanel({
     const hint = isCreatingDraft
         ? {
             tone: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
-            text: "草稿尚未保存，完成內容後請選擇保存為知識庫或記事本。",
+            text: t("layout.notebook.draftHint", "Draft not saved yet. Finish the content and choose to save it as knowledge or note."),
         }
         : indexHint(selectedItem as NotebookItem);
     const isCompanyReadOnly = Boolean(!isCreatingDraft && (selectedItem?.sourceScope === "company" || selectedItem?.readOnly));
@@ -151,13 +154,17 @@ export function NotebookPanel({
                             &lt;
                         </button>
                     )}
-                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Notebook Detail</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        {t("layout.notebook.detailTitle", "Notebook Detail")}
+                    </div>
                 </div>
                 <div className={`mt-2 rounded-lg border px-3 py-2 text-sm ${hint.tone}`}>{hint.text}</div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar p-6 space-y-4">
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Title</div>
+                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                        {t("layout.notebook.fieldTitle", "Title")}
+                    </div>
                     <input
                         type="text"
                         value={editorTitle}
@@ -167,7 +174,9 @@ export function NotebookPanel({
                     />
                 </label>
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Content</div>
+                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                        {t("layout.notebook.fieldContent", "Content")}
+                    </div>
                     <textarea
                         value={editorContent}
                         readOnly={!isEditing || isCompanyReadOnly}
@@ -178,14 +187,16 @@ export function NotebookPanel({
                 </label>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <div className="mb-2 font-semibold">
-                        Attached files ({isCreatingDraft ? (draftFiles?.length || 0) : (selectedItem?.files.length || 0)})
+                        {t("layout.notebook.attachedFiles", "Attached files")} ({isCreatingDraft ? (draftFiles?.length || 0) : (selectedItem?.files.length || 0)})
                     </div>
                     <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
-                        單檔上限：{uploadLimitMb}MB
+                        {t("layout.notebook.singleFileLimit", "Single file limit: {{size}}MB", { size: uploadLimitMb })}
                     </div>
                     {isCreatingDraft ? (
                         (draftFiles?.length || 0) === 0 ? (
-                            <div className="text-slate-500 dark:text-slate-400">可先上傳/連結檔案，保存時會一起寫入。</div>
+                            <div className="text-slate-500 dark:text-slate-400">
+                                {t("layout.notebook.draftFilesHint", "You can upload or link files first. They will be saved together with the draft.")}
+                            </div>
                         ) : (
                             <div className="space-y-2">
                                 {(draftFiles || []).map((file) => (
@@ -199,7 +210,7 @@ export function NotebookPanel({
                                                 onClick={() => onPreviewFile(file)}
                                                 className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
                                             >
-                                                Preview
+                                                {t("layout.notebook.previewFile", "Preview")}
                                             </button>
                                             {isEditing && !isCompanyReadOnly && (
                                                 <button
@@ -208,7 +219,7 @@ export function NotebookPanel({
                                                     disabled={busy}
                                                     className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
                                                 >
-                                                    Remove
+                                                    {t("layout.notebook.removeFile", "Remove")}
                                                 </button>
                                             )}
                                         </div>
@@ -217,7 +228,7 @@ export function NotebookPanel({
                             </div>
                         )
                     ) : (selectedItem?.files.length || 0) === 0 ? (
-                        <div className="text-slate-500 dark:text-slate-400">No files yet.</div>
+                        <div className="text-slate-500 dark:text-slate-400">{t("layout.notebook.noFiles", "No files yet.")}</div>
                     ) : (
                         <div className="space-y-2">
                             {(selectedItem?.files || []).map((file) => (
@@ -231,14 +242,14 @@ export function NotebookPanel({
                                             onClick={() => onPreviewFile(file)}
                                             className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
                                         >
-                                            Preview
+                                            {t("layout.notebook.previewFile", "Preview")}
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => onDownloadFile(file.matrixMediaMxc, file.matrixMediaName)}
                                             className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
                                         >
-                                            Download
+                                            {t("layout.notebook.downloadFile", "Download")}
                                         </button>
                                         {isEditing && !isCompanyReadOnly && (
                                             <button
@@ -247,7 +258,7 @@ export function NotebookPanel({
                                                 disabled={busy}
                                                 className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
                                             >
-                                                Remove
+                                                {t("layout.notebook.removeFile", "Remove")}
                                             </button>
                                         )}
                                     </div>
@@ -273,14 +284,18 @@ export function NotebookPanel({
                 )}
                 {!isCreatingDraft && selectedItem?.indexStatus === "failed" && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                        <div>{selectedItem.indexError ? `索引失敗：${selectedItem.indexError}` : "索引失敗"}</div>
+                        <div>
+                            {selectedItem.indexError
+                                ? t("layout.notebook.indexFailedWithError", "Index failed: {{error}}", { error: selectedItem.indexError })
+                                : t("layout.notebook.indexFailedShort", "Index failed")}
+                        </div>
                         <button
                             type="button"
                             onClick={onRetryIndex}
                             disabled={busy}
                             className="mt-2 rounded border border-rose-300 px-2 py-1 text-xs font-semibold disabled:opacity-60 dark:border-rose-700"
                         >
-                            重試索引
+                            {t("layout.notebook.retryIndex", "Retry index")}
                         </button>
                     </div>
                 )}
@@ -306,7 +321,7 @@ export function NotebookPanel({
                                 disabled={busy}
                                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                保存為知識庫
+                                {t("layout.notebook.saveAsKnowledge", "Save as knowledge")}
                             </button>
                             <button
                                 type="button"
@@ -314,7 +329,7 @@ export function NotebookPanel({
                                 disabled={busy}
                                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
                             >
-                                保存為記事本
+                                {t("layout.notebook.saveAsNote", "Save as note")}
                             </button>
                             <button
                                 type="button"
@@ -322,7 +337,7 @@ export function NotebookPanel({
                                 disabled={busy}
                                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
                             >
-                                Upload file
+                                {t("layout.notebook.uploadFile", "Upload file")}
                             </button>
                             <button
                                 type="button"
@@ -330,7 +345,7 @@ export function NotebookPanel({
                                 disabled={busy}
                                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
                             >
-                                Link file
+                                {t("layout.notebook.linkFile", "Link file")}
                             </button>
                             {!isCreatingDraft && (
                                 <>
@@ -340,7 +355,7 @@ export function NotebookPanel({
                                         disabled={busy}
                                         className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
                                     >
-                                        Delete
+                                        {t("common.delete", "Delete")}
                                     </button>
                                 </>
                             )}
@@ -350,7 +365,7 @@ export function NotebookPanel({
                                 disabled={busy}
                                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300"
                             >
-                                取消編輯
+                                {t("layout.notebook.cancelEdit", "Cancel edit")}
                             </button>
                         </>
                     ) : (
@@ -362,7 +377,7 @@ export function NotebookPanel({
                                     disabled={busy}
                                     className="rounded-lg bg-[#2F5C56] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    編輯
+                                    {t("common.edit", "Edit")}
                                 </button>
                             )}
                             {!isCompanyReadOnly && !selectedItem?.isIndexable ? (
@@ -372,7 +387,7 @@ export function NotebookPanel({
                                     disabled={busy}
                                     className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
                                 >
-                                    轉為知識庫
+                                    {t("layout.notebook.switchToKnowledge", "Convert to knowledge")}
                                 </button>
                             ) : !isCompanyReadOnly ? (
                                 <button
@@ -381,11 +396,11 @@ export function NotebookPanel({
                                     disabled={busy}
                                     className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
                                 >
-                                    轉為記事本
+                                    {t("layout.notebook.switchToNote", "Convert to note")}
                                 </button>
                             ) : (
                                 <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-200">
-                                    公司知識條目為只讀，不可編輯或刪除。
+                                    {t("layout.notebook.companyReadOnlyHint", "Company knowledge items are read-only and cannot be edited or deleted.")}
                                 </div>
                             )}
                         </>
@@ -395,7 +410,9 @@ export function NotebookPanel({
             {showChunkConfirm && chunkSettings && onChunkSettingsChange && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
                     <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                        <div className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100">保存為知識庫前設定切片</div>
+                        <div className="mb-3 text-base font-semibold text-slate-800 dark:text-slate-100">
+                            {t("layout.notebook.chunkSettingsTitle", "Configure chunks before saving as knowledge")}
+                        </div>
                         <ChunkSettingsPanel settings={chunkSettings} onChange={onChunkSettingsChange} />
                         <div className="mt-4 flex justify-end gap-2">
                             <button
@@ -403,7 +420,7 @@ export function NotebookPanel({
                                 onClick={() => setShowChunkConfirm(false)}
                                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
                             >
-                                取消
+                                {t("common.cancel", "Cancel")}
                             </button>
                             <button
                                 type="button"
@@ -413,7 +430,7 @@ export function NotebookPanel({
                                 }}
                                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
                             >
-                                確認並保存
+                                {t("layout.notebook.confirmAndSave", "Confirm and save")}
                             </button>
                         </div>
                     </div>
