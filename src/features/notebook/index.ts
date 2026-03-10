@@ -8,3 +8,4 @@ export { buildNotebookAuth } from "./utils/buildNotebookAuth";
 export type { SummaryDirectionPayload, SummarySearchPersonItem, SummarySearchRoomItem, SummarySearchTarget } from "./components/NotebookSidebar";
 export type { NotebookAuthContext, NotebookAssistResponse, NotebookCapability, NotebookItem } from "./types";
 export { NotebookApiError } from "./adapters/types";
+export * from "./sync";

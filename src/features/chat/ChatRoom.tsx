@@ -110,6 +110,7 @@ type MessageBubbleProps = {
     onCopyMessage?: (event: MatrixEvent, displayText: string) => void;
     onQuoteMessage?: (event: MatrixEvent) => void;
     onRecallMessage?: (event: MatrixEvent) => void;
+    allowTranslationActions?: boolean;
 };
 
 type QuotedMessageDraft = {
@@ -308,6 +309,7 @@ const MessageBubble = ({
     onCopyMessage,
     onQuoteMessage,
     onRecallMessage,
+    allowTranslationActions = true,
 }: MessageBubbleProps) => {
     const { t } = useTranslation();
     const [showFileMenu, setShowFileMenu] = useState(false);
@@ -346,8 +348,10 @@ const MessageBubble = ({
         isText && (showTranslated || showBilingual) && !translationLoading && !hasTranslatedText && translationError,
     );
     const anchorEventId = event.getId();
-    const canToggleTranslation = Boolean(isText && !isMe && onSetTranslationMode);
-    const canRetryTranslation = Boolean(isText && !isMe && onRetryTranslation && (translationError || translationSuspect));
+    const canToggleTranslation = Boolean(allowTranslationActions && isText && !isMe && onSetTranslationMode);
+    const canRetryTranslation = Boolean(
+        allowTranslationActions && isText && !isMe && onRetryTranslation && (translationError || translationSuspect),
+    );
     const canAssistFromContext = Boolean(
         canUseNotebookAssist &&
         isText &&
@@ -464,7 +468,7 @@ const MessageBubble = ({
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
                                     openUpward={showQuickActionMenuUpward}
-                                    align="left"
+                                    align="right"
                                     onSetTranslationMode={(mode) => {
                                         setShowQuickActionMenu(false);
                                         onSetTranslationMode?.(mode);
@@ -513,8 +517,8 @@ const MessageBubble = ({
                                 <EllipsisVerticalIcon className="h-4 w-4" />
                             </button>
                             {showFileMenu && (
-                                <div className={`absolute z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                                    showFileMenuUpward ? "bottom-full left-0 mb-1" : "top-full left-0 mt-1"
+                                <div className={`absolute right-0 z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                                    showFileMenuUpward ? "bottom-full mb-1" : "top-full mt-1"
                                 }`}>
                                     <button
                                         type="button"
@@ -660,7 +664,7 @@ const MessageBubble = ({
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
                                     openUpward={showQuickActionMenuUpward}
-                                    align="right"
+                                    align="left"
                                     onSetTranslationMode={(mode) => {
                                         setShowQuickActionMenu(false);
                                         onSetTranslationMode?.(mode);
@@ -709,8 +713,8 @@ const MessageBubble = ({
                                 <EllipsisVerticalIcon className="h-4 w-4" />
                             </button>
                             {showFileMenu && (
-                                <div className={`absolute right-0 z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                                    showFileMenuUpward ? "bottom-full mb-1" : "top-full mt-1"
+                                <div className={`absolute z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                                    showFileMenuUpward ? "bottom-full left-0 mb-1" : "top-full left-0 mt-1"
                                 }`}>
                                     <button
                                         type="button"
@@ -983,7 +987,7 @@ export const ChatRoom: React.FC = () => {
     const userId = useAuthStore((state) => state.matrixCredentials?.user_id ?? null);
     const hubSession = useAuthStore((state) => state.hubSession);
     const userType = useAuthStore((state) => state.userType);
-    const { events, room } = useRoomTimeline(matrixClient, activeRoomId, { limit: 200 });
+    const { events, room, showingCachedEvents } = useRoomTimeline(matrixClient, activeRoomId, { limit: 20 });
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const roomStickBottomRef = useRef<Record<string, boolean>>({});
     const previousRoomIdRef = useRef<string | null>(null);
@@ -2804,6 +2808,11 @@ export const ChatRoom: React.FC = () => {
                 onScroll={() => void onScroll()}
                 className="flex-1 min-h-0 overflow-y-auto p-6 bg-[#F2F4F7] dark:bg-slate-950"
             >
+                {showingCachedEvents && (
+                    <div className="mb-4 rounded-xl border border-emerald-200/70 bg-emerald-50/80 px-4 py-2 text-xs text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        {t("chat.syncingLatestMessages", { defaultValue: "正在同步最新消息..." })}
+                    </div>
+                )}
                 {isDeprecatedRoom && (
                     <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-200">
                         {t("chat.deprecatedNotice")}
@@ -2907,6 +2916,7 @@ export const ChatRoom: React.FC = () => {
                                 translationLoading={translationMap[getMessageEventKey(event)]?.loading ?? false}
                                 translationError={translationMap[getMessageEventKey(event)]?.error ?? false}
                                 translationSuspect={translationMap[getMessageEventKey(event)]?.suspect ?? false}
+                                allowTranslationActions={!isDirectRoom || directTranslationEnabled}
                                 canDeleteFile={isOwnFileEvent(event)}
                                 deleteBusy={deletingEventId === event.getId()}
                                 onDeleteFile={(targetEvent) => {

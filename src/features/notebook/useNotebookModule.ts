@@ -4,17 +4,38 @@ import type { NotebookAuthContext, NotebookItem, NotebookItemFile, NotebookListS
 import { useNotebookParsedView } from "./hooks/useNotebookParsedView";
 import { useNotebookItemFiles } from "./hooks/useNotebookItemFiles";
 import { defaultChunkSettings, type ChunkSettings } from "./components/ChunkSettingsPanel";
+import { loadNotebookListCache, peekNotebookListCache, saveNotebookListCache } from "./cache";
 
 type UseNotebookModuleParams = {
     adapter: NotebookAdapter;
     auth: NotebookAuthContext | null;
     enabled: boolean;
+    refreshToken: number;
 };
 
 export type NotebookViewFilter = "all" | "knowledge" | "note";
 export type NotebookSourceScope = "personal" | "company" | "both";
 
-export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleParams) {
+function deriveItemsFromAllCache(
+    allCache: { items: NotebookItem[]; nextCursor: string | null } | null,
+    viewFilter: NotebookViewFilter,
+    sourceScope: NotebookSourceScope,
+): { items: NotebookItem[]; nextCursor: string | null } | null {
+    if (!allCache) return null;
+    const filtered = allCache.items.filter((item) => {
+        if (sourceScope === "company" && item.sourceScope !== "company") return false;
+        if (sourceScope === "personal" && item.sourceScope === "company") return false;
+        if (viewFilter === "knowledge" && !item.isIndexable) return false;
+        if (viewFilter === "note" && item.isIndexable) return false;
+        return true;
+    });
+    return {
+        items: filtered,
+        nextCursor: null,
+    };
+}
+
+export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseNotebookModuleParams) {
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [items, setItems] = useState<NotebookItem[]>([]);
@@ -33,9 +54,12 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     const [actionError, setActionError] = useState<string | null>(null);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [listRefreshing, setListRefreshing] = useState(false);
     const loadSeqRef = useRef(0);
     const countsSeqRef = useRef(0);
     const draftLockRef = useRef(false);
+    const viewFilterRef = useRef<NotebookViewFilter>("all");
+    const sourceScopeRef = useRef<NotebookSourceScope>("both");
     const listCacheRef = useRef<Map<string, { items: NotebookItem[]; nextCursor: string | null }>>(new Map());
     const [chunkSettings, setChunkSettings] = useState<ChunkSettings>({ ...defaultChunkSettings });
 
@@ -49,6 +73,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
     useEffect(() => {
         draftLockRef.current = isCreatingDraft;
     }, [isCreatingDraft]);
+
+    useEffect(() => {
+        viewFilterRef.current = viewFilter;
+        sourceScopeRef.current = sourceScope;
+    }, [viewFilter, sourceScope]);
 
     useEffect(() => {
         listCacheRef.current.clear();
@@ -111,13 +140,14 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         }
     }, [adapter, auth, enabled, sourceScope]);
 
-    const loadItems = useCallback(async () => {
+    const applyCachedItems = useCallback(async () => {
         if (!enabled || !auth) {
             setItems([]);
             setListState("empty");
             setListError(null);
             setNextCursor(null);
             setLoadingMore(false);
+            setListRefreshing(false);
             setIsCreatingDraft(false);
             setSelectedItemId(null);
             setEditorTitle("");
@@ -126,7 +156,36 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
             return;
         }
         const cacheKey = `${viewFilter}:${sourceScope}:${debouncedSearch}`;
-        const cached = listCacheRef.current.get(cacheKey) ?? null;
+        const allCacheKey = `all:both:${debouncedSearch}`;
+        const allFastCached = listCacheRef.current.get(allCacheKey) ?? peekNotebookListCache(auth, allCacheKey) ?? null;
+        const derivedFromAll = cacheKey !== allCacheKey
+            ? deriveItemsFromAllCache(allFastCached, viewFilter, sourceScope)
+            : null;
+        const fastCached = listCacheRef.current.get(cacheKey) ?? peekNotebookListCache(auth, cacheKey) ?? derivedFromAll ?? null;
+        if (fastCached && !listCacheRef.current.has(cacheKey)) {
+            listCacheRef.current.set(cacheKey, fastCached);
+        }
+        if (fastCached) {
+            setItems(fastCached.items);
+            setNextCursor(fastCached.nextCursor);
+            if (!draftLockRef.current) {
+                if (fastCached.items.length === 0) {
+                    setListState("empty");
+                    setSelectedItemId(null);
+                    setEditorTitle("");
+                    setEditorContent("");
+                    setIsEditing(false);
+                } else {
+                    setListState("ready");
+                    applySelection(fastCached.items);
+                }
+            }
+        }
+
+        const cached = fastCached ?? await loadNotebookListCache(auth, cacheKey) ?? null;
+        if (cached && !listCacheRef.current.has(cacheKey)) {
+            listCacheRef.current.set(cacheKey, cached);
+        }
         if (cached) {
             setItems(cached.items);
             setNextCursor(cached.nextCursor);
@@ -142,25 +201,42 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 applySelection(cached.items);
             }
         }
-        const seq = ++loadSeqRef.current;
-        setListError(null);
         if (!cached) {
             setListState("loading");
         }
+    }, [applySelection, auth, debouncedSearch, enabled, sourceScope, viewFilter]);
+
+    const syncItems = useCallback(async () => {
+        if (!enabled || !auth) return;
+        const currentViewFilter = viewFilterRef.current;
+        const currentSourceScope = sourceScopeRef.current;
+        const cacheKey = `${currentViewFilter}:${currentSourceScope}:${debouncedSearch}`;
+        const allCacheKey = `all:both:${debouncedSearch}`;
+        const currentCached = listCacheRef.current.get(cacheKey) ?? peekNotebookListCache(auth, cacheKey) ?? null;
+        const seq = ++loadSeqRef.current;
+        setListError(null);
+        setListRefreshing(Boolean(currentCached || items.length > 0));
         try {
             const page = await adapter.listItemsPage(auth, {
                 keyword: debouncedSearch,
-                filter: viewFilter,
-                scope: sourceScope,
+                filter: "all",
+                scope: "both",
                 limit: 30,
             });
             const rows = page.items;
             if (seq !== loadSeqRef.current) return;
-            listCacheRef.current.set(cacheKey, { items: rows, nextCursor: page.nextCursor });
-            setItems(rows);
-            setNextCursor(page.nextCursor);
+            const allCache = { items: rows, nextCursor: page.nextCursor };
+            listCacheRef.current.set(allCacheKey, allCache);
+            void saveNotebookListCache(auth, allCacheKey, allCache);
+
+            const nextCache = deriveItemsFromAllCache(allCache, currentViewFilter, currentSourceScope) ?? allCache;
+            listCacheRef.current.set(cacheKey, nextCache);
+            void saveNotebookListCache(auth, cacheKey, nextCache);
+
+            setItems(nextCache.items);
+            setNextCursor(nextCache.nextCursor);
             if (draftLockRef.current) return;
-            if (rows.length === 0) {
+            if (nextCache.items.length === 0) {
                 setListState("empty");
                 setSelectedItemId(null);
                 setEditorTitle("");
@@ -169,21 +245,29 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 return;
             }
             setListState("ready");
-            applySelection(rows);
+            applySelection(nextCache.items);
         } catch (error) {
             if (seq !== loadSeqRef.current) return;
-            if (!cached) {
+            if (!currentCached) {
                 setItems([]);
                 setCounts({ all: 0, knowledge: 0, note: 0 });
                 setListState("error");
             }
             setListError(error instanceof Error ? error.message : "Failed to load notebook items");
+        } finally {
+            if (seq === loadSeqRef.current) {
+                setListRefreshing(false);
+            }
         }
-    }, [adapter, applySelection, auth, debouncedSearch, enabled, sourceScope, viewFilter]);
+    }, [adapter, applySelection, auth, debouncedSearch, enabled, items.length]);
 
     useEffect(() => {
-        void loadItems();
-    }, [loadItems]);
+        void applyCachedItems();
+    }, [applyCachedItems]);
+
+    useEffect(() => {
+        void syncItems();
+    }, [syncItems, refreshToken, debouncedSearch]);
 
     useEffect(() => {
         if (!enabled || !auth) return;
@@ -208,6 +292,7 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
                 page.items.forEach((item) => map.set(item.id, item));
                 const merged = Array.from(map.values());
                 listCacheRef.current.set(cacheKey, { items: merged, nextCursor: page.nextCursor });
+                void saveNotebookListCache(auth, cacheKey, { items: merged, nextCursor: page.nextCursor });
                 return merged;
             });
             setNextCursor(page.nextCursor);
@@ -482,9 +567,11 @@ export function useNotebookModule({ adapter, auth, enabled }: UseNotebookModuleP
         isCreatingDraft,
         actionBusy,
         actionError,
+        listRefreshing,
         hasMore: Boolean(nextCursor),
         loadingMore,
-        loadItems,
+        loadItems: applyCachedItems,
+        syncItems,
         loadMore,
         createItem,
         saveItemAs,

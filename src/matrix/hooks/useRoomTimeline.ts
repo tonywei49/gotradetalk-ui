@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
-import { ClientEvent, RoomEvent } from "matrix-js-sdk";
+import { useEffect, useMemo, useState } from "react";
+import { ClientEvent, MatrixEvent, RoomEvent } from "matrix-js-sdk";
+import type { MatrixClient, Room } from "matrix-js-sdk";
 
 type UseRoomTimelineOptions = {
     limit?: number;
@@ -9,7 +9,40 @@ type UseRoomTimelineOptions = {
 type UseRoomTimelineResult = {
     events: MatrixEvent[];
     room: Room | null;
+    showingCachedEvents: boolean;
 };
+
+const ROOM_TIMELINE_CACHE_PREFIX = "gtt_room_timeline_cache_v1:";
+
+function buildRoomTimelineCacheKey(client: MatrixClient | null, roomId: string | null): string | null {
+    const userId = client?.getUserId() ?? "";
+    if (!userId || !roomId) return null;
+    return `${ROOM_TIMELINE_CACHE_PREFIX}${userId}:${roomId}`;
+}
+
+function readCachedTimeline(cacheKey: string | null): MatrixEvent[] {
+    if (!cacheKey || typeof window === "undefined") return [];
+    try {
+        const raw = localStorage.getItem(cacheKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as object[];
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map((event) => new MatrixEvent(event as any));
+    } catch {
+        return [];
+    }
+}
+
+function writeCachedTimeline(cacheKey: string | null, events: MatrixEvent[], limit?: number): void {
+    if (!cacheKey || typeof window === "undefined") return;
+    try {
+        const trimmed = limit ? events.slice(-limit) : events;
+        const payload = trimmed.map((event) => event.toJSON());
+        localStorage.setItem(cacheKey, JSON.stringify(payload));
+    } catch {
+        // ignore cache write failures
+    }
+}
 
 export function useRoomTimeline(
     client: MatrixClient | null,
@@ -18,13 +51,26 @@ export function useRoomTimeline(
 ): UseRoomTimelineResult {
     const [events, setEvents] = useState<MatrixEvent[]>([]);
     const [room, setRoom] = useState<Room | null>(null);
+    const [showingCachedEvents, setShowingCachedEvents] = useState(false);
     const limit = options.limit;
+    const cacheKey = useMemo(() => buildRoomTimelineCacheKey(client, roomId), [client, roomId]);
 
     useEffect(() => {
         if (!client || !roomId) {
             setEvents([]);
             setRoom(null);
+            setShowingCachedEvents(false);
             return undefined;
+        }
+
+        const cachedEvents = readCachedTimeline(cacheKey);
+        let usedCachedEvents = false;
+        if (cachedEvents.length > 0) {
+            usedCachedEvents = true;
+            setEvents(limit ? cachedEvents.slice(-limit) : cachedEvents);
+            setShowingCachedEvents(true);
+        } else {
+            setShowingCachedEvents(false);
         }
 
         const bindRoom = (): void => {
@@ -32,7 +78,11 @@ export function useRoomTimeline(
             setRoom(activeRoom);
             if (!activeRoom) return;
             const initialEvents = activeRoom.getLiveTimeline().getEvents();
-            setEvents(limit ? initialEvents.slice(-limit) : [...initialEvents]);
+            if (initialEvents.length === 0 && usedCachedEvents) return;
+            const nextEvents = limit ? initialEvents.slice(-limit) : [...initialEvents];
+            setEvents(nextEvents);
+            setShowingCachedEvents(false);
+            writeCachedTimeline(cacheKey, nextEvents, limit);
         };
 
         bindRoom();
@@ -46,6 +96,7 @@ export function useRoomTimeline(
             if (!timelineRoom || timelineRoom.roomId !== roomId) return;
             if (removed) return;
             setRoom(timelineRoom);
+            setShowingCachedEvents(false);
 
             setEvents((prev) => {
                 const eventId = event.getId();
@@ -53,8 +104,9 @@ export function useRoomTimeline(
                     return prev;
                 }
                 const next = toStartOfTimeline ? [event, ...prev] : [...prev, event];
-                if (!limit) return next;
-                return toStartOfTimeline ? next.slice(0, limit) : next.slice(-limit);
+                const trimmed = !limit ? next : toStartOfTimeline ? next.slice(0, limit) : next.slice(-limit);
+                writeCachedTimeline(cacheKey, trimmed, limit);
+                return trimmed;
             });
         };
 
@@ -62,7 +114,10 @@ export function useRoomTimeline(
             if (!resetRoom || resetRoom.roomId !== roomId) return;
             setRoom(resetRoom);
             const resetEvents = resetRoom.getLiveTimeline().getEvents();
-            setEvents(limit ? resetEvents.slice(-limit) : [...resetEvents]);
+            const nextEvents = limit ? resetEvents.slice(-limit) : [...resetEvents];
+            setEvents(nextEvents);
+            setShowingCachedEvents(false);
+            writeCachedTimeline(cacheKey, nextEvents, limit);
         };
 
         const onRoom = (updatedRoom: Room | undefined): void => {
@@ -93,7 +148,7 @@ export function useRoomTimeline(
             client.off(RoomEvent.MyMembership, onMembership);
             client.off(ClientEvent.Sync, onSync);
         };
-    }, [client, roomId, limit]);
+    }, [cacheKey, client, roomId, limit]);
 
-    return { events, room };
+    return { events, room, showingCachedEvents };
 }

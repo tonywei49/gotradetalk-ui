@@ -495,6 +495,7 @@ export const MainLayout: React.FC = () => {
     const [showContactMenu, setShowContactMenu] = useState(false);
     const [showRemoveContactConfirm, setShowRemoveContactConfirm] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
+    const [notebookRefreshToken, setNotebookRefreshToken] = useState(0);
     const [fileLibraryTick, setFileLibraryTick] = useState(0);
     const [fileRoomSearch, setFileRoomSearch] = useState("");
     const [debouncedFileRoomSearch, setDebouncedFileRoomSearch] = useState("");
@@ -827,7 +828,8 @@ export const MainLayout: React.FC = () => {
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
         auth: notebookAuth,
-        enabled: notebookCapabilityState.canUseNotebookBasic && activeTab === "notebook",
+        enabled: notebookCapabilityState.canUseNotebookBasic,
+        refreshToken: notebookRefreshToken,
     });
     useEffect(() => {
         if (userType === "client" && notebookModule.sourceScope === "company") {
@@ -1051,6 +1053,12 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         traceEvent("ui.active_room_changed", { activeRoomId: activeRoomId ?? null, activeTab });
     }, [activeRoomId, activeTab]);
+
+    useEffect(() => {
+        if (activeTab === "notebook") {
+            setNotebookRefreshToken((prev) => prev + 1);
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         if (matrixCredentials?.user_id) {
@@ -3285,6 +3293,7 @@ export const MainLayout: React.FC = () => {
                             setMobileView("detail");
                         }}
                         busy={notebookModule.actionBusy}
+                        listRefreshing={notebookModule.listRefreshing}
                         hasMore={notebookModule.hasMore}
                         loadingMore={notebookModule.loadingMore}
                         onLoadMore={() => {

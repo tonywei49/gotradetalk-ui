@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { NotebookAdapter } from "../adapters/types";
 import type { NotebookAuthContext, NotebookChunk, NotebookParsedPreview } from "../types";
+import { loadNotebookParsedCache, saveNotebookParsedCache } from "../cache";
 
 type UseNotebookParsedViewParams = {
     adapter: NotebookAdapter;
@@ -12,6 +13,12 @@ type UseNotebookParsedViewParams = {
 export function useNotebookParsedView({ adapter, auth, enabled, selectedItemId }: UseNotebookParsedViewParams) {
     const canLoad = Boolean(enabled && auth && selectedItemId);
     const requestKey = canLoad ? String(selectedItemId) : null;
+    const cacheRef = useRef(new Map<string, {
+        preview: NotebookParsedPreview | null;
+        chunks: NotebookChunk[];
+        chunksTotal: number;
+        error: string | null;
+    }>());
     const [loadedState, setLoadedState] = useState<{
         key: string | null;
         preview: NotebookParsedPreview | null;
@@ -27,17 +34,55 @@ export function useNotebookParsedView({ adapter, auth, enabled, selectedItemId }
     });
 
     useEffect(() => {
+        cacheRef.current.clear();
+        setLoadedState({
+            key: null,
+            preview: null,
+            chunks: [],
+            chunksTotal: 0,
+            error: null,
+        });
+    }, [auth?.matrixUserId, auth?.apiBaseUrl]);
+
+    useEffect(() => {
         if (!canLoad || !auth || !selectedItemId) {
             return;
         }
         let alive = true;
-        void Promise.all([
-            adapter.getParsedPreview(auth, selectedItemId),
-            adapter.getChunks(auth, selectedItemId),
-        ]).then(([preview, chunkPayload]) => {
+        const nextKey = String(selectedItemId);
+
+        void (async () => {
+            const cached = cacheRef.current.get(nextKey) ?? await loadNotebookParsedCache(auth, nextKey) ?? null;
             if (!alive) return;
+            if (cached) {
+                if (!cacheRef.current.has(nextKey)) {
+                    cacheRef.current.set(nextKey, cached);
+                }
+                setLoadedState({
+                    key: nextKey,
+                    preview: cached.preview,
+                    chunks: cached.chunks,
+                    chunksTotal: cached.chunksTotal,
+                    error: cached.error,
+                });
+                return;
+            }
+
+            return Promise.all([
+                adapter.getParsedPreview(auth, selectedItemId),
+                adapter.getChunks(auth, selectedItemId),
+            ]).then(([preview, chunkPayload]) => {
+            if (!alive) return;
+            const nextValue = {
+                preview,
+                chunks: chunkPayload.chunks,
+                chunksTotal: chunkPayload.total,
+                error: null,
+            };
+            cacheRef.current.set(nextKey, nextValue);
+            void saveNotebookParsedCache(auth, nextKey, nextValue);
             setLoadedState({
-                key: String(selectedItemId),
+                key: nextKey,
                 preview,
                 chunks: chunkPayload.chunks,
                 chunksTotal: chunkPayload.total,
@@ -45,14 +90,24 @@ export function useNotebookParsedView({ adapter, auth, enabled, selectedItemId }
             });
         }).catch((error) => {
             if (!alive) return;
-            setLoadedState({
-                key: String(selectedItemId),
+            const nextError = error instanceof Error ? error.message : "Failed to load parsed preview";
+            const nextValue = {
                 preview: null,
                 chunks: [],
                 chunksTotal: 0,
-                error: error instanceof Error ? error.message : "Failed to load parsed preview",
+                error: nextError,
+            };
+            cacheRef.current.set(nextKey, nextValue);
+            void saveNotebookParsedCache(auth, nextKey, nextValue);
+            setLoadedState({
+                key: nextKey,
+                preview: null,
+                chunks: [],
+                chunksTotal: 0,
+                error: nextError,
             });
-        });
+            });
+        })();
         return () => {
             alive = false;
         };

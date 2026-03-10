@@ -3,6 +3,7 @@ use std::{thread, time::Duration};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
+use tauri_plugin_sql::{Migration, MigrationKind};
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
@@ -268,6 +269,47 @@ pub fn run() {
         .level(log_level)
         .rotation_strategy(RotationStrategy::KeepAll)
         .timezone_strategy(TimezoneStrategy::UseLocal)
+        .build(),
+    )
+    .plugin(
+      tauri_plugin_sql::Builder::default()
+        .add_migrations(
+          "sqlite:notebook-cache.db",
+          vec![
+            Migration {
+              version: 1,
+              description: "create_notebook_cache_tables",
+              sql: r#"
+                CREATE TABLE IF NOT EXISTS notebook_list_cache (
+                  cache_namespace TEXT NOT NULL,
+                  cache_key TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL,
+                  PRIMARY KEY (cache_namespace, cache_key)
+                );
+
+                CREATE TABLE IF NOT EXISTS notebook_parsed_cache (
+                  cache_namespace TEXT NOT NULL,
+                  item_id TEXT NOT NULL,
+                  preview_json TEXT,
+                  chunks_json TEXT NOT NULL,
+                  chunks_total INTEGER NOT NULL,
+                  error TEXT,
+                  updated_at INTEGER NOT NULL,
+                  PRIMARY KEY (cache_namespace, item_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS notebook_parsed_cache_index (
+                  cache_namespace TEXT NOT NULL,
+                  item_id TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL,
+                  PRIMARY KEY (cache_namespace, item_id)
+                );
+              "#,
+              kind: MigrationKind::Up,
+            }
+          ],
+        )
         .build(),
     )
     .plugin(tauri_plugin_http::init())

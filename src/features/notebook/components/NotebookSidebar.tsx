@@ -43,6 +43,7 @@ type NotebookSidebarProps = {
     sourceScope: NotebookSourceScope;
     onSourceScopeChange: (value: NotebookSourceScope) => void;
     busy: boolean;
+    listRefreshing?: boolean;
     hasMore: boolean;
     loadingMore: boolean;
     onLoadMore: () => void;
@@ -94,6 +95,7 @@ export function NotebookSidebar({
     sourceScope,
     onSourceScopeChange,
     busy,
+    listRefreshing = false,
     hasMore,
     loadingMore,
     onLoadMore,
@@ -609,7 +611,12 @@ export function NotebookSidebar({
                         ) : null}
                     </div>
                 )}
-                {mode === "notebook" && listState === "loading" && (
+                {mode === "notebook" && listRefreshing && items.length > 0 && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-200">
+                        正在同步中...
+                    </div>
+                )}
+                {mode === "notebook" && listState === "loading" && items.length === 0 && (
                     <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                         {t("layout.notebook.loadingItems", "Loading notebook...")}
                     </div>

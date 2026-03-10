@@ -54,6 +54,18 @@ type RoomCacheEntry = {
     isDeprecated: boolean;
 };
 
+function readRoomCache(cacheKey: string | null): RoomCacheEntry[] {
+    if (!cacheKey || typeof window === "undefined") return [];
+    try {
+        const raw = localStorage.getItem(cacheKey);
+        if (!raw) return [];
+        const cached = JSON.parse(raw) as RoomCacheEntry[];
+        return Array.isArray(cached) ? cached : [];
+    } catch {
+        return [];
+    }
+}
+
 export type ContactSummary = {
     id: string;
     initiatedByMe: boolean;
@@ -153,6 +165,43 @@ function normalizeMatrixDomain(value: string): string {
     if (!trimmed) return "";
     const withoutScheme = trimmed.replace(/^https?:\/\//i, "");
     return withoutScheme.split("/")[0].trim();
+}
+
+function resolveCompanyDomainCandidates(value: string, hsUrl: string | null): string[] {
+    const normalized = normalizeMatrixDomain(value).toLowerCase();
+    if (!normalized) return [];
+
+    const candidateSet = new Set<string>();
+    const rawDomain = normalized.startsWith("matrix.") ? normalized.slice("matrix.".length) : normalized;
+    const addCandidate = (candidate: string): void => {
+        const trimmed = candidate.trim().toLowerCase();
+        if (!trimmed) return;
+        candidateSet.add(trimmed);
+    };
+
+    if (normalized.startsWith("matrix.")) {
+        addCandidate(normalized);
+    } else {
+        addCandidate(`matrix.${normalized}`);
+    }
+
+    if (!rawDomain.includes(".")) {
+        addCandidate(`matrix.${rawDomain}.com`);
+
+        const hsHost = getMatrixHost(hsUrl);
+        const hsSuffix = hsHost
+            ? hsHost
+                .replace(/^matrix\./i, "")
+                .split(".")
+                .slice(1)
+                .join(".")
+            : "";
+        if (hsSuffix) {
+            addCandidate(`matrix.${rawDomain}.${hsSuffix}`);
+        }
+    }
+
+    return Array.from(candidateSet);
 }
 
 function buildMatrixUserId(localpart: string, domain: string): string | null {
@@ -372,6 +421,7 @@ export function RoomList({
         if (!userId) return null;
         return `${ROOM_TAGS_CACHE_PREFIX}${userId}`;
     }, [client?.getUserId()]);
+    const cachedRoomSnapshot = useMemo(() => readRoomCache(roomCacheKey), [roomCacheKey]);
 
     const refresh = useCallback(() => {
         if (!client) return;
@@ -517,9 +567,10 @@ export function RoomList({
     }, [rooms, roomCacheKey]);
 
     // 計算總未讀數並通知父組件
+    const roomSource = rooms.length ? rooms : cachedRooms.length ? cachedRooms : cachedRoomSnapshot;
     const displayedRooms: ChatRoomEntry[] = rooms.length
         ? rooms
-        : cachedRooms.map((room) => ({
+        : roomSource.map((room) => ({
             ...room,
             lastMessageTs: room.lastMessageTs ?? 0,
             lastMessageSender: room.lastMessageSender ?? null,
@@ -588,6 +639,40 @@ export function RoomList({
     const searchToken = useHubToken ? hubAccessToken : matrixAccessToken;
     const searchHsUrl = useHubToken ? null : matrixHsUrl;
     const matrixHost = getMatrixHost(matrixHsUrl);
+    const shouldShowCompanyDomainHint =
+        isStructuredSearch &&
+        staffSearchMode === "staff" &&
+        Boolean(staffCompanyDomain.trim() && staffPersonId.trim()) &&
+        !searchBusy &&
+        !searchError &&
+        searchResults.length === 0;
+
+    const searchEmployeeResultsByCandidates = useCallback(
+        async (
+            companyDomainInput: string,
+            hsUrl: string | null,
+            searcher: (companyDomain: string) => Promise<
+                Array<{
+                    id: string;
+                    displayName: string | null;
+                    userLocalId: string | null;
+                    companyName: string | null;
+                    title: string | null;
+                    country: string | null;
+                    matrixUserId: string | null;
+                }>
+            >,
+        ) => {
+            const candidates = resolveCompanyDomainCandidates(companyDomainInput, hsUrl);
+            if (candidates.length === 0) return [];
+            for (const candidate of candidates) {
+                const results = await searcher(candidate);
+                if (results.length > 0) return results;
+            }
+            return [];
+        },
+        [],
+    );
 
     useEffect(() => {
         if (!contactCacheKey) return;
@@ -604,17 +689,8 @@ export function RoomList({
     }, [contactCacheKey]);
 
     useEffect(() => {
-        if (!roomCacheKey) return;
-        try {
-            const raw = localStorage.getItem(roomCacheKey);
-            if (!raw) return;
-            const cached = JSON.parse(raw) as RoomCacheEntry[];
-            if (!Array.isArray(cached)) return;
-            setCachedRooms(cached);
-        } catch {
-            // ignore room cache read failures
-        }
-    }, [roomCacheKey]);
+        setCachedRooms(cachedRoomSnapshot);
+    }, [cachedRoomSnapshot]);
 
     useEffect(() => {
         if (!isStructuredSearch) return;
@@ -658,37 +734,33 @@ export function RoomList({
                             );
                             return;
                         }
-                        const normalizedDomain = normalizeMatrixDomain(staffCompanyDomain);
-                        const domain = normalizedDomain
-                            ? normalizedDomain.startsWith("matrix.")
-                                ? normalizedDomain
-                                : `matrix.${normalizedDomain}`
-                            : "";
                         const localpart = normalizeMatrixLocalpart(staffPersonId);
-                        if (!localpart || !domain) {
+                        if (!localpart || !staffCompanyDomain.trim()) {
                             setSearchResults([]);
                             setSearchError(null);
                             return;
                         }
-                        const matrixUserId = buildMatrixUserId(localpart, domain);
-                        if (!matrixUserId) {
-                            setSearchResults([]);
-                            setSearchError(t("roomList.errors.invalidUserId"));
-                            return;
-                        }
-                        const results = await searchDirectoryAll(matrixUserId, searchToken, searchHsUrl);
-                        const filtered = results.filter((item) => item.matrix_user_id === matrixUserId);
-                        setSearchResults(
-                            filtered.map((item) => ({
-                                id: item.profile_id,
-                                displayName: item.display_name,
-                                userLocalId: item.user_local_id,
-                                companyName: item.company_name,
-                                title: null,
-                                country: item.country,
-                                matrixUserId: item.matrix_user_id ?? null,
-                            })),
+                        const results = await searchEmployeeResultsByCandidates(
+                            staffCompanyDomain,
+                            searchHsUrl,
+                            async (domain) => {
+                                const matrixUserId = buildMatrixUserId(localpart, domain);
+                                if (!matrixUserId) return [];
+                                const directoryResults = await searchDirectoryAll(matrixUserId, searchToken, searchHsUrl);
+                                return directoryResults
+                                    .filter((item) => item.matrix_user_id === matrixUserId)
+                                    .map((item) => ({
+                                        id: item.profile_id,
+                                        displayName: item.display_name,
+                                        userLocalId: item.user_local_id,
+                                        companyName: item.company_name,
+                                        title: null,
+                                        country: item.country,
+                                        matrixUserId: item.matrix_user_id ?? null,
+                                    }));
+                            },
                         );
+                        setSearchResults(results);
                         return;
                     }
 
@@ -726,31 +798,30 @@ export function RoomList({
                         return;
                     }
 
-                    const normalizedDomain = normalizeMatrixDomain(staffCompanyDomain);
-                    const domain = normalizedDomain
-                        ? normalizedDomain.startsWith("matrix.")
-                            ? normalizedDomain
-                            : `matrix.${normalizedDomain}`
-                        : "";
                     const localpart = normalizeMatrixLocalpart(staffPersonId);
-                    if (!localpart || !domain) {
+                    if (!localpart || !staffCompanyDomain.trim()) {
                         setSearchResults([]);
                         setSearchError(null);
                         return;
                     }
-                    const results = await searchStaffDirectoryEmployees(domain, localpart, searchHsUrl, searchToken);
-                    const matrixUserId = buildMatrixUserId(localpart, domain);
-                    setSearchResults(
-                        results.map((item) => ({
-                            id: item.person_id,
-                            displayName: item.display_name,
-                            userLocalId: item.username,
-                            companyName: item.company_name,
-                            title: item.title ?? null,
-                            country: null,
-                            matrixUserId: item.matrix_user_id ?? matrixUserId,
-                        })),
+                    const results = await searchEmployeeResultsByCandidates(
+                        staffCompanyDomain,
+                        searchHsUrl,
+                        async (domain) => {
+                            const directoryResults = await searchStaffDirectoryEmployees(domain, localpart, searchHsUrl, searchToken);
+                            const matrixUserId = buildMatrixUserId(localpart, domain);
+                            return directoryResults.map((item) => ({
+                                id: item.person_id,
+                                displayName: item.display_name,
+                                userLocalId: item.username,
+                                companyName: item.company_name,
+                                title: item.title ?? null,
+                                country: null,
+                                matrixUserId: item.matrix_user_id ?? matrixUserId,
+                            }));
+                        },
                     );
+                    setSearchResults(results);
                 } catch (error) {
                     setSearchError(mapActionErrorToMessage(t, error, "roomList.errors.searchFailed"));
                     setSearchResults([]);
@@ -1610,7 +1681,14 @@ export function RoomList({
                                         ? Boolean(staffCustomerId.trim())
                                         : Boolean(staffCompanyDomain.trim() && staffPersonId.trim())
                                     : Boolean(query.trim())) ? (
-                                <div className="text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.results")}</div>
+                                <div className="space-y-2">
+                                    <div className="text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.results")}</div>
+                                    {shouldShowCompanyDomainHint ? (
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300">
+                                            {t("roomList.search.companyDomainSearchHint")}
+                                        </div>
+                                    ) : null}
+                                </div>
                             ) : (
                                 searchResults.map((item) => (
                                     <button
