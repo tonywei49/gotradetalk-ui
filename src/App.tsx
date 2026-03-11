@@ -10,11 +10,13 @@ import { useThemeStore } from "./stores/ThemeStore";
 import { ToastViewport } from "./components/ToastViewport";
 import { PluginHostProvider } from "./plugins";
 import { useDesktopUpdater } from "./desktop/useDesktopUpdater";
+import { useDesktopWindowLifecycle } from "./desktop/useDesktopWindowLifecycle";
 
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
     const initTheme = useThemeStore((state) => state.initTheme);
     useDesktopUpdater();
+    useDesktopWindowLifecycle();
 
     useEffect(() => {
         initTheme();

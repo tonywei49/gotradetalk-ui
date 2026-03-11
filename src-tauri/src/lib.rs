@@ -2,7 +2,11 @@ use std::{thread, time::Duration};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, WindowEvent};
+use tauri::{
+  menu::{MenuBuilder, MenuItemBuilder},
+  tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+  AppHandle, Manager, WebviewWindow, WindowEvent,
+};
 use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
 use tauri_plugin_sql::{Migration, MigrationKind};
 use tauri_plugin_updater::UpdaterExt;
@@ -58,6 +62,30 @@ struct DesktopHttpResponse {
 
 fn current_version(app: &AppHandle) -> String {
   app.package_info().version.to_string()
+}
+
+fn show_main_window(window: &WebviewWindow) {
+  let _ = window.unminimize();
+  let _ = window.show();
+  let _ = window.set_focus();
+}
+
+fn hide_main_window(window: &WebviewWindow) {
+  let _ = window.hide();
+}
+
+#[tauri::command]
+fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
+  let main_window = app
+    .get_webview_window("main")
+    .ok_or_else(|| "main window is unavailable".to_string())?;
+
+  if let Some(splash_window) = app.get_webview_window("splashscreen") {
+    let _ = splash_window.close();
+  }
+
+  show_main_window(&main_window);
+  Ok(())
 }
 
 fn updater_runtime_config() -> Result<Option<UpdaterRuntimeConfig>, String> {
@@ -266,6 +294,61 @@ pub fn run() {
   };
 
   tauri::Builder::default()
+    .setup(|app| {
+      let app_handle = app.handle().clone();
+      let show_item = MenuItemBuilder::with_id("show", "Open GoTradeTalk").build(app)?;
+      let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+      let tray_menu = MenuBuilder::new(app)
+        .items(&[&show_item, &quit_item])
+        .build()?;
+
+      TrayIconBuilder::new()
+        .icon(app.default_window_icon().cloned().ok_or_else(|| tauri::Error::AssetNotFound("default window icon not found".into()))?)
+        .tooltip("GoTradeTalk")
+        .menu(&tray_menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+          "show" => {
+            if let Some(window) = app.get_webview_window("main") {
+              show_main_window(&window);
+            }
+          }
+          "quit" => {
+            app.exit(0);
+          }
+          _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+          if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+          } = event
+          {
+            let app = tray.app_handle();
+            if let Some(window) = app.get_webview_window("main") {
+              show_main_window(&window);
+            }
+          }
+        })
+        .build(app)?;
+
+      if let Some(window) = app.get_webview_window("main") {
+        hide_main_window(&window);
+      }
+
+      thread::spawn(move || {
+        thread::sleep(Duration::from_secs(20));
+        if let Some(splash_window) = app_handle.get_webview_window("splashscreen") {
+          let _ = splash_window.close();
+        }
+        if let Some(main_window) = app_handle.get_webview_window("main") {
+          show_main_window(&main_window);
+        }
+      });
+
+      Ok(())
+    })
     .plugin(
       tauri_plugin_log::Builder::new()
         .level(log_level)
@@ -319,10 +402,11 @@ pub fn run() {
     .on_window_event(|window, event| {
       if let WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
-        let _ = window.minimize();
+        let _ = window.hide();
       }
     })
     .invoke_handler(tauri::generate_handler![
+      desktop_boot_ready,
       desktop_http_request,
       desktop_updater_status,
       desktop_check_for_updates,

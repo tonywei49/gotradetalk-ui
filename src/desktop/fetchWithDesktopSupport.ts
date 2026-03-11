@@ -17,7 +17,18 @@ function toRequestUrl(input: URL | Request | string): string {
 }
 
 function isRemoteHttpUrl(input: URL | Request | string): boolean {
-    return /^https?:\/\//i.test(toRequestUrl(input));
+    if (typeof window === "undefined") {
+        return /^https?:\/\//i.test(toRequestUrl(input));
+    }
+
+    const url = new URL(toRequestUrl(input), window.location.href);
+    if (!/^https?:$/i.test(url.protocol)) return false;
+
+    // Keep app-local requests on the WebView path so bundled assets and wasm
+    // do not get redirected through the Rust HTTP bridge.
+    if (url.origin === window.location.origin) return false;
+
+    return true;
 }
 
 function mergeHeaders(input: URL | Request | string, init?: RequestInit): Headers {
