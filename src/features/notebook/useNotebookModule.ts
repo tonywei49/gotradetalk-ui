@@ -4,7 +4,7 @@ import type { NotebookAuthContext, NotebookItem, NotebookItemFile, NotebookListS
 import { useNotebookParsedView } from "./hooks/useNotebookParsedView";
 import { useNotebookItemFiles } from "./hooks/useNotebookItemFiles";
 import { defaultChunkSettings, type ChunkSettings } from "./components/ChunkSettingsPanel";
-import { loadNotebookListCache, peekNotebookListCache, saveNotebookListCache } from "./cache";
+import { clearNotebookListCache, loadNotebookListCache, peekNotebookListCache, saveNotebookListCache } from "./cache";
 
 type UseNotebookModuleParams = {
     adapter: NotebookAdapter;
@@ -113,9 +113,10 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setIsEditing(false);
     }, [selectedItemId]);
 
-    const invalidateListCache = useCallback(() => {
+    const invalidateListCache = useCallback(async () => {
         listCacheRef.current.clear();
-    }, []);
+        await clearNotebookListCache(auth);
+    }, [auth]);
 
     const refreshCounts = useCallback(async (keyword: string) => {
         if (!enabled || !auth) {
@@ -280,12 +281,27 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             if (document.visibilityState !== "visible") return;
             void syncItems();
         };
+        const onOnline = (): void => {
+            void syncItems();
+        };
         window.addEventListener("focus", onFocus);
+        window.addEventListener("online", onOnline);
         document.addEventListener("visibilitychange", onVisibility);
         return () => {
             window.removeEventListener("focus", onFocus);
+            window.removeEventListener("online", onOnline);
             document.removeEventListener("visibilitychange", onVisibility);
         };
+    }, [auth, enabled, syncItems]);
+
+    useEffect(() => {
+        if (!enabled || !auth) return undefined;
+        const timer = window.setInterval(() => {
+            if (document.visibilityState !== "visible") return;
+            if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+            void syncItems();
+        }, 15000);
+        return () => window.clearInterval(timer);
     }, [auth, enabled, syncItems]);
 
     useEffect(() => {
@@ -408,7 +424,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                         ...chunkParams,
                     });
                 }
-                invalidateListCache();
+                await invalidateListCache();
                 const next = [nextCreated, ...items];
                 setItems(next);
                 setCounts((prev) => ({
@@ -423,6 +439,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 setDraftFiles([]);
                 setIsEditing(false);
                 setListState("ready");
+                void syncItems();
                 return;
             }
             const updated = await adapter.updateItem(auth, selectedItemId, {
@@ -452,7 +469,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                     });
                 }
             }
-            invalidateListCache();
+            await invalidateListCache();
             const prev = items.find((item) => item.id === selectedItemId);
             if (prev && prev.isIndexable !== nextUpdated.isIndexable) {
                 setCounts((state) => ({
@@ -467,12 +484,13 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setDraftFiles([]);
             setIsCreatingDraft(false);
             setIsEditing(false);
+            void syncItems();
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to save note");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, invalidateListCache, isCreatingDraft, isEditing, items, selectedItem, selectedItemId, sourceScope]);
+    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, invalidateListCache, isCreatingDraft, isEditing, items, selectedItem, selectedItemId, sourceScope, syncItems]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -481,7 +499,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setActionError(null);
         try {
             await adapter.deleteItem(auth, selectedItemId);
-            invalidateListCache();
+            await invalidateListCache();
             const deleted = items.find((item) => item.id === selectedItemId) ?? null;
             const next = items.filter((item) => item.id !== selectedItemId);
             setItems(next);
@@ -496,12 +514,13 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 setListState("empty");
             }
             applySelection(next);
+            void syncItems();
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to delete note");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, invalidateListCache, items, selectedItem, selectedItemId]);
+    }, [adapter, applySelection, auth, invalidateListCache, items, selectedItem, selectedItemId, syncItems]);
 
     const switchItemMode = useCallback(async (isIndexable: boolean) => {
         if (!auth || !selectedItem) return;
@@ -512,7 +531,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             const updated = await adapter.updateItem(auth, selectedItem.id, {
                 isIndexable,
             });
-            invalidateListCache();
+            await invalidateListCache();
             if (selectedItem.isIndexable !== updated.isIndexable) {
                 setCounts((prev) => ({
                     ...prev,
@@ -524,12 +543,13 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setEditorTitle(updated.title);
             setEditorContent(updated.contentMarkdown);
             setIsEditing(false);
+            void syncItems();
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to update notebook type");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, invalidateListCache, selectedItem]);
+    }, [adapter, auth, invalidateListCache, selectedItem, syncItems]);
 
     const retryIndex = useCallback(async () => {
         if (!auth || !selectedItem) return;
@@ -537,13 +557,15 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setActionError(null);
         try {
             const updated = await adapter.retryIndex(auth, selectedItem.id);
+            await invalidateListCache();
             setItems((prev) => prev.map((item) => (item.id === selectedItem.id ? updated : item)));
+            void syncItems();
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to retry index");
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, selectedItem]);
+    }, [adapter, auth, invalidateListCache, selectedItem, syncItems]);
 
     const { attachFile, removeFile } = useNotebookItemFiles({
         adapter,
@@ -556,6 +578,8 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setActionBusy,
         setActionError,
         setItems,
+        invalidateListCache,
+        syncItems,
     });
 
     const startEdit = useCallback(() => {

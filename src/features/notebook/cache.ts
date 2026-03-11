@@ -129,6 +129,22 @@ async function saveListCacheToSqlite(
     );
 }
 
+async function clearListCacheFromSqlite(cacheNamespace: string, cacheKey?: string): Promise<void> {
+    const db = await getNotebookCacheDb();
+    if (!db) return;
+    if (cacheKey) {
+        await db.execute(
+            "DELETE FROM notebook_list_cache WHERE cache_namespace = $1 AND cache_key = $2",
+            [cacheNamespace, cacheKey],
+        );
+        return;
+    }
+    await db.execute(
+        "DELETE FROM notebook_list_cache WHERE cache_namespace = $1",
+        [cacheNamespace],
+    );
+}
+
 async function loadParsedCacheFromSqlite(
     cacheNamespace: string,
     itemId: string,
@@ -287,6 +303,32 @@ export async function saveNotebookListCache(
         items: value.items,
         nextCursor: value.nextCursor,
     } satisfies StoredListCacheEntry);
+}
+
+export async function clearNotebookListCache(
+    auth: NotebookAuthContext | null,
+    cacheKey?: string,
+): Promise<void> {
+    const namespace = buildNamespace(auth);
+    if (!namespace) return;
+
+    await clearListCacheFromSqlite(namespace, cacheKey);
+
+    const storage = safeStorage();
+    if (!storage) return;
+
+    if (cacheKey) {
+        removeKey(listKey(namespace, cacheKey));
+        return;
+    }
+
+    const prefix = `${NOTEBOOK_CACHE_PREFIX}:list:${namespace}:`;
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(prefix)) {
+            storage.removeItem(key);
+        }
+    }
 }
 
 export async function loadNotebookParsedCache(

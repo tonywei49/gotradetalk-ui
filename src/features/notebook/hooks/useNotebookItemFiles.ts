@@ -14,6 +14,8 @@ type UseNotebookItemFilesParams = {
     setActionBusy: (busy: boolean) => void;
     setActionError: (error: string | null) => void;
     setItems: Dispatch<SetStateAction<NotebookItem[]>>;
+    invalidateListCache: () => Promise<void>;
+    syncItems: () => Promise<void>;
 };
 
 export function useNotebookItemFiles(params: UseNotebookItemFilesParams) {
@@ -47,7 +49,9 @@ export function useNotebookItemFiles(params: UseNotebookItemFilesParams) {
         params.setActionError(null);
         try {
             const updated = await params.adapter.attachFile(params.auth, params.selectedItemId, input);
+            await params.invalidateListCache();
             params.setItems((prev) => prev.map((item) => (item.id === params.selectedItemId ? updated : item)));
+            void params.syncItems();
         } catch (error) {
             params.setActionError(error instanceof Error ? error.message : "Failed to attach file");
         } finally {
@@ -65,7 +69,9 @@ export function useNotebookItemFiles(params: UseNotebookItemFilesParams) {
         params.setActionError(null);
         try {
             const updated = await params.adapter.removeFile(params.auth, params.selectedItemId, fileId);
+            await params.invalidateListCache();
             params.setItems((prev) => prev.map((item) => (item.id === params.selectedItemId ? updated : item)));
+            void params.syncItems();
         } catch (error) {
             params.setActionError(error instanceof Error ? error.message : "Failed to remove file");
         } finally {
