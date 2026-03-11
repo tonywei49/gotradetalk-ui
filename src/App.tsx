@@ -16,7 +16,7 @@ export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
     const initTheme = useThemeStore((state) => state.initTheme);
     useDesktopUpdater();
-    useDesktopWindowLifecycle();
+    useDesktopWindowLifecycle(!isAuthenticated);
 
     useEffect(() => {
         initTheme();

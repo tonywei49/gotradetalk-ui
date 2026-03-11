@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 import {
     ChatBubbleLeftRightIcon,
     BookOpenIcon,
@@ -684,6 +685,8 @@ export const MainLayout: React.FC = () => {
     const [desktopUpdaterVersion, setDesktopUpdaterVersion] = useState<string | null>(null);
     const pushToast = useToastStore((state) => state.pushToast);
     const desktopUpdaterAvailable = useMemo(() => isTauriDesktop(), []);
+    const desktopBootReadyRef = useRef(false);
+    const notebookBootNoticeRef = useRef<string | null>(null);
     const taskTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const taskAccessToken = !taskTokenExpired && hubAccessToken ? hubAccessToken : matrixAccessToken;
     const taskHsUrl = !taskTokenExpired && hubAccessToken ? null : matrixHsUrl;
@@ -763,6 +766,24 @@ export const MainLayout: React.FC = () => {
             cancelled = true;
         };
     }, [desktopUpdaterAvailable]);
+
+    useEffect(() => {
+        if (!desktopUpdaterAvailable || desktopBootReadyRef.current) return;
+        if (!hubMeResolved || !capabilityLoaded) return;
+
+        desktopBootReadyRef.current = true;
+        void invoke("desktop_boot_ready").catch((error) => {
+            console.warn("Desktop boot ready notification failed:", error);
+            desktopBootReadyRef.current = false;
+        });
+    }, [capabilityLoaded, desktopUpdaterAvailable, hubMeResolved]);
+
+    useEffect(() => {
+        if (!desktopUpdaterAvailable || !hubMeResolved || !capabilityLoaded || !capabilityError) return;
+        if (notebookBootNoticeRef.current === capabilityError) return;
+        notebookBootNoticeRef.current = capabilityError;
+        pushToast("warn", capabilityError, 5000);
+    }, [capabilityError, capabilityLoaded, desktopUpdaterAvailable, hubMeResolved, pushToast]);
 
     const resolveAvatarUrl = useCallback((mxcUrl: string | null | undefined): string | null => {
         if (!matrixClient || !mxcUrl) return null;
