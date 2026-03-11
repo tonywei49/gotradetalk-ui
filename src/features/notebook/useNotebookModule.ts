@@ -16,6 +16,9 @@ type UseNotebookModuleParams = {
 export type NotebookViewFilter = "all" | "knowledge" | "note";
 export type NotebookSourceScope = "personal" | "company" | "both";
 
+const NOTEBOOK_SYNC_INTERVAL_MS = 60_000;
+const NOTEBOOK_SYNC_COOLDOWN_MS = 5_000;
+
 function deriveItemsFromAllCache(
     allCache: { items: NotebookItem[]; nextCursor: string | null } | null,
     viewFilter: NotebookViewFilter,
@@ -57,6 +60,8 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
     const [listRefreshing, setListRefreshing] = useState(false);
     const loadSeqRef = useRef(0);
     const countsSeqRef = useRef(0);
+    const syncRunRef = useRef<Promise<void> | null>(null);
+    const lastSyncAtRef = useRef(0);
     const draftLockRef = useRef(false);
     const viewFilterRef = useRef<NotebookViewFilter>("all");
     const sourceScopeRef = useRef<NotebookSourceScope>("both");
@@ -209,7 +214,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         }
     }, [applySelection, auth, debouncedSearch, enabled, sourceScope, viewFilter]);
 
-    const syncItems = useCallback(async () => {
+    const runSyncItems = useCallback(async () => {
         if (!enabled || !auth) return;
         const currentViewFilter = viewFilterRef.current;
         const currentSourceScope = sourceScopeRef.current;
@@ -264,25 +269,46 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         }
     }, [adapter, applySelection, auth, debouncedSearch, enabled, items.length]);
 
+    const syncItems = useCallback(async (options?: { force?: boolean }) => {
+        if (!enabled || !auth) return;
+        const force = Boolean(options?.force);
+        const now = Date.now();
+        if (!force && (now - lastSyncAtRef.current) < NOTEBOOK_SYNC_COOLDOWN_MS) {
+            return;
+        }
+        if (syncRunRef.current) {
+            if (!force) return syncRunRef.current;
+            await syncRunRef.current;
+        }
+        const nextRun = runSyncItems().finally(() => {
+            if (syncRunRef.current === nextRun) {
+                syncRunRef.current = null;
+            }
+            lastSyncAtRef.current = Date.now();
+        });
+        syncRunRef.current = nextRun;
+        return nextRun;
+    }, [auth, enabled, runSyncItems]);
+
     useEffect(() => {
         void applyCachedItems();
     }, [applyCachedItems]);
 
     useEffect(() => {
-        void syncItems();
+        void syncItems({ force: true });
     }, [syncItems, refreshToken, debouncedSearch]);
 
     useEffect(() => {
         if (!enabled || !auth) return undefined;
         const onFocus = (): void => {
-            void syncItems();
+            void syncItems({ force: true });
         };
         const onVisibility = (): void => {
             if (document.visibilityState !== "visible") return;
-            void syncItems();
+            void syncItems({ force: true });
         };
         const onOnline = (): void => {
-            void syncItems();
+            void syncItems({ force: true });
         };
         window.addEventListener("focus", onFocus);
         window.addEventListener("online", onOnline);
@@ -300,7 +326,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             if (document.visibilityState !== "visible") return;
             if (typeof navigator !== "undefined" && navigator.onLine === false) return;
             void syncItems();
-        }, 15000);
+        }, NOTEBOOK_SYNC_INTERVAL_MS);
         return () => window.clearInterval(timer);
     }, [auth, enabled, syncItems]);
 
@@ -439,7 +465,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 setDraftFiles([]);
                 setIsEditing(false);
                 setListState("ready");
-                void syncItems();
+                void syncItems({ force: true });
                 return;
             }
             const updated = await adapter.updateItem(auth, selectedItemId, {
@@ -484,7 +510,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setDraftFiles([]);
             setIsCreatingDraft(false);
             setIsEditing(false);
-            void syncItems();
+            void syncItems({ force: true });
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to save note");
         } finally {
@@ -514,7 +540,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 setListState("empty");
             }
             applySelection(next);
-            void syncItems();
+            void syncItems({ force: true });
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to delete note");
         } finally {
@@ -543,7 +569,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setEditorTitle(updated.title);
             setEditorContent(updated.contentMarkdown);
             setIsEditing(false);
-            void syncItems();
+            void syncItems({ force: true });
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to update notebook type");
         } finally {
@@ -559,7 +585,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             const updated = await adapter.retryIndex(auth, selectedItem.id);
             await invalidateListCache();
             setItems((prev) => prev.map((item) => (item.id === selectedItem.id ? updated : item)));
-            void syncItems();
+            void syncItems({ force: true });
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to retry index");
         } finally {
