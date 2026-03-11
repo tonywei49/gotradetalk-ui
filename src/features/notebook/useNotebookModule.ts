@@ -168,15 +168,16 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         if (fastCached) {
             setItems(fastCached.items);
             setNextCursor(fastCached.nextCursor);
+            setListRefreshing(true);
             if (!draftLockRef.current) {
                 if (fastCached.items.length === 0) {
-                    setListState("empty");
+                    setListState("loading");
                     setSelectedItemId(null);
                     setEditorTitle("");
                     setEditorContent("");
                     setIsEditing(false);
                 } else {
-                    setListState("ready");
+                    setListState("loading");
                     applySelection(fastCached.items);
                 }
             }
@@ -189,15 +190,16 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         if (cached) {
             setItems(cached.items);
             setNextCursor(cached.nextCursor);
+            setListRefreshing(true);
             if (draftLockRef.current) return;
             if (cached.items.length === 0) {
-                setListState("empty");
+                setListState("loading");
                 setSelectedItemId(null);
                 setEditorTitle("");
                 setEditorContent("");
                 setIsEditing(false);
             } else {
-                setListState("ready");
+                setListState("loading");
                 applySelection(cached.items);
             }
         }
@@ -268,6 +270,23 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
     useEffect(() => {
         void syncItems();
     }, [syncItems, refreshToken, debouncedSearch]);
+
+    useEffect(() => {
+        if (!enabled || !auth) return undefined;
+        const onFocus = (): void => {
+            void syncItems();
+        };
+        const onVisibility = (): void => {
+            if (document.visibilityState !== "visible") return;
+            void syncItems();
+        };
+        window.addEventListener("focus", onFocus);
+        document.addEventListener("visibilitychange", onVisibility);
+        return () => {
+            window.removeEventListener("focus", onFocus);
+            document.removeEventListener("visibilitychange", onVisibility);
+        };
+    }, [auth, enabled, syncItems]);
 
     useEffect(() => {
         if (!enabled || !auth) return;
