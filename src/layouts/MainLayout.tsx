@@ -156,6 +156,11 @@ function parseMxcUri(mxcUrl: string): { serverName: string; mediaId: string } | 
     return { serverName: match[1], mediaId: match[2] };
 }
 
+function isMockNotebookMxc(mxcUrl: string): boolean {
+    const parsed = parseMxcUri(mxcUrl);
+    return parsed?.serverName === "mock.server";
+}
+
 async function cleanupUploadedMedia(
     hsUrl: string,
     accessToken: string,
@@ -220,6 +225,35 @@ function getFilePreviewType(item: { msgtype: string; mimeType?: string }): "imag
     const type = getFileTypeGroup(item);
     if (type === "image" || type === "video" || type === "audio" || type === "pdf") return type;
     return null;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result === "string") {
+                resolve(reader.result);
+                return;
+            }
+            reject(new Error("INVALID_FILE_READER_RESULT"));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("FILE_READER_FAILED"));
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function fetchMediaBlob(url: string, accessToken?: string | null): Promise<Blob> {
+    const response = await fetch(url, {
+        headers: accessToken
+            ? {
+                Authorization: `Bearer ${accessToken}`,
+            }
+            : undefined,
+    });
+    if (!response.ok) {
+        throw new Error(`HTTP_${response.status}`);
+    }
+    return response.blob();
 }
 
 function formatBytesToMb(value: number): string {
@@ -522,6 +556,18 @@ export const MainLayout: React.FC = () => {
     } | null>(null);
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+    const [notebookFileActionError, setNotebookFileActionError] = useState<string | null>(null);
+    const [notebookUploadState, setNotebookUploadState] = useState<{
+        busy: boolean;
+        progress: number;
+        fileName: string | null;
+        error: string | null;
+    }>({
+        busy: false,
+        progress: 0,
+        fileName: null,
+        error: null,
+    });
     const previewDraggingRef = useRef(false);
     const previewDragStartRef = useRef({ x: 0, y: 0 });
     const previewDragOriginRef = useRef({ x: 0, y: 0 });
@@ -4129,15 +4175,31 @@ export const MainLayout: React.FC = () => {
                             }}
                             onUploadFile={(file) => {
                                 if (!matrixClient) return;
+                                setNotebookFileActionError(null);
                                 const maxBytes = notebookUploadLimitMb * 1024 * 1024;
                                 if (file.size > maxBytes) {
                                     window.alert(`檔案超過上限（${notebookUploadLimitMb}MB）`);
                                     return;
                                 }
                                 void (async () => {
+                                    setNotebookUploadState({
+                                        busy: true,
+                                        progress: 0,
+                                        fileName: file.name,
+                                        error: null,
+                                    });
                                     try {
                                         const uploadResult = (await matrixClient.uploadContent(file, {
                                             includeFilename: false,
+                                            progressHandler: (progressInfo) => {
+                                                const loaded = Number(progressInfo.loaded ?? 0);
+                                                const total = Number(progressInfo.total ?? file.size ?? 0);
+                                                const nextProgress = total > 0 ? Math.round((loaded / total) * 100) : 0;
+                                                setNotebookUploadState((prev) => ({
+                                                    ...prev,
+                                                    progress: Math.max(prev.progress, nextProgress),
+                                                }));
+                                            },
                                         })) as unknown;
 
                                         let mxcUrl = "";
@@ -4168,8 +4230,29 @@ export const MainLayout: React.FC = () => {
                                             matrixMediaSize: file.size,
                                             isIndexable: false,
                                         });
+                                        setNotebookUploadState({
+                                            busy: false,
+                                            progress: 100,
+                                            fileName: file.name,
+                                            error: null,
+                                        });
+                                        window.setTimeout(() => {
+                                            setNotebookUploadState((prev) => prev.fileName === file.name ? {
+                                                busy: false,
+                                                progress: 0,
+                                                fileName: null,
+                                                error: null,
+                                            } : prev);
+                                        }, 1200);
                                     } catch {
-                                        // attach/upload failures are reflected by notebook module action state or ignored safely
+                                        const message = "檔案上傳失敗，請稍後重試。";
+                                        setNotebookUploadState({
+                                            busy: false,
+                                            progress: 0,
+                                            fileName: file.name,
+                                            error: message,
+                                        });
+                                        setNotebookFileActionError(message);
                                     }
                                 })();
                             }}
@@ -4179,13 +4262,24 @@ export const MainLayout: React.FC = () => {
                             }}
                             onDownloadFile={(mxcUrl, preferredName) => {
                                 if (!matrixClient) return;
+                                setNotebookFileActionError(null);
+                                if (isMockNotebookMxc(mxcUrl)) {
+                                    const message = "此檔案仍指向舊的 mock 快取資料，請重新整理 Notebook 後再試。";
+                                    setNotebookFileActionError(message);
+                                    pushToast("error", message);
+                                    void notebookModule.syncItems();
+                                    return;
+                                }
                                 const url = matrixClient.mxcUrlToHttp(mxcUrl);
-                                if (!url) return;
+                                if (!url) {
+                                    const message = "無法解析檔案下載地址。";
+                                    setNotebookFileActionError(message);
+                                    pushToast("error", message);
+                                    return;
+                                }
                                 void (async () => {
                                     try {
-                                        const response = await fetch(url);
-                                        if (!response.ok) return;
-                                        const blob = await response.blob();
+                                        const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
                                         const blobUrl = URL.createObjectURL(blob);
                                         const anchor = document.createElement("a");
                                         anchor.href = blobUrl;
@@ -4196,18 +4290,22 @@ export const MainLayout: React.FC = () => {
                                         document.body.removeChild(anchor);
                                         URL.revokeObjectURL(blobUrl);
                                     } catch {
-                                        const anchor = document.createElement("a");
-                                        anchor.href = url;
-                                        anchor.download = preferredName || "notebook-file";
-                                        anchor.rel = "noopener noreferrer";
-                                        document.body.appendChild(anchor);
-                                        anchor.click();
-                                        document.body.removeChild(anchor);
+                                        const message = "檔案下載失敗，請確認 Matrix 媒體仍存在後再試。";
+                                        setNotebookFileActionError(message);
+                                        pushToast("error", message);
                                     }
                                 })();
                             }}
                             onPreviewFile={(file) => {
                                 if (!matrixClient) return;
+                                setNotebookFileActionError(null);
+                                if (isMockNotebookMxc(file.matrixMediaMxc)) {
+                                    const message = "此檔案仍指向舊的 mock 快取資料，請重新整理 Notebook 後再試。";
+                                    setNotebookFileActionError(message);
+                                    pushToast("error", message);
+                                    void notebookModule.syncItems();
+                                    return;
+                                }
                                 const previewType = getFilePreviewType({
                                     msgtype: (file.matrixMediaMime || "").toLowerCase().startsWith("image/")
                                         ? "m.image"
@@ -4218,31 +4316,39 @@ export const MainLayout: React.FC = () => {
                                                 : "m.file",
                                     mimeType: file.matrixMediaMime ?? undefined,
                                 });
-                                if (!previewType) return;
+                                if (!previewType) {
+                                    const message = "此檔案類型暫不支援預覽，請改用下載。";
+                                    setNotebookFileActionError(message);
+                                    pushToast("error", message);
+                                    return;
+                                }
                                 const url = matrixClient.mxcUrlToHttp(file.matrixMediaMxc);
-                                if (!url) return;
+                                if (!url) {
+                                    const message = "無法解析檔案預覽地址。";
+                                    setNotebookFileActionError(message);
+                                    pushToast("error", message);
+                                    return;
+                                }
                                 void (async () => {
                                     try {
-                                        const response = await fetch(url);
-                                        if (!response.ok) return;
-                                        const blob = await response.blob();
-                                        const blobUrl = URL.createObjectURL(blob);
+                                        const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
+                                        const previewUrl = previewType === "pdf"
+                                            ? await blobToDataUrl(blob)
+                                            : URL.createObjectURL(blob);
                                         setPreviewZoom(1);
                                         setPreviewOffset({ x: 0, y: 0 });
                                         setFilePreview({
-                                            url: blobUrl,
+                                            url: previewUrl,
                                             type: previewType,
                                             name: file.matrixMediaName || "notebook-file",
-                                            revokeOnClose: true,
+                                            revokeOnClose: previewType !== "pdf",
                                         });
                                     } catch {
-                                        setPreviewZoom(1);
-                                        setPreviewOffset({ x: 0, y: 0 });
-                                        setFilePreview({
-                                            url,
-                                            type: previewType,
-                                            name: file.matrixMediaName || "notebook-file",
-                                        });
+                                        const message = previewType === "pdf"
+                                            ? "PDF 預覽失敗，請改用下載檢查原檔。"
+                                            : "檔案預覽失敗，請稍後重試或改用下載。";
+                                        setNotebookFileActionError(message);
+                                        pushToast("error", message);
                                     }
                                 })();
                             }}
@@ -4253,7 +4359,8 @@ export const MainLayout: React.FC = () => {
                             chunks={notebookModule.chunks}
                             chunksTotal={notebookModule.chunksTotal}
                             busy={notebookModule.actionBusy}
-                            actionError={notebookModule.actionError}
+                            actionError={notebookModule.actionError || notebookFileActionError}
+                            uploadState={notebookUploadState}
                             onMobileBack={() => setMobileView("list")}
                             chunkSettings={notebookModule.chunkSettings}
                             onChunkSettingsChange={notebookModule.setChunkSettings}

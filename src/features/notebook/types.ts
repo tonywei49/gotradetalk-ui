@@ -9,6 +9,9 @@ export type NotebookItemFile = {
     matrixMediaMime?: string | null;
     matrixMediaSize?: number | null;
     createdAt: string;
+    uploadStatus?: "uploading" | "ready" | "error";
+    uploadProgress?: number | null;
+    uploadError?: string | null;
 };
 
 export type NotebookItem = {

@@ -1,7 +1,8 @@
 use std::{thread, time::Duration};
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, WindowEvent};
 use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
 use tauri_plugin_sql::{Migration, MigrationKind};
 use tauri_plugin_updater::UpdaterExt;
@@ -52,7 +53,7 @@ struct DesktopHttpRequest {
 struct DesktopHttpResponse {
   status: u16,
   headers: Vec<(String, String)>,
-  body: String,
+  body_base64: String,
 }
 
 fn current_version(app: &AppHandle) -> String {
@@ -248,11 +249,12 @@ async fn desktop_http_request(input: DesktopHttpRequest) -> Result<DesktopHttpRe
     })
     .collect::<Vec<_>>();
   let body = response
-    .text()
+    .bytes()
     .await
     .map_err(|error| format!("failed to read desktop http response body: {error}"))?;
+  let body_base64 = BASE64_STANDARD.encode(body);
 
-  Ok(DesktopHttpResponse { status, headers, body })
+  Ok(DesktopHttpResponse { status, headers, body_base64 })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -314,6 +316,12 @@ pub fn run() {
     )
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_updater::Builder::new().build())
+    .on_window_event(|window, event| {
+      if let WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close();
+        let _ = window.minimize();
+      }
+    })
     .invoke_handler(tauri::generate_handler![
       desktop_http_request,
       desktop_updater_status,
