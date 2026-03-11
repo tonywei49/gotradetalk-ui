@@ -85,7 +85,7 @@ import {
 } from "../services/notebookApi";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
 import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
-import { checkDesktopUpdaterOnce, isTauriDesktop } from "../desktop/useDesktopUpdater";
+import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from "../desktop/useDesktopUpdater";
 import { useToastStore } from "../stores/ToastStore";
 
 // Placeholder for RoomList and ChatArea to be implemented later
@@ -635,6 +635,7 @@ export const MainLayout: React.FC = () => {
     const [notificationSoundMode, setNotificationSoundMode] = useState<NotificationSoundMode>("classic");
     const [notificationSoundHydrated, setNotificationSoundHydrated] = useState(false);
     const [checkingDesktopUpdate, setCheckingDesktopUpdate] = useState(false);
+    const [desktopUpdaterVersion, setDesktopUpdaterVersion] = useState<string | null>(null);
     const pushToast = useToastStore((state) => state.pushToast);
     const desktopUpdaterAvailable = useMemo(() => isTauriDesktop(), []);
     const taskTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
@@ -699,6 +700,24 @@ export const MainLayout: React.FC = () => {
             }),
         [capabilityLoaded, capabilityValues, userType],
     );
+    useEffect(() => {
+        if (!desktopUpdaterAvailable) return;
+
+        let cancelled = false;
+        void getDesktopUpdaterStatus()
+            .then((status) => {
+                if (cancelled) return;
+                setDesktopUpdaterVersion(status.currentVersion || null);
+            })
+            .catch((error) => {
+                console.warn("Failed to load desktop updater status:", error);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [desktopUpdaterAvailable]);
+
     const resolveAvatarUrl = useCallback((mxcUrl: string | null | undefined): string | null => {
         if (!matrixClient || !mxcUrl) return null;
         return matrixClient.mxcUrlToHttp(mxcUrl, 96, 96, "crop") ?? matrixClient.mxcUrlToHttp(mxcUrl) ?? null;
@@ -3116,6 +3135,11 @@ export const MainLayout: React.FC = () => {
                                     <div className="mb-2 text-sm text-slate-700 dark:text-slate-100">
                                         Desktop Updates
                                     </div>
+                                    {desktopUpdaterVersion && (
+                                        <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                                            Current version: {desktopUpdaterVersion}
+                                        </div>
+                                    )}
                                     <button
                                         type="button"
                                         disabled={checkingDesktopUpdate}

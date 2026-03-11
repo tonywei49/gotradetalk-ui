@@ -34,11 +34,15 @@ export function isTauriDesktop(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+export async function getDesktopUpdaterStatus(): Promise<DesktopUpdaterStatus> {
+    return invoke<DesktopUpdaterStatus>("desktop_updater_status");
+}
+
 async function runDesktopUpdateCheck(
     pushToast: PushToast,
     options: DesktopUpdateCheckOptions,
 ): Promise<"disabled" | "idle" | "installed"> {
-    const status = await invoke<DesktopUpdaterStatus>("desktop_updater_status");
+    const status = await getDesktopUpdaterStatus();
     if (!status.enabled) {
         if (status.reason) {
             console.info("Desktop updater disabled:", status.reason);
