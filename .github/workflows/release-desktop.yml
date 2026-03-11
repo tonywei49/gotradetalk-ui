@@ -54,3 +54,31 @@ jobs:
             src-tauri/target/release/bundle/macos/GoTradeTalk.app.tar.gz
             src-tauri/target/release/bundle/macos/GoTradeTalk.app.tar.gz.sig
             src-tauri/target/release/bundle/latest.json
+
+  release-windows:
+    name: Build Windows release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installer
+        run: npm run tauri:build
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/msi/GoTradeTalk_*.msi
