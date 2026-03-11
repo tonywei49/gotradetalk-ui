@@ -43,6 +43,12 @@ type NotebookPanelProps = {
     onMobileBack?: () => void;
     chunkSettings?: ChunkSettings;
     onChunkSettingsChange?: (settings: ChunkSettings) => void;
+    uploadState?: {
+        busy: boolean;
+        progress: number;
+        fileName: string | null;
+        error: string | null;
+    };
 };
 
 function indexHint(item: NotebookItem, t: TFunction): { tone: string; text: string } {
@@ -112,6 +118,7 @@ export function NotebookPanel({
     onMobileBack,
     chunkSettings,
     onChunkSettingsChange,
+    uploadState,
 }: NotebookPanelProps) {
     const { t } = useTranslation();
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -139,6 +146,7 @@ export function NotebookPanel({
         }
         : indexHint(selectedItem as NotebookItem, t);
     const isCompanyReadOnly = Boolean(!isCreatingDraft && (selectedItem?.sourceScope === "company" || selectedItem?.readOnly));
+    const visibleFiles = (isCreatingDraft || isEditing) ? (draftFiles || []) : (selectedItem?.files || []);
 
     return (
         <div className="relative flex h-full flex-col bg-white dark:bg-slate-900">
@@ -187,19 +195,35 @@ export function NotebookPanel({
                 </label>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <div className="mb-2 font-semibold">
-                        {t("layout.notebook.attachedFiles", "Attached files")} ({isCreatingDraft ? (draftFiles?.length || 0) : (selectedItem?.files.length || 0)})
+                        {t("layout.notebook.attachedFiles", "Attached files")} ({visibleFiles.length || 0})
                     </div>
                     <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">
                         {t("layout.notebook.singleFileLimit", "Single file limit: {{size}}MB", { size: uploadLimitMb })}
                     </div>
-                    {isCreatingDraft ? (
-                        (draftFiles?.length || 0) === 0 ? (
+                    {uploadState?.busy && (
+                        <div className="mb-2 rounded border border-sky-200 bg-sky-50 px-2 py-2 text-[11px] text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="truncate">{uploadState.fileName || t("layout.notebook.uploadingFile", "Uploading file...")}</span>
+                                <span>{Math.max(0, Math.min(100, uploadState.progress))}%</span>
+                            </div>
+                            <div className="mt-1 h-1.5 overflow-hidden rounded bg-sky-100 dark:bg-slate-700">
+                                <div className="h-full rounded bg-sky-500 transition-all" style={{ width: `${Math.max(4, uploadState.progress)}%` }} />
+                            </div>
+                        </div>
+                    )}
+                    {uploadState?.error && (
+                        <div className="mb-2 rounded border border-rose-200 bg-rose-50 px-2 py-2 text-[11px] text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/20 dark:text-rose-200">
+                            {uploadState.error}
+                        </div>
+                    )}
+                    {(isCreatingDraft || isEditing) ? (
+                        visibleFiles.length === 0 ? (
                             <div className="text-slate-500 dark:text-slate-400">
                                 {t("layout.notebook.draftFilesHint", "You can upload or link files first. They will be saved together with the draft.")}
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                {(draftFiles || []).map((file) => (
+                                {visibleFiles.map((file) => (
                                     <div key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
                                         <div className="min-w-0 flex-1 truncate">
                                             {file.matrixMediaName || file.matrixMediaMxc}
@@ -212,7 +236,14 @@ export function NotebookPanel({
                                             >
                                                 {t("layout.notebook.previewFile", "Preview")}
                                             </button>
-                                            {isEditing && !isCompanyReadOnly && (
+                                            <button
+                                                type="button"
+                                                onClick={() => onDownloadFile(file.matrixMediaMxc, file.matrixMediaName)}
+                                                className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+                                            >
+                                                {t("layout.notebook.downloadFile", "Download")}
+                                            </button>
+                                            {!isCompanyReadOnly && (
                                                 <button
                                                     type="button"
                                                     onClick={() => onDeleteFile(file.id)}
@@ -227,11 +258,11 @@ export function NotebookPanel({
                                 ))}
                             </div>
                         )
-                    ) : (selectedItem?.files.length || 0) === 0 ? (
+                    ) : visibleFiles.length === 0 ? (
                         <div className="text-slate-500 dark:text-slate-400">{t("layout.notebook.noFiles", "No files yet.")}</div>
                     ) : (
                         <div className="space-y-2">
-                            {(selectedItem?.files || []).map((file) => (
+                            {visibleFiles.map((file) => (
                                 <div key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
                                     <div className="min-w-0 flex-1 truncate">
                                         {file.matrixMediaName || file.matrixMediaMxc}

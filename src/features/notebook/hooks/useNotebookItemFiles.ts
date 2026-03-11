@@ -8,6 +8,7 @@ type UseNotebookItemFilesParams = {
     auth: NotebookAuthContext | null;
     selectedItemId: string | null;
     isCreatingDraft: boolean;
+    isEditing: boolean;
     draftFiles: NotebookItemFile[];
     setDraftFiles: Dispatch<SetStateAction<NotebookItemFile[]>>;
     setActionBusy: (busy: boolean) => void;
@@ -27,7 +28,7 @@ export function useNotebookItemFiles(params: UseNotebookItemFilesParams) {
         chunkSeparator?: string;
     }) => {
         if (!params.auth) return;
-        if (params.isCreatingDraft || !params.selectedItemId) {
+        if (params.isCreatingDraft || params.isEditing || !params.selectedItemId) {
             const draftId = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             params.setDraftFiles((prev) => ([
                 ...prev,
@@ -56,7 +57,7 @@ export function useNotebookItemFiles(params: UseNotebookItemFilesParams) {
 
     const removeFile = useCallback(async (fileId: string) => {
         if (!params.auth) return;
-        if (params.isCreatingDraft || !params.selectedItemId) {
+        if (params.isCreatingDraft || params.isEditing || !params.selectedItemId) {
             params.setDraftFiles((prev) => prev.filter((file) => file.id !== fileId));
             return;
         }

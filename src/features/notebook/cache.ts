@@ -5,6 +5,7 @@ const NOTEBOOK_CACHE_PREFIX = "gtt:notebook";
 const LIST_TTL_MS = 1000 * 60 * 30;
 const PARSED_TTL_MS = 1000 * 60 * 30;
 const MAX_PARSED_CACHE_ITEMS = 20;
+const NOTEBOOK_ADAPTER_MODE = (import.meta.env.VITE_NOTEBOOK_ADAPTER_MODE as string | undefined)?.trim().toLowerCase() || "mock";
 
 type StoredListCacheEntry = {
     updatedAt: number;
@@ -39,7 +40,7 @@ function buildNamespace(auth: NotebookAuthContext | null): string | null {
     const matrixUserId = auth?.matrixUserId?.trim();
     const apiBaseUrl = auth?.apiBaseUrl?.trim();
     if (!matrixUserId || !apiBaseUrl) return null;
-    return normalizeNamespace(`${apiBaseUrl}::${matrixUserId}`);
+    return normalizeNamespace(`${apiBaseUrl}::${matrixUserId}::${NOTEBOOK_ADAPTER_MODE}`);
 }
 
 function readJson<T>(key: string): T | null {

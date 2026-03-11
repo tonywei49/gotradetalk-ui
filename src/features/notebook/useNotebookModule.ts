@@ -412,18 +412,40 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 isIndexable,
                 ...chunkParams,
             });
+            let nextUpdated = updated;
+            if (isEditing) {
+                const previousFiles = selectedItem?.files ?? [];
+                const draftFileMap = new Map(draftFiles.map((file) => [file.id, file]));
+                const removedFiles = previousFiles.filter((file) => !draftFileMap.has(file.id));
+                const addedFiles = draftFiles.filter((file) => !previousFiles.some((existing) => existing.id === file.id));
+
+                for (const file of removedFiles) {
+                    nextUpdated = await adapter.removeFile(auth, nextUpdated.id, file.id);
+                }
+                for (const file of addedFiles) {
+                    nextUpdated = await adapter.attachFile(auth, nextUpdated.id, {
+                        matrixMediaMxc: file.matrixMediaMxc,
+                        matrixMediaName: file.matrixMediaName || undefined,
+                        matrixMediaMime: file.matrixMediaMime || undefined,
+                        matrixMediaSize: file.matrixMediaSize || undefined,
+                        isIndexable,
+                        ...chunkParams,
+                    });
+                }
+            }
             invalidateListCache();
             const prev = items.find((item) => item.id === selectedItemId);
-            if (prev && prev.isIndexable !== updated.isIndexable) {
+            if (prev && prev.isIndexable !== nextUpdated.isIndexable) {
                 setCounts((state) => ({
                     ...state,
-                    knowledge: Math.max(0, state.knowledge + (updated.isIndexable ? 1 : -1)),
-                    note: Math.max(0, state.note + (updated.isIndexable ? -1 : 1)),
+                    knowledge: Math.max(0, state.knowledge + (nextUpdated.isIndexable ? 1 : -1)),
+                    note: Math.max(0, state.note + (nextUpdated.isIndexable ? -1 : 1)),
                 }));
             }
-            setItems((prev) => prev.map((item) => (item.id === selectedItemId ? updated : item)));
-            setEditorTitle(updated.title);
-            setEditorContent(updated.contentMarkdown);
+            setItems((prev) => prev.map((item) => (item.id === selectedItemId ? nextUpdated : item)));
+            setEditorTitle(nextUpdated.title);
+            setEditorContent(nextUpdated.contentMarkdown);
+            setDraftFiles([]);
             setIsCreatingDraft(false);
             setIsEditing(false);
         } catch (error) {
@@ -431,7 +453,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, invalidateListCache, isCreatingDraft, items, selectedItemId, sourceScope]);
+    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, invalidateListCache, isCreatingDraft, isEditing, items, selectedItem, selectedItemId, sourceScope]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -509,6 +531,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         auth,
         selectedItemId,
         isCreatingDraft,
+        isEditing,
         draftFiles,
         setDraftFiles,
         setActionBusy,
@@ -521,6 +544,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         if (selectedItem.sourceScope === "company" || selectedItem.readOnly) return;
         setEditorTitle(selectedItem.title);
         setEditorContent(selectedItem.contentMarkdown);
+        setDraftFiles(selectedItem.files.map((file) => ({ ...file })));
         setActionError(null);
         setIsEditing(true);
     }, [selectedItem]);
@@ -540,6 +564,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         if (!selectedItem) return;
         setEditorTitle(selectedItem.title);
         setEditorContent(selectedItem.contentMarkdown);
+        setDraftFiles([]);
         setActionError(null);
         setIsEditing(false);
     }, [isCreatingDraft, items, selectedItem]);
