@@ -31,18 +31,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Write production environment
-        env:
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            echo "Missing required GitHub secret: VITE_SUPABASE_ANON_KEY"
-            exit 1
-          fi
           cat <<EOF > .env.production
           VITE_HUB_API_BASE_URL=https://api.gotradetalk.com
           VITE_DEFAULT_PUBLIC_HS=https://matrix.gotradetalk.com
           VITE_SUPABASE_URL=https://yxgszzdroetxjeabqown.supabase.co
-          VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+          VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4Z3N6emRyb2V0eGplYWJxb3duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MTYxNDksImV4cCI6MjA4NDM5MjE0OX0.UGcUiXRLGXUgt1Q5E1ssRDTCtT9iyLehg4n1LjmpjYM
           EOF
 
       - name: Install dependencies
@@ -87,18 +81,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Write production environment
-        env:
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         shell: powershell
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_ANON_KEY)) {
-            throw "Missing required GitHub secret: VITE_SUPABASE_ANON_KEY"
-          }
           @"
           VITE_HUB_API_BASE_URL=https://api.gotradetalk.com
           VITE_DEFAULT_PUBLIC_HS=https://matrix.gotradetalk.com
           VITE_SUPABASE_URL=https://yxgszzdroetxjeabqown.supabase.co
-          VITE_SUPABASE_ANON_KEY=$env:VITE_SUPABASE_ANON_KEY
+          VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4Z3N6emRyb2V0eGplYWJxb3duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MTYxNDksImV4cCI6MjA4NDM5MjE0OX0.UGcUiXRLGXUgt1Q5E1ssRDTCtT9iyLehg4n1LjmpjYM
           "@ | Set-Content .env.production
 
       - name: Install dependencies
