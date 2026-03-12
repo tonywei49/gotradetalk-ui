@@ -75,7 +75,7 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
-        run: npm run tauri:build
+        run: npm run tauri:build:windows
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2

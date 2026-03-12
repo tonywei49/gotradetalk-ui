@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
     const notebookTarget = resolveProxyTarget(env.VITE_NOTEBOOK_API_BASE_URL, hubTarget);
 
     return {
+        base: mode === "development" ? "/" : "./",
         plugins: [react(), tailwindcss()],
         server: {
             strictPort: true,

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{
   menu::{MenuBuilder, MenuItemBuilder},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  AppHandle, Manager, WebviewWindow, WindowEvent,
+  AppHandle, Manager, RunEvent, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -293,7 +293,7 @@ pub fn run() {
     log::LevelFilter::Info
   };
 
-  tauri::Builder::default()
+  let app = tauri::Builder::default()
     .setup(|app| {
       let app_handle = app.handle().clone();
       let show_item = MenuItemBuilder::with_id("show", "Open GoTradeTalk").build(app)?;
@@ -420,6 +420,18 @@ pub fn run() {
       desktop_check_for_updates,
       desktop_install_update
     ])
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application");
+
+  app.run(|app, event| {
+    #[cfg(target_os = "macos")]
+    if let RunEvent::Reopen { .. } = event {
+      if let Some(splash_window) = app.get_webview_window("splashscreen") {
+        let _ = splash_window.close();
+      }
+      if let Some(window) = app.get_webview_window("main") {
+        show_main_window(&window);
+      }
+    }
+  });
 }
