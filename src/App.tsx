@@ -7,30 +7,95 @@ import { PluginHostProvider } from "./plugins";
 import { useDesktopUpdater } from "./desktop/useDesktopUpdater";
 import { useDesktopWindowLifecycle } from "./desktop/useDesktopWindowLifecycle";
 
-const MainLayout = lazy(async () => {
+const loadMainLayout = async () => {
     const module = await import("./layouts/MainLayout");
     return { default: module.MainLayout };
-});
+};
 
-const ChatRoom = lazy(async () => {
+const loadChatRoom = async () => {
     const module = await import("./features/chat");
     return { default: module.ChatRoom };
-});
+};
 
-const AuthPage = lazy(async () => {
+const loadAuthPage = async () => {
     const module = await import("./pages/AuthPage");
     return { default: module.AuthPage };
-});
+};
 
-const OauthSetupPage = lazy(async () => {
+const loadOauthSetupPage = async () => {
     const module = await import("./pages/OauthSetupPage");
     return { default: module.OauthSetupPage };
-});
+};
+
+const MainLayout = lazy(loadMainLayout);
+const ChatRoom = lazy(loadChatRoom);
+const AuthPage = lazy(loadAuthPage);
+const OauthSetupPage = lazy(loadOauthSetupPage);
 
 const ResetPasswordPage = lazy(async () => {
     const module = await import("./pages/ResetPasswordPage");
     return { default: module.ResetPasswordPage };
 });
+
+function RouteTransitionScreen() {
+    return (
+        <div
+            style={{
+                minHeight: "100vh",
+                display: "grid",
+                placeItems: "center",
+                background: "linear-gradient(180deg, #f7f9fc 0%, #edf2f7 100%)",
+                color: "#0f172a",
+            }}
+        >
+            <div
+                style={{
+                    display: "grid",
+                    justifyItems: "center",
+                    gap: "12px",
+                    padding: "24px",
+                }}
+            >
+                <div
+                    style={{
+                        width: "56px",
+                        height: "56px",
+                        borderRadius: "18px",
+                        background: "#0f172a",
+                        color: "#ffffff",
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: "22px",
+                        fontWeight: 700,
+                        letterSpacing: "0.08em",
+                        boxShadow: "0 16px 32px rgba(15, 23, 42, 0.14)",
+                    }}
+                >
+                    GT
+                </div>
+                <div
+                    style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "999px",
+                        border: "3px solid rgba(15, 23, 42, 0.14)",
+                        borderTopColor: "#0f172a",
+                        animation: "gt-route-spin 0.9s linear infinite",
+                    }}
+                />
+                <div style={{ fontSize: "14px", fontWeight: 600 }}>Loading workspace...</div>
+            </div>
+            <style>
+                {`
+                    @keyframes gt-route-spin {
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
+                    }
+                `}
+            </style>
+        </div>
+    );
+}
 
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
@@ -42,10 +107,21 @@ export function App() {
         initTheme();
     }, [initTheme]);
 
+    useEffect(() => {
+        if (isAuthenticated) {
+            void loadAuthPage();
+            void loadOauthSetupPage();
+            return;
+        }
+
+        void loadMainLayout();
+        void loadChatRoom();
+    }, [isAuthenticated]);
+
     return (
         <PluginHostProvider>
             <BrowserRouter>
-                <Suspense fallback={null}>
+                <Suspense fallback={<RouteTransitionScreen />}>
                     <Routes>
                         <Route path="/auth" element={!isAuthenticated ? <AuthPage /> : <Navigate to="/app" replace />} />
                         <Route path="/oauth" element={!isAuthenticated ? <OauthSetupPage /> : <Navigate to="/app" replace />} />
