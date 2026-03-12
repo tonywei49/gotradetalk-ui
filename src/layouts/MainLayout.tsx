@@ -769,14 +769,14 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         if (!desktopUpdaterAvailable || desktopBootReadyRef.current) return;
-        if (!hubMeResolved || !capabilityLoaded) return;
+        if (!hubMeResolved) return;
 
         desktopBootReadyRef.current = true;
         void invoke("desktop_boot_ready").catch((error) => {
             console.warn("Desktop boot ready notification failed:", error);
             desktopBootReadyRef.current = false;
         });
-    }, [capabilityLoaded, desktopUpdaterAvailable, hubMeResolved]);
+    }, [desktopUpdaterAvailable, hubMeResolved]);
 
     useEffect(() => {
         if (!desktopUpdaterAvailable || !hubMeResolved || !capabilityLoaded || !capabilityError) return;
