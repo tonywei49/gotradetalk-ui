@@ -34,6 +34,7 @@ import {
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
+import { prepareMatrixClient } from "../matrix/client";
 import { CreateRoomModal } from "../features/groups/CreateRoomModal";
 // RoomDetailsPanel 將在 ChatRoom 中整合使用
 // import { RoomDetailsPanel, isRoomWithMultipleMembers } from "../features/groups/RoomDetailsPanel";
@@ -87,6 +88,7 @@ import {
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
 import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
 import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from "../desktop/useDesktopUpdater";
+import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
 import { useToastStore } from "../stores/ToastStore";
 
 // Placeholder for RoomList and ChatArea to be implemented later
@@ -516,6 +518,48 @@ const FILE_LIST_PAGE_SIZE = 80;
 const FILE_HISTORY_TARGET_EVENTS = 260;
 const FILE_HISTORY_SCROLLBACK_LIMIT = 50;
 const FILE_HISTORY_MAX_ROUNDS = 6;
+const TASKS_WARMUP_DELAY_MS = 600;
+const FILES_WARMUP_DELAY_MS = 1400;
+const NOTEBOOK_WARMUP_DELAY_MS = 2600;
+const WORKSPACE_CACHE_PREFIX = "gtt_workspace_state_v1:";
+const WORKSPACE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const MATRIX_INITIAL_SYNC_LIMIT = 12;
+
+type DeferredModuleState = {
+    tasks: boolean;
+    files: boolean;
+    notebook: boolean;
+};
+
+type PersistedWorkspaceState = {
+    activeTab?: "chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account";
+    activeRoomId?: string | null;
+    selectedFileRoomId?: string | null;
+    activeContactId?: string | null;
+};
+
+function readWorkspaceState(cacheKey: string | null): PersistedWorkspaceState | null {
+    if (!cacheKey || typeof window === "undefined") return null;
+    try {
+        const raw = window.localStorage.getItem(cacheKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as PersistedWorkspaceState;
+        return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function DeferredModulePanel({ title, description }: { title: string; description: string }) {
+    return (
+        <div className="flex h-full min-h-0 items-center justify-center bg-white p-6 dark:bg-slate-900">
+            <div className="max-w-sm rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-center dark:border-slate-800 dark:bg-slate-950">
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</div>
+                <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">{description}</div>
+            </div>
+        </div>
+    );
+}
 
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
@@ -523,11 +567,17 @@ export const MainLayout: React.FC = () => {
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
+    const [deferredModules, setDeferredModules] = useState<DeferredModuleState>({
+        tasks: false,
+        files: false,
+        notebook: false,
+    });
     const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
     const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
     const [inviteBadgeCount, setInviteBadgeCount] = useState(0);
     const [unreadBadgeCount, setUnreadBadgeCount] = useState(0);
     const [activeContact, setActiveContact] = useState<ContactSummary | null>(null);
+    const [restoredActiveContactId, setRestoredActiveContactId] = useState<string | null>(null);
     const [showContactMenu, setShowContactMenu] = useState(false);
     const [showRemoveContactConfirm, setShowRemoveContactConfirm] = useState(false);
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
@@ -690,6 +740,108 @@ export const MainLayout: React.FC = () => {
     const taskTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const taskAccessToken = !taskTokenExpired && hubAccessToken ? hubAccessToken : matrixAccessToken;
     const taskHsUrl = !taskTokenExpired && hubAccessToken ? null : matrixHsUrl;
+    const workspaceCacheKey = useMemo(() => {
+        const userId = matrixCredentials?.user_id ?? "";
+        if (!userId) return null;
+        return `${WORKSPACE_CACHE_PREFIX}${userId}`;
+    }, [matrixCredentials?.user_id]);
+    const tasksReady = deferredModules.tasks || activeTab === "tasks";
+    const filesReady = deferredModules.files || activeTab === "files";
+    const notebookReady = deferredModules.notebook || activeTab === "notebook";
+
+    useEffect(() => {
+        if (!matrixCredentials?.user_id) {
+            setDeferredModules({
+                tasks: false,
+                files: false,
+                notebook: false,
+            });
+            return;
+        }
+
+        setDeferredModules({
+            tasks: false,
+            files: false,
+            notebook: false,
+        });
+
+        const tasksTimer = window.setTimeout(() => {
+            setDeferredModules((prev) => ({ ...prev, tasks: true }));
+        }, TASKS_WARMUP_DELAY_MS);
+        const filesTimer = window.setTimeout(() => {
+            setDeferredModules((prev) => ({ ...prev, files: true }));
+        }, FILES_WARMUP_DELAY_MS);
+        const notebookTimer = window.setTimeout(() => {
+            setDeferredModules((prev) => ({ ...prev, notebook: true }));
+        }, NOTEBOOK_WARMUP_DELAY_MS);
+
+        return () => {
+            window.clearTimeout(tasksTimer);
+            window.clearTimeout(filesTimer);
+            window.clearTimeout(notebookTimer);
+        };
+    }, [matrixCredentials?.user_id]);
+
+    useEffect(() => {
+        let disposed = false;
+
+        const applyCachedState = (cached: PersistedWorkspaceState | null): void => {
+            if (!cached || disposed) return;
+            if (cached.activeTab) {
+                setActiveTab(cached.activeTab);
+            }
+            if (typeof cached.activeRoomId !== "undefined") {
+                setActiveRoomId(cached.activeRoomId ?? null);
+            }
+            if (typeof cached.selectedFileRoomId !== "undefined") {
+                setSelectedFileRoomId(cached.selectedFileRoomId ?? null);
+            }
+            if (typeof cached.activeContactId !== "undefined") {
+                setRestoredActiveContactId(cached.activeContactId ?? null);
+            }
+        };
+
+        applyCachedState(readWorkspaceState(workspaceCacheKey));
+
+        void readWorkspaceStateFromSqlite<PersistedWorkspaceState>(matrixCredentials?.user_id ?? null, WORKSPACE_CACHE_TTL_MS)
+            .then((cached) => {
+                applyCachedState(cached);
+            })
+            .catch(() => undefined);
+
+        return () => {
+            disposed = true;
+        };
+    }, [matrixCredentials?.user_id, workspaceCacheKey]);
+
+    useEffect(() => {
+        const payload = {
+            activeTab,
+            activeRoomId,
+            selectedFileRoomId,
+            activeContactId: activeContact?.id ?? restoredActiveContactId,
+        } satisfies PersistedWorkspaceState;
+
+        if (workspaceCacheKey && typeof window !== "undefined") {
+            try {
+                window.localStorage.setItem(workspaceCacheKey, JSON.stringify(payload));
+            } catch {
+                // ignore workspace cache write failures
+            }
+        }
+
+        void writeWorkspaceStateToSqlite(matrixCredentials?.user_id ?? null, payload);
+    }, [activeContact?.id, activeRoomId, activeTab, matrixCredentials?.user_id, restoredActiveContactId, selectedFileRoomId, workspaceCacheKey]);
+
+    useEffect(() => {
+        if (activeTab === "tasks" && !deferredModules.tasks) {
+            setDeferredModules((prev) => ({ ...prev, tasks: true }));
+        } else if (activeTab === "files" && !deferredModules.files) {
+            setDeferredModules((prev) => ({ ...prev, files: true }));
+        } else if (activeTab === "notebook" && !deferredModules.notebook) {
+            setDeferredModules((prev) => ({ ...prev, notebook: true }));
+        }
+    }, [activeTab, deferredModules.files, deferredModules.notebook, deferredModules.tasks]);
     const activeRoomName = useMemo(() => {
         if (!matrixClient || !activeRoomId) return null;
         const room = matrixClient.getRoom(activeRoomId);
@@ -697,12 +849,12 @@ export const MainLayout: React.FC = () => {
         return resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
     }, [matrixClient, activeRoomId, matrixCredentials?.user_id]);
     const taskModule = useTaskModule({
-        userId: matrixCredentials?.user_id ?? null,
+        userId: tasksReady ? matrixCredentials?.user_id ?? null : null,
         activeRoomId,
         activeRoomName,
-        accessToken: taskAccessToken,
-        hsUrl: taskHsUrl,
-        matrixUserId: matrixCredentials?.user_id ?? null,
+        accessToken: tasksReady ? taskAccessToken : null,
+        hsUrl: tasksReady ? taskHsUrl : null,
+        matrixUserId: tasksReady ? matrixCredentials?.user_id ?? null : null,
     });
     const taskUi = useTaskUI({
         taskModule,
@@ -873,6 +1025,7 @@ export const MainLayout: React.FC = () => {
     }, [refreshNotebookToken]);
 
     useEffect(() => {
+        if (!notebookReady) return;
         if (
             notebookToken.reason !== "expired_hub_token" &&
             notebookToken.reason !== "missing_hub_token" &&
@@ -882,9 +1035,10 @@ export const MainLayout: React.FC = () => {
         }
         if (!hubSession?.refresh_token || refreshingNotebookToken) return;
         void refreshNotebookToken();
-    }, [hubSession?.refresh_token, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
+    }, [hubSession?.refresh_token, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
 
     useEffect(() => {
+        if (!notebookReady) return;
         const shouldTryRefresh =
             notebookToken.reason === "expired_hub_token" ||
             notebookToken.reason === "missing_hub_token" ||
@@ -908,19 +1062,20 @@ export const MainLayout: React.FC = () => {
             window.removeEventListener("focus", onFocus);
             document.removeEventListener("visibilitychange", onVisibility);
         };
-    }, [hubSession?.refresh_token, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
+    }, [hubSession?.refresh_token, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
         auth: notebookAuth,
-        enabled: notebookCapabilityState.canUseNotebookBasic,
+        enabled: notebookReady && notebookCapabilityState.canUseNotebookBasic,
         refreshToken: notebookRefreshToken,
     });
     useEffect(() => {
+        if (!notebookReady) return;
         if (userType === "client" && notebookModule.sourceScope === "company") {
             notebookModule.setSourceScope("personal");
             notebookModule.setViewFilter("all");
         }
-    }, [notebookModule, userType]);
+    }, [notebookModule, notebookReady, userType]);
 
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
@@ -1035,15 +1190,15 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!matrixClient) return undefined;
         let cancelled = false;
-        void (async () => {
-            try {
-                await matrixClient.initRustCrypto();
-            } catch {
-                // fallback to non-crypto mode if rust crypto init fails
-            }
+
+        void prepareMatrixClient(matrixClient).finally(() => {
             if (cancelled) return;
-            matrixClient.startClient({ initialSyncLimit: 20 });
-        })();
+            matrixClient.startClient({
+                initialSyncLimit: MATRIX_INITIAL_SYNC_LIMIT,
+                lazyLoadMembers: true,
+            });
+        });
+
         return () => {
             cancelled = true;
             matrixClient.stopClient();
@@ -1206,6 +1361,10 @@ export const MainLayout: React.FC = () => {
     }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id]);
 
     useEffect(() => {
+        if (!notebookReady) {
+            setNotebookUploadLimitMb(20);
+            return;
+        }
         if (!notebookAuth || !notebookApiBaseUrlOverride) {
             setNotebookUploadLimitMb(20);
             return;
@@ -1225,9 +1384,15 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [notebookAuth, notebookApiBaseUrlOverride]);
+    }, [notebookApiBaseUrlOverride, notebookAuth, notebookReady]);
 
     useEffect(() => {
+        if (!notebookReady) {
+            setCapabilityLoaded(false);
+            setCapabilityValues([]);
+            setCapabilityError(null);
+            return;
+        }
         if (!capabilityToken) {
             if (
                 notebookToken.reason === "expired_hub_token" ||
@@ -1339,7 +1504,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityToken, notebookApiBaseUrlOverride, hubMeResolved, matrixCredentials?.user_id, matrixHsUrl, capabilityRefreshSeq, capabilityTokenRefreshSeq, notebookToken.reason, userType, t, hubSession?.refresh_token, refreshingNotebookToken, refreshNotebookToken]);
+    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookApiBaseUrlOverride, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, t, userType]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -2436,7 +2601,7 @@ export const MainLayout: React.FC = () => {
     };
 
     const myFileLibrary = useMemo<FileLibraryItem[]>(() => {
-        if (!matrixClient || !matrixCredentials?.user_id) return [];
+        if (!filesReady || !matrixClient || !matrixCredentials?.user_id) return [];
         void fileLibraryTick;
         const me = matrixCredentials.user_id;
         const rows: FileLibraryItem[] = [];
@@ -2480,7 +2645,7 @@ export const MainLayout: React.FC = () => {
         });
         rows.sort((a, b) => b.ts - a.ts);
         return rows;
-    }, [matrixClient, matrixCredentials?.user_id, fileLibraryTick]);
+    }, [fileLibraryTick, filesReady, matrixClient, matrixCredentials?.user_id]);
 
     const roomSummaryList = useMemo<FileLibraryRoomSummary[]>(
         () => summarizeFileRooms(myFileLibrary),
@@ -3362,58 +3527,66 @@ export const MainLayout: React.FC = () => {
                         </div>
                     </>
                 ) : activeTab === "notebook" ? (
-                    <NotebookSidebar
-                        listState={notebookModule.listState}
-                        listError={notebookModule.listError}
-                        search={notebookModule.search}
-                        onSearchChange={notebookModule.setSearch}
-                        items={notebookModule.items}
-                        selectedItemId={notebookModule.selectedItemId}
-                        filter={notebookModule.viewFilter}
-                        onFilterChange={notebookModule.setViewFilter}
-                        sourceScope={notebookModule.sourceScope}
-                        onSourceScopeChange={notebookModule.setSourceScope}
-                        onSelect={(itemId) => {
-                            notebookModule.setSelectedItemId(itemId);
-                            setMobileView("detail");
-                        }}
-                        onCreate={() => {
-                            void notebookModule.createItem();
-                            setMobileView("detail");
-                        }}
-                        busy={notebookModule.actionBusy}
-                        listRefreshing={notebookModule.listRefreshing}
-                        hasMore={notebookModule.hasMore}
-                        loadingMore={notebookModule.loadingMore}
-                        onLoadMore={() => {
-                            void notebookModule.loadMore();
-                        }}
-                        showCompanyFilter={userType !== "client"}
-                        mode={notebookSidebarMode}
-                        onModeChange={setNotebookSidebarMode}
-                        summaryQuery={summarySearchQuery}
-                        onSummaryQueryChange={setSummarySearchQuery}
-                        onSummarySearchNow={(value) => {
-                            void runSummarySearch({ forceQuery: value });
-                        }}
-                        summaryLoading={summarySearchLoading}
-                        summaryError={summarySearchError}
-                        summaryPeopleResults={summaryPeopleResults}
-                        summaryRoomResults={summaryRoomResults}
-                        summarySelectedTarget={summarySelectedTarget}
-                        onSummarySelectTarget={setSummarySelectedTarget}
-                        summaryStartDate={summaryStartDate}
-                        summaryEndDate={summaryEndDate}
-                        onSummaryStartDateChange={setSummaryStartDate}
-                        onSummaryEndDateChange={setSummaryEndDate}
-                        onSummaryConfirm={(payload) => {
-                            void onStartGenerateSummary(payload);
-                        }}
-                        summaryConfirmLoading={summaryContentLoading}
-                        summaryConfirmHint={summaryConfirmHint}
-                        summaryMobilePanel={notebookSidebarMode === "chatSummary" ? summaryWorkspacePanel : null}
-                    />
+                    notebookReady ? (
+                        <NotebookSidebar
+                            listState={notebookModule.listState}
+                            listError={notebookModule.listError}
+                            search={notebookModule.search}
+                            onSearchChange={notebookModule.setSearch}
+                            items={notebookModule.items}
+                            selectedItemId={notebookModule.selectedItemId}
+                            filter={notebookModule.viewFilter}
+                            onFilterChange={notebookModule.setViewFilter}
+                            sourceScope={notebookModule.sourceScope}
+                            onSourceScopeChange={notebookModule.setSourceScope}
+                            onSelect={(itemId) => {
+                                notebookModule.setSelectedItemId(itemId);
+                                setMobileView("detail");
+                            }}
+                            onCreate={() => {
+                                void notebookModule.createItem();
+                                setMobileView("detail");
+                            }}
+                            busy={notebookModule.actionBusy}
+                            listRefreshing={notebookModule.listRefreshing}
+                            hasMore={notebookModule.hasMore}
+                            loadingMore={notebookModule.loadingMore}
+                            onLoadMore={() => {
+                                void notebookModule.loadMore();
+                            }}
+                            showCompanyFilter={userType !== "client"}
+                            mode={notebookSidebarMode}
+                            onModeChange={setNotebookSidebarMode}
+                            summaryQuery={summarySearchQuery}
+                            onSummaryQueryChange={setSummarySearchQuery}
+                            onSummarySearchNow={(value) => {
+                                void runSummarySearch({ forceQuery: value });
+                            }}
+                            summaryLoading={summarySearchLoading}
+                            summaryError={summarySearchError}
+                            summaryPeopleResults={summaryPeopleResults}
+                            summaryRoomResults={summaryRoomResults}
+                            summarySelectedTarget={summarySelectedTarget}
+                            onSummarySelectTarget={setSummarySelectedTarget}
+                            summaryStartDate={summaryStartDate}
+                            summaryEndDate={summaryEndDate}
+                            onSummaryStartDateChange={setSummaryStartDate}
+                            onSummaryEndDateChange={setSummaryEndDate}
+                            onSummaryConfirm={(payload) => {
+                                void onStartGenerateSummary(payload);
+                            }}
+                            summaryConfirmLoading={summaryContentLoading}
+                            summaryConfirmHint={summaryConfirmHint}
+                            summaryMobilePanel={notebookSidebarMode === "chatSummary" ? summaryWorkspacePanel : null}
+                        />
+                    ) : (
+                        <DeferredModulePanel
+                            title="Preparing notebook"
+                            description="The notebook workspace is warming up from local cache and will be ready shortly."
+                        />
+                    )
                 ) : activeTab === "files" ? (
+                    filesReady ? (
                     <>
                         <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                             <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -3481,8 +3654,21 @@ export const MainLayout: React.FC = () => {
                             )}
                         </div>
                     </>
+                    ) : (
+                        <DeferredModulePanel
+                            title="Preparing files"
+                            description="The file index is loading in the background so the main workspace can stay responsive."
+                        />
+                    )
                 ) : activeTab === "tasks" ? (
-                    <TaskList {...taskUi.listProps} />
+                    tasksReady && taskModule.hydrated ? (
+                        <TaskList {...taskUi.listProps} />
+                    ) : (
+                        <DeferredModulePanel
+                            title="Preparing tasks"
+                            description="Task data is being restored from local storage and recent updates."
+                        />
+                    )
                 ) : (
                     <>
                         {/* Header */}
@@ -3644,9 +3830,10 @@ export const MainLayout: React.FC = () => {
                             view={activeTab === "contacts" ? "contacts" : "chat"}
                             onSelectContact={(contact) => {
                                 setActiveContact(contact);
+                                setRestoredActiveContactId(contact?.id ?? null);
                                 setMobileView("detail");
                             }}
-                            activeContactId={activeContact?.id ?? null}
+                            activeContactId={activeContact?.id ?? restoredActiveContactId}
                             contactsRefreshToken={contactsRefreshToken}
                             pinnedRoomIds={pinnedRoomIds}
                             enableContactPolling
@@ -3661,9 +3848,11 @@ export const MainLayout: React.FC = () => {
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
             >
-                <TaskReminderBanner
-                    {...taskUi.reminderProps}
-                />
+                {tasksReady && taskModule.hydrated ? (
+                    <TaskReminderBanner
+                        {...taskUi.reminderProps}
+                    />
+                ) : null}
                 {capabilityError && (
                     <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         <div>{capabilityError}</div>
@@ -3901,6 +4090,12 @@ export const MainLayout: React.FC = () => {
                         )}
                     </div>
                 ) : activeTab === "files" ? (
+                    !filesReady ? (
+                        <DeferredModulePanel
+                            title="Preparing files"
+                            description="The local file index is being restored first so room navigation stays smooth."
+                        />
+                    ) : (
                     <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
                         {!selectedRoomSummary ? (
                             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
@@ -4141,8 +4336,14 @@ export const MainLayout: React.FC = () => {
                             </div>
                         )}
                     </div>
+                    )
                 ) : activeTab === "notebook" ? (
-                    notebookSidebarMode === "chatSummary" ? (
+                    !notebookReady ? (
+                        <DeferredModulePanel
+                            title="Preparing notebook"
+                            description="Local notebook cache is loading first, then recent changes will sync in the background."
+                        />
+                    ) : notebookSidebarMode === "chatSummary" ? (
                         <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar bg-white p-6 dark:bg-slate-900">
                             <div className="hidden lg:block">
                                 {summaryWorkspacePanel}
@@ -4388,7 +4589,14 @@ export const MainLayout: React.FC = () => {
                         />
                     )
                 ) : activeTab === "tasks" ? (
-                    <TaskDetail {...taskUi.detailProps} />
+                    tasksReady && taskModule.hydrated ? (
+                        <TaskDetail {...taskUi.detailProps} />
+                    ) : (
+                        <DeferredModulePanel
+                            title="Preparing tasks"
+                            description="The task workspace is restoring local data before showing the latest task state."
+                        />
+                    )
                 ) : activeTab === "settings" || activeTab === "account" ? (
                     <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
                         {activeTab === "settings" && settingsDetail === "chat-language" ? (

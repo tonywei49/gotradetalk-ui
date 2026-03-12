@@ -28,6 +28,7 @@ import { ROOM_KIND_EVENT } from "../../constants/roomKinds";
 import { traceEvent } from "../../utils/debugTrace";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
 import { useToastStore } from "../../stores/ToastStore";
+import { readUiStateFromSqlite, writeUiStateToSqlite } from "../../desktop/desktopCacheDb";
 import {
     isDirectTranslationEnabled as resolveDirectTranslationEnabled,
 } from "./translationPolicy";
@@ -121,9 +122,13 @@ type QuotedMessageDraft = {
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
 const CHAT_COMPOSER_DRAFT_KEY_PREFIX = "gtt_chat_composer_draft_v1";
+const CHAT_COMPOSER_DRAFT_SCOPE = "chat-composer-draft";
+const DRAFT_MEDIA_REGISTRY_SCOPE = "draft-media-registry";
 const UPLOAD_RETRY_INTERVAL_MS = 3000;
 const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
 const ROOM_SEARCH_DEBOUNCE_MS = 350;
+const DRAFT_MEDIA_REGISTRY_CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const CHAT_COMPOSER_DRAFT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function normalizeSourceTitle(rawTitle: string | null | undefined, fallback: string): string {
     const title = String(rawTitle || "").trim();
@@ -1076,10 +1081,16 @@ export const ChatRoom: React.FC = () => {
     const [assistSending, setAssistSending] = useState(false);
     const [assistEditorRows, setAssistEditorRows] = useState(5);
     const [assistEditorFullscreen, setAssistEditorFullscreen] = useState(false);
+    const [draftMediaRegistryReady, setDraftMediaRegistryReady] = useState(false);
     const composerDraftStorageKey = useMemo(
         () => (activeRoomId ? `${CHAT_COMPOSER_DRAFT_KEY_PREFIX}:${activeRoomId}` : ""),
         [activeRoomId],
     );
+    const composerDraftSqliteKey = useMemo(
+        () => (matrixCredentials?.user_id && activeRoomId ? `${matrixCredentials.user_id}:${activeRoomId}` : null),
+        [activeRoomId, matrixCredentials?.user_id],
+    );
+    const draftMediaRegistrySqliteKey = useMemo(() => matrixCredentials?.user_id ?? null, [matrixCredentials?.user_id]);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -1223,7 +1234,30 @@ export const ChatRoom: React.FC = () => {
     }, [networkOnline, pendingAttachmentsByRoom, retryUploadQueue, t]);
 
     useEffect(() => {
+        let disposed = false;
+        void readUiStateFromSqlite<DraftMediaRegistryEntry[]>(
+            DRAFT_MEDIA_REGISTRY_SCOPE,
+            draftMediaRegistrySqliteKey,
+            DRAFT_MEDIA_REGISTRY_CACHE_TTL_MS,
+        )
+            .then((cached) => {
+                if (disposed || !Array.isArray(cached)) return;
+                writeDraftMediaRegistry(cached);
+            })
+            .catch(() => undefined)
+            .finally(() => {
+                if (!disposed) {
+                    setDraftMediaRegistryReady(true);
+                }
+            });
+        return () => {
+            disposed = true;
+        };
+    }, [draftMediaRegistrySqliteKey]);
+
+    useEffect(() => {
         if (!matrixCredentials?.hs_url || !matrixCredentials.access_token || !userId) return;
+        if (!draftMediaRegistryReady) return;
         const now = Date.now();
         const registry = readDraftMediaRegistry();
         const expired = registry.filter(
@@ -1239,7 +1273,12 @@ export const ChatRoom: React.FC = () => {
             removeDraftMediaEntries(expired.map((item) => item.mxcUrl));
             traceEvent("chat.draft_ttl_cleanup_done", { userId, count: expired.length });
         });
-    }, [matrixCredentials?.hs_url, matrixCredentials?.access_token, userId]);
+    }, [draftMediaRegistryReady, matrixCredentials?.hs_url, matrixCredentials?.access_token, userId]);
+
+    useEffect(() => {
+        if (!draftMediaRegistryReady) return;
+        void writeUiStateToSqlite(DRAFT_MEDIA_REGISTRY_SCOPE, draftMediaRegistrySqliteKey, readDraftMediaRegistry());
+    }, [draftMediaRegistryReady, draftMediaRegistrySqliteKey, pendingAttachmentsByRoom]);
     const getLocalPart = (value: string | null | undefined): string => {
         if (!value) return "";
         const trimmed = value.startsWith("@") ? value.slice(1) : value;
@@ -1377,13 +1416,34 @@ export const ChatRoom: React.FC = () => {
             setComposerText("");
             return;
         }
+        let disposed = false;
+
         try {
             const cached = window.sessionStorage.getItem(composerDraftStorageKey) || "";
-            setComposerText(cached);
+            if (cached) {
+                setComposerText(cached);
+            } else {
+                setComposerText("");
+            }
         } catch {
             setComposerText("");
         }
-    }, [composerDraftStorageKey]);
+
+        void readUiStateFromSqlite<string>(
+            CHAT_COMPOSER_DRAFT_SCOPE,
+            composerDraftSqliteKey,
+            CHAT_COMPOSER_DRAFT_CACHE_TTL_MS,
+        )
+            .then((cached) => {
+                if (disposed || typeof cached !== "string") return;
+                setComposerText(cached);
+            })
+            .catch(() => undefined);
+
+        return () => {
+            disposed = true;
+        };
+    }, [composerDraftSqliteKey, composerDraftStorageKey]);
 
     useEffect(() => {
         if (!composerDraftStorageKey) return;
@@ -1391,13 +1451,14 @@ export const ChatRoom: React.FC = () => {
             const trimmed = composerText.trim();
             if (!trimmed) {
                 window.sessionStorage.removeItem(composerDraftStorageKey);
-                return;
+            } else {
+                window.sessionStorage.setItem(composerDraftStorageKey, composerText);
             }
-            window.sessionStorage.setItem(composerDraftStorageKey, composerText);
         } catch {
             // ignore storage errors
         }
-    }, [composerDraftStorageKey, composerText]);
+        void writeUiStateToSqlite(CHAT_COMPOSER_DRAFT_SCOPE, composerDraftSqliteKey, composerText);
+    }, [composerDraftSqliteKey, composerDraftStorageKey, composerText]);
 
     const mergedEvents = useMemo(() => {
         if (!room) return [];

@@ -482,6 +482,7 @@ export function useTaskModule(params: {
     };
 
     return {
+        hydrated,
         statuses,
         tasks: sortedTasks.map((task) => ({
             ...task,

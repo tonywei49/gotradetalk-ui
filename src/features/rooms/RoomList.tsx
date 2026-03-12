@@ -24,6 +24,14 @@ import {
 import { playNotificationSound, type NotificationSoundMode } from "../../utils/notificationSound";
 import { DEPRECATED_DM_PREFIX } from "../../constants/rooms";
 import { mapActionErrorToMessage } from "../../utils/errorMessages";
+import {
+    readContactsCacheFromSqlite,
+    readRoomListCacheFromSqlite,
+    readUiStateFromSqlite,
+    writeContactsCacheToSqlite,
+    writeRoomListCacheToSqlite,
+    writeUiStateToSqlite,
+} from "../../desktop/desktopCacheDb";
 
 type ChatRoomEntry = {
     userId?: string;
@@ -105,6 +113,10 @@ const STAFF_CUSTOMER_DOMAIN = "matrix.gotradetalk.com";
 const CONTACTS_CACHE_PREFIX = "gtt_contacts_cache_v1:";
 const ROOMS_CACHE_PREFIX = "gtt_rooms_cache_v1:";
 const ROOM_TAGS_CACHE_PREFIX = "gtt_room_tags_v1:";
+const ROOM_TAGS_SCOPE = "room-tags";
+const ROOM_LIST_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const CONTACTS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const ROOM_TAGS_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const REPLY_PENDING_THRESHOLD_MS = 5 * 60 * 1000;
 const ROOM_LIST_REFRESH_DEBOUNCE_MS = 120;
 
@@ -411,6 +423,7 @@ export function RoomList({
         if (!userId) return null;
         return `${CONTACTS_CACHE_PREFIX}${userId}`;
     }, [client]);
+    const cacheUserId = useMemo(() => client?.getUserId() ?? null, [client]);
     const roomCacheKey = useMemo(() => {
         const userId = client?.getUserId() ?? "";
         if (!userId) return null;
@@ -546,25 +559,26 @@ export function RoomList({
 
     useEffect(() => {
         if (!roomCacheKey) return;
+        const snapshot: RoomCacheEntry[] = rooms.map((room) => ({
+            userId: room.userId,
+            roomId: room.roomId,
+            myMembership: room.myMembership,
+            displayName: room.displayName,
+            lastMessage: room.lastMessage,
+            lastMessageTs: room.lastMessageTs,
+            lastMessageSender: room.lastMessageSender,
+            lastActive: room.lastActive,
+            unreadCount: room.unreadCount,
+            hasUnreadMention: room.hasUnreadMention,
+            isDeprecated: room.isDeprecated,
+        }));
         try {
-            const snapshot: RoomCacheEntry[] = rooms.map((room) => ({
-                userId: room.userId,
-                roomId: room.roomId,
-                myMembership: room.myMembership,
-                displayName: room.displayName,
-                lastMessage: room.lastMessage,
-                lastMessageTs: room.lastMessageTs,
-                lastMessageSender: room.lastMessageSender,
-                lastActive: room.lastActive,
-                unreadCount: room.unreadCount,
-                hasUnreadMention: room.hasUnreadMention,
-                isDeprecated: room.isDeprecated,
-            }));
             localStorage.setItem(roomCacheKey, JSON.stringify(snapshot));
         } catch {
             // ignore room cache write failures
         }
-    }, [rooms, roomCacheKey]);
+        void writeRoomListCacheToSqlite(cacheUserId, snapshot);
+    }, [cacheUserId, rooms, roomCacheKey]);
 
     // 計算總未讀數並通知父組件
     const roomSource = rooms.length ? rooms : cachedRooms.length ? cachedRooms : cachedRoomSnapshot;
@@ -591,21 +605,39 @@ export function RoomList({
             setRoomTagsHydrated(false);
             return;
         }
+        let disposed = false;
+
+        const applyTags = (payload: Record<string, RoomTagColorId> | null | undefined): void => {
+            if (disposed) return;
+            if (payload && typeof payload === "object") {
+                setRoomTags(payload);
+            } else {
+                setRoomTags({});
+            }
+            setRoomTagsHydrated(true);
+        };
+
         try {
             const raw = localStorage.getItem(roomTagCacheKey);
-            if (!raw) {
-                setRoomTags({});
-                setRoomTagsHydrated(true);
-                return;
+            if (raw) {
+                applyTags(JSON.parse(raw) as Record<string, RoomTagColorId>);
             }
-            const parsed = JSON.parse(raw) as Record<string, RoomTagColorId>;
-            setRoomTags(parsed && typeof parsed === "object" ? parsed : {});
-            setRoomTagsHydrated(true);
         } catch {
-            setRoomTags({});
-            setRoomTagsHydrated(true);
+            // ignore local fallback parse failures
         }
-    }, [roomTagCacheKey]);
+
+        void readUiStateFromSqlite<Record<string, RoomTagColorId>>(ROOM_TAGS_SCOPE, cacheUserId, ROOM_TAGS_CACHE_TTL_MS)
+            .then((payload) => {
+                applyTags(payload);
+            })
+            .catch(() => {
+                applyTags(null);
+            });
+
+        return () => {
+            disposed = true;
+        };
+    }, [cacheUserId, roomTagCacheKey]);
 
     useEffect(() => {
         if (!roomTagCacheKey) return;
@@ -615,7 +647,8 @@ export function RoomList({
         } catch {
             // ignore tag cache write failures
         }
-    }, [roomTagCacheKey, roomTags, roomTagsHydrated]);
+        void writeUiStateToSqlite(ROOM_TAGS_SCOPE, cacheUserId, roomTags);
+    }, [cacheUserId, roomTagCacheKey, roomTags, roomTagsHydrated]);
 
     useEffect(() => {
         if (!openTagRoomId) return undefined;
@@ -675,22 +708,49 @@ export function RoomList({
     );
 
     useEffect(() => {
-        if (!contactCacheKey) return;
-        try {
-            const raw = localStorage.getItem(contactCacheKey);
-            if (!raw) return;
-            const cached = JSON.parse(raw) as ContactSummary[];
-            if (!Array.isArray(cached) || cached.length === 0) return;
+        let disposed = false;
+
+        const applyCachedContacts = (cached: ContactSummary[] | null | undefined): void => {
+            if (disposed || !Array.isArray(cached) || cached.length === 0) return;
             setContacts(cached);
             setAcceptedIds(new Set(cached.map((item) => item.id)));
-        } catch {
-            // ignore cache read failures
+        };
+
+        if (contactCacheKey) {
+            try {
+                const raw = localStorage.getItem(contactCacheKey);
+                if (raw) {
+                    applyCachedContacts(JSON.parse(raw) as ContactSummary[]);
+                }
+            } catch {
+                // ignore cache read failures
+            }
         }
-    }, [contactCacheKey]);
+
+        void readContactsCacheFromSqlite<ContactSummary[]>(cacheUserId, CONTACTS_CACHE_TTL_MS)
+            .then((cached) => {
+                applyCachedContacts(cached);
+            })
+            .catch(() => undefined);
+
+        return () => {
+            disposed = true;
+        };
+    }, [cacheUserId, contactCacheKey]);
 
     useEffect(() => {
         setCachedRooms(cachedRoomSnapshot);
-    }, [cachedRoomSnapshot]);
+        let disposed = false;
+        void readRoomListCacheFromSqlite<RoomCacheEntry[]>(cacheUserId, ROOM_LIST_CACHE_TTL_MS)
+            .then((cached) => {
+                if (disposed || !Array.isArray(cached) || cached.length === 0) return;
+                setCachedRooms(cached);
+            })
+            .catch(() => undefined);
+        return () => {
+            disposed = true;
+        };
+    }, [cacheUserId, cachedRoomSnapshot]);
 
     useEffect(() => {
         if (!isStructuredSearch) return;
@@ -868,23 +928,25 @@ export function RoomList({
                 })),
             );
             if (contactCacheKey) {
+                const contactCachePayload = contactItems.map((item) => ({
+                    id: item.user_id,
+                    initiatedByMe: item.initiated_by_me,
+                    userType: item.user_type,
+                    displayName: item.display_name,
+                    userLocalId: item.user_local_id,
+                    companyName: item.company_name,
+                    country: item.country,
+                    matrixUserId: item.matrix_user_id,
+                    gender: item.gender,
+                    locale: item.locale,
+                    translationLocale: item.translation_locale,
+                }));
                 try {
-                    localStorage.setItem(contactCacheKey, JSON.stringify(contactItems.map((item) => ({
-                        id: item.user_id,
-                        initiatedByMe: item.initiated_by_me,
-                        userType: item.user_type,
-                        displayName: item.display_name,
-                        userLocalId: item.user_local_id,
-                        companyName: item.company_name,
-                        country: item.country,
-                        matrixUserId: item.matrix_user_id,
-                        gender: item.gender,
-                        locale: item.locale,
-                        translationLocale: item.translation_locale,
-                    }))));
+                    localStorage.setItem(contactCacheKey, JSON.stringify(contactCachePayload));
                 } catch {
                     // ignore cache write failures
                 }
+                void writeContactsCacheToSqlite(cacheUserId, contactCachePayload);
             }
             setAcceptedIds(new Set(contactItems.map((item) => item.user_id)));
             setIncomingRequests(
@@ -1209,6 +1271,31 @@ export function RoomList({
     const visibleRooms = displayedRooms;
     const inviteRooms = visibleRooms.filter((entry) => entry.myMembership === "invite");
     const activeRooms = visibleRooms.filter((entry) => entry.myMembership !== "invite");
+
+    useEffect(() => {
+        if (view !== "chat") return;
+        if (activeRoomId) return;
+        const preferredRoom = activeRooms[0] ?? inviteRooms[0] ?? null;
+        if (!preferredRoom) return;
+        onSelectRoom(preferredRoom.roomId);
+    }, [activeRoomId, activeRooms, inviteRooms, onSelectRoom, view]);
+
+    useEffect(() => {
+        if (view !== "contacts") return;
+        if (!onSelectContact) return;
+
+        if (activeContactId) {
+            const matched = contacts.find((contact) => contact.id === activeContactId) ?? null;
+            if (matched) {
+                onSelectContact(matched);
+            }
+            return;
+        }
+
+        if (contacts.length === 0) {
+            onSelectContact(null);
+        }
+    }, [activeContactId, contacts, onSelectContact, view]);
     const myUserId = client?.getUserId() ?? null;
     const pendingReplyRoomIdSet = new Set(
         activeRooms

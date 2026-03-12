@@ -4,6 +4,7 @@ import type { NotebookAdapter } from "../../notebook/adapters/types";
 import type { NotebookAssistResponse, NotebookAuthContext } from "../../notebook/types";
 import { NOTEBOOK_ASSIST_CONTEXT_WINDOW_SIZE } from "../../notebook/constants";
 import { mapNotebookErrorToMessage } from "../../notebook/notebookErrorMap";
+import { readUiStateFromSqlite, writeUiStateToSqlite } from "../../../desktop/desktopCacheDb";
 
 type UseNotebookAssistParams = {
     adapter: NotebookAdapter;
@@ -29,6 +30,8 @@ type AssistCachePayload = {
 };
 
 const ASSIST_CACHE_KEY_PREFIX = "gtt_chat_notebook_assist_v1";
+const ASSIST_CACHE_SCOPE = "chat-notebook-assist";
+const ASSIST_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 function readAssistCache(storageKey: string): AssistCachePayload | null {
     if (!storageKey || typeof window === "undefined") return null;
@@ -71,6 +74,10 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
         () => (params.activeRoomId ? `${ASSIST_CACHE_KEY_PREFIX}:${params.activeRoomId}` : ""),
         [params.activeRoomId],
     );
+    const sqliteKey = useMemo(
+        () => (params.notebookAuth?.matrixUserId && params.activeRoomId ? `${params.notebookAuth.matrixUserId}:${params.activeRoomId}` : null),
+        [params.activeRoomId, params.notebookAuth?.matrixUserId],
+    );
     const resumeInFlightRef = useRef(false);
     const initialCache = readAssistCache(storageKey);
     const [assistState, setAssistState] = useState<"idle" | "loading" | "success" | "error">(initialCache?.assistState ?? "idle");
@@ -104,6 +111,25 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
         setLastAssistTrigger(cached.lastAssistTrigger);
     }, [storageKey]);
     /* eslint-enable react-hooks/set-state-in-effect */
+
+    useEffect(() => {
+        if (!storageKey) return;
+        let disposed = false;
+        void readUiStateFromSqlite<AssistCachePayload>(ASSIST_CACHE_SCOPE, sqliteKey, ASSIST_CACHE_TTL_MS)
+            .then((cached) => {
+                if (disposed || !cached) return;
+                setAssistState(cached.assistState);
+                setAssistError(cached.assistError);
+                setAssistOutput(cached.assistOutput);
+                setAssistDraft(cached.assistDraft);
+                setAssistCitationsExpanded(cached.assistCitationsExpanded);
+                setLastAssistTrigger(cached.lastAssistTrigger);
+            })
+            .catch(() => undefined);
+        return () => {
+            disposed = true;
+        };
+    }, [sqliteKey, storageKey]);
 
     const applyAssistOutput = useCallback((result: NotebookAssistResponse): void => {
         setAssistOutput(result);
@@ -187,15 +213,17 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
     }, []);
 
     useEffect(() => {
-        writeAssistCache(storageKey, {
+        const payload = {
             assistState,
             assistError,
             assistOutput,
             assistDraft,
             assistCitationsExpanded,
             lastAssistTrigger,
-        });
-    }, [assistState, assistError, assistOutput, assistDraft, assistCitationsExpanded, lastAssistTrigger, storageKey]);
+        } satisfies AssistCachePayload;
+        writeAssistCache(storageKey, payload);
+        void writeUiStateToSqlite(ASSIST_CACHE_SCOPE, sqliteKey, payload);
+    }, [assistState, assistError, assistOutput, assistDraft, assistCitationsExpanded, lastAssistTrigger, sqliteKey, storageKey]);
 
     useEffect(() => {
         if (assistState !== "loading" || !lastAssistTrigger) return;

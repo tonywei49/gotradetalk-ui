@@ -2,6 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 
 let nativeFetchRef: typeof fetch | null = null;
 
+function shouldBypassDesktopBridge(url: URL): boolean {
+    const hostname = url.hostname.toLowerCase();
+
+    // Supabase auth/session flows are more reliable when kept on the WebView
+    // fetch path so cookie/session handling stays inside the browser runtime.
+    if (hostname === "supabase.co" || hostname.endsWith(".supabase.co")) {
+        return true;
+    }
+
+    if (url.pathname.startsWith("/auth/v1/")) {
+        return true;
+    }
+
+    return false;
+}
+
 export function isTauriDesktop(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -27,6 +43,8 @@ function isRemoteHttpUrl(input: URL | Request | string): boolean {
     // Keep app-local requests on the WebView path so bundled assets and wasm
     // do not get redirected through the Rust HTTP bridge.
     if (url.origin === window.location.origin) return false;
+
+    if (shouldBypassDesktopBridge(url)) return false;
 
     return true;
 }

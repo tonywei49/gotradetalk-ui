@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{
   menu::{MenuBuilder, MenuItemBuilder},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  AppHandle, Manager, RunEvent, WebviewWindow, WindowEvent,
+  AppHandle, Manager, WebviewWindow, WindowEvent,
 };
+#[cfg(target_os = "macos")]
+use tauri::RunEvent;
 use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
 use tauri_plugin_sql::{Migration, MigrationKind};
 use tauri_plugin_updater::UpdaterExt;
@@ -72,6 +74,16 @@ fn show_main_window(window: &WebviewWindow) {
 
 fn hide_main_window(window: &WebviewWindow) {
   let _ = window.hide();
+}
+
+fn reveal_primary_instance(app: &AppHandle) {
+  if let Some(splash_window) = app.get_webview_window("splashscreen") {
+    let _ = splash_window.close();
+  }
+
+  if let Some(main_window) = app.get_webview_window("main") {
+    show_main_window(&main_window);
+  }
 }
 
 #[tauri::command]
@@ -294,6 +306,9 @@ pub fn run() {
   };
 
   let app = tauri::Builder::default()
+    .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+      reveal_primary_instance(app);
+    }))
     .setup(|app| {
       let app_handle = app.handle().clone();
       let show_item = MenuItemBuilder::with_id("show", "Open GoTradeTalk").build(app)?;
@@ -339,24 +354,11 @@ pub fn run() {
 
       thread::spawn(move || {
         thread::sleep(Duration::from_secs(20));
-        if let Some(splash_window) = app_handle.get_webview_window("splashscreen") {
-          let _ = splash_window.close();
-        }
-        if let Some(main_window) = app_handle.get_webview_window("main") {
-          show_main_window(&main_window);
-        }
+        reveal_primary_instance(&app_handle);
       });
 
       Ok(())
     })
-    .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-      if let Some(splash_window) = app.get_webview_window("splashscreen") {
-        let _ = splash_window.close();
-      }
-      if let Some(window) = app.get_webview_window("main") {
-        show_main_window(&window);
-      }
-    }))
     .plugin(
       tauri_plugin_log::Builder::new()
         .level(log_level)
@@ -403,6 +405,57 @@ pub fn run() {
             }
           ],
         )
+        .add_migrations(
+          "sqlite:desktop-cache.db",
+          vec![
+            Migration {
+              version: 1,
+              description: "create_desktop_cache_tables",
+              sql: r#"
+                CREATE TABLE IF NOT EXISTS workspace_state_cache (
+                  user_id TEXT PRIMARY KEY NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS room_list_cache (
+                  user_id TEXT PRIMARY KEY NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS contacts_cache (
+                  user_id TEXT PRIMARY KEY NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS room_timeline_cache (
+                  user_id TEXT NOT NULL,
+                  room_id TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL,
+                  PRIMARY KEY (user_id, room_id)
+                );
+              "#,
+              kind: MigrationKind::Up,
+            },
+            Migration {
+              version: 2,
+              description: "create_ui_state_cache_table",
+              sql: r#"
+                CREATE TABLE IF NOT EXISTS ui_state_cache (
+                  scope TEXT NOT NULL,
+                  item_key TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  updated_at INTEGER NOT NULL,
+                  PRIMARY KEY (scope, item_key)
+                );
+              "#,
+              kind: MigrationKind::Up,
+            },
+          ],
+        )
         .build(),
     )
     .plugin(tauri_plugin_http::init())
@@ -426,12 +479,10 @@ pub fn run() {
   app.run(|app, event| {
     #[cfg(target_os = "macos")]
     if let RunEvent::Reopen { .. } = event {
-      if let Some(splash_window) = app.get_webview_window("splashscreen") {
-        let _ = splash_window.close();
-      }
-      if let Some(window) = app.get_webview_window("main") {
-        show_main_window(&window);
-      }
+      reveal_primary_instance(app);
     }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, event);
   });
 }
