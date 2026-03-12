@@ -349,6 +349,14 @@ pub fn run() {
 
       Ok(())
     })
+    .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+      if let Some(splash_window) = app.get_webview_window("splashscreen") {
+        let _ = splash_window.close();
+      }
+      if let Some(window) = app.get_webview_window("main") {
+        show_main_window(&window);
+      }
+    }))
     .plugin(
       tauri_plugin_log::Builder::new()
         .level(log_level)

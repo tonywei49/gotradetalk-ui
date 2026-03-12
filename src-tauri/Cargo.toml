@@ -1,6 +1,6 @@
 [package]
 name = "gotradetalk-desktop"
-version = "0.1.6"
+version = "0.1.7"
 description = "Desktop wrapper for the GoTradeTalk client"
 authors = ["GoTradeTalk"]
 license = "Proprietary"
@@ -25,6 +25,7 @@ log = "0.4"
 tauri = { version = "2.10.0", features = ["tray-icon"] }
 tauri-plugin-http = "2.5.7"
 tauri-plugin-log = "2"
+tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2.10.0"
 thiserror = "2.0.18"
 url = "2.5.8"
