@@ -38,6 +38,7 @@ type NotebookSidebarProps = {
     selectedItemId: string | null;
     onSelect: (itemId: string) => void;
     onCreate: () => void;
+    onManualSync: () => void;
     filter: NotebookViewFilter;
     onFilterChange: (value: NotebookViewFilter) => void;
     sourceScope: NotebookSourceScope;
@@ -90,6 +91,7 @@ export function NotebookSidebar({
     selectedItemId,
     onSelect,
     onCreate,
+    onManualSync,
     filter,
     onFilterChange,
     sourceScope,
@@ -336,6 +338,16 @@ export function NotebookSidebar({
                                 placeholder={t("layout.notebook.searchNotebookPlaceholder", "Search notebook")}
                                 className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                             />
+                            <button
+                                type="button"
+                                disabled={busy || listRefreshing}
+                                onClick={onManualSync}
+                                className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+                            >
+                                {listRefreshing
+                                    ? t("layout.notebook.syncing", "Syncing...")
+                                    : t("layout.notebook.syncCloud", "同步云端")}
+                            </button>
                             <button
                                 type="button"
                                 disabled={busy || sourceScope === "company"}

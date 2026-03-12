@@ -523,6 +523,9 @@ const FILES_WARMUP_DELAY_MS = 1400;
 const NOTEBOOK_WARMUP_DELAY_MS = 2600;
 const WORKSPACE_CACHE_PREFIX = "gtt_workspace_state_v1:";
 const WORKSPACE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const NOTEBOOK_API_BASE_URL_CACHE_PREFIX = "gtt_notebook_api_base_url_v1:";
+const NOTEBOOK_CAPABILITIES_CACHE_PREFIX = "gtt_notebook_capabilities_v1:";
+const NOTEBOOK_BOOT_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const MATRIX_INITIAL_SYNC_LIMIT = 12;
 
 type DeferredModuleState = {
@@ -538,6 +541,11 @@ type PersistedWorkspaceState = {
     activeContactId?: string | null;
 };
 
+type PersistedNotebookBootValue<T> = {
+    updatedAt: number;
+    value: T;
+};
+
 function readWorkspaceState(cacheKey: string | null): PersistedWorkspaceState | null {
     if (!cacheKey || typeof window === "undefined") return null;
     try {
@@ -547,6 +555,39 @@ function readWorkspaceState(cacheKey: string | null): PersistedWorkspaceState | 
         return parsed && typeof parsed === "object" ? parsed : null;
     } catch {
         return null;
+    }
+}
+
+function readNotebookBootCache<T>(cacheKey: string | null): T | null {
+    if (!cacheKey || typeof window === "undefined") return null;
+    try {
+        const raw = window.localStorage.getItem(cacheKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as PersistedNotebookBootValue<T>;
+        if (!parsed || typeof parsed !== "object") return null;
+        if (!Number.isFinite(parsed.updatedAt) || Date.now() - parsed.updatedAt > NOTEBOOK_BOOT_CACHE_TTL_MS) {
+            window.localStorage.removeItem(cacheKey);
+            return null;
+        }
+        return parsed.value ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function writeNotebookBootCache<T>(cacheKey: string | null, value: T | null): void {
+    if (!cacheKey || typeof window === "undefined") return;
+    try {
+        if (value == null) {
+            window.localStorage.removeItem(cacheKey);
+            return;
+        }
+        window.localStorage.setItem(cacheKey, JSON.stringify({
+            updatedAt: Date.now(),
+            value,
+        } satisfies PersistedNotebookBootValue<T>));
+    } catch {
+        // ignore notebook boot cache write failures
     }
 }
 
@@ -745,6 +786,16 @@ export const MainLayout: React.FC = () => {
         if (!userId) return null;
         return `${WORKSPACE_CACHE_PREFIX}${userId}`;
     }, [matrixCredentials?.user_id]);
+    const notebookApiBaseUrlCacheKey = useMemo(() => {
+        const userId = matrixCredentials?.user_id ?? "";
+        if (!userId) return null;
+        return `${NOTEBOOK_API_BASE_URL_CACHE_PREFIX}${userId}`;
+    }, [matrixCredentials?.user_id]);
+    const notebookCapabilitiesCacheKey = useMemo(() => {
+        const userId = matrixCredentials?.user_id ?? "";
+        if (!userId) return null;
+        return `${NOTEBOOK_CAPABILITIES_CACHE_PREFIX}${userId}`;
+    }, [matrixCredentials?.user_id]);
     const tasksReady = deferredModules.tasks || activeTab === "tasks";
     const filesReady = deferredModules.files || activeTab === "files";
     const notebookReady = deferredModules.notebook || activeTab === "notebook";
@@ -813,6 +864,16 @@ export const MainLayout: React.FC = () => {
             disposed = true;
         };
     }, [matrixCredentials?.user_id, workspaceCacheKey]);
+
+    useEffect(() => {
+        const cachedNotebookApiBaseUrl = readNotebookBootCache<string>(notebookApiBaseUrlCacheKey);
+        const cachedCapabilities = readNotebookBootCache<string[]>(notebookCapabilitiesCacheKey);
+
+        setNotebookApiBaseUrlOverride(cachedNotebookApiBaseUrl);
+        setCapabilityValues(Array.isArray(cachedCapabilities) ? cachedCapabilities : []);
+        setCapabilityLoaded(Array.isArray(cachedCapabilities) && cachedCapabilities.length > 0);
+        setCapabilityError(null);
+    }, [notebookApiBaseUrlCacheKey, notebookCapabilitiesCacheKey]);
 
     useEffect(() => {
         const payload = {
@@ -1335,6 +1396,7 @@ export const MainLayout: React.FC = () => {
                 if (!isActive) return;
                 setMeProfile(response.profile);
                 setNotebookApiBaseUrlOverride(response.notebook_api_base_url ?? null);
+                writeNotebookBootCache(notebookApiBaseUrlCacheKey, response.notebook_api_base_url ?? null);
                 if (response.profile?.locale) {
                     setDisplayLanguage(response.profile.locale);
                     if (isSupportedDisplayLanguage(response.profile.locale)) {
@@ -1347,7 +1409,6 @@ export const MainLayout: React.FC = () => {
             } catch {
                 if (!isActive) return;
                 setMeProfile(null);
-                setNotebookApiBaseUrlOverride(null);
                 setNotebookUploadLimitMb(20);
             } finally {
                 if (isActive) {
@@ -1358,7 +1419,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             isActive = false;
         };
-    }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id]);
+    }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id, notebookApiBaseUrlCacheKey]);
 
     useEffect(() => {
         if (!notebookReady) {
@@ -1388,8 +1449,6 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         if (!notebookReady) {
-            setCapabilityLoaded(false);
-            setCapabilityValues([]);
             setCapabilityError(null);
             return;
         }
@@ -1399,7 +1458,6 @@ export const MainLayout: React.FC = () => {
                 notebookToken.reason === "missing_hub_token" ||
                 notebookToken.reason === "invalid_hub_token_format"
             ) {
-                setCapabilityValues([]);
                 if (hubSession?.refresh_token) {
                     setCapabilityLoaded(false);
                     if (!refreshingNotebookToken) {
@@ -1447,6 +1505,7 @@ export const MainLayout: React.FC = () => {
             setCapabilityValues(values);
             setCapabilityLoaded(true);
             setCapabilityError(null);
+            writeNotebookBootCache(notebookCapabilitiesCacheKey, values);
         }).catch((error) => {
             if (!alive) return;
             console.error("Notebook capability load failed", {
@@ -1458,6 +1517,12 @@ export const MainLayout: React.FC = () => {
                 matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
             });
+            const hasCachedCapabilities = capabilityValues.length > 0;
+            if (hasCachedCapabilities) {
+                setCapabilityLoaded(true);
+                setCapabilityError(null);
+                return;
+            }
             setCapabilityValues([]);
             setCapabilityLoaded(true);
             if (error instanceof NotebookServiceError) {
@@ -1471,10 +1536,12 @@ export const MainLayout: React.FC = () => {
                     return;
                 }
                 if (error.code === "CAPABILITY_DISABLED") {
+                    writeNotebookBootCache(notebookCapabilitiesCacheKey, null);
                     setCapabilityError(t("layout.notebook.capabilityDisabled"));
                     return;
                 }
                 if (error.code === "CAPABILITY_EXPIRED") {
+                    writeNotebookBootCache(notebookCapabilitiesCacheKey, null);
                     setCapabilityError(t("layout.notebook.capabilityExpired"));
                     return;
                 }
@@ -1504,7 +1571,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookApiBaseUrlOverride, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, t, userType]);
+    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookApiBaseUrlOverride, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, t, userType]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -1668,10 +1735,14 @@ export const MainLayout: React.FC = () => {
     }, [activeTab, accountId, meProfile?.display_name]);
 
     useEffect(() => {
-        if (activeTab === "notebook" && !notebookCapabilityState.canUseNotebookBasic) {
+        if (
+            activeTab === "notebook" &&
+            notebookCapabilityState.loaded &&
+            !notebookCapabilityState.canUseNotebookBasic
+        ) {
             setActiveTab("chat");
         }
-    }, [activeTab, notebookCapabilityState.canUseNotebookBasic]);
+    }, [activeTab, notebookCapabilityState.canUseNotebookBasic, notebookCapabilityState.loaded]);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -3546,6 +3617,9 @@ export const MainLayout: React.FC = () => {
                             onCreate={() => {
                                 void notebookModule.createItem();
                                 setMobileView("detail");
+                            }}
+                            onManualSync={() => {
+                                void notebookModule.syncItems({ force: true, showIndicator: true });
                             }}
                             busy={notebookModule.actionBusy}
                             listRefreshing={notebookModule.listRefreshing}

@@ -21,6 +21,14 @@ type StoredParsedCacheEntry = {
     error: string | null;
 };
 
+export type NotebookPendingItemMutation = {
+    itemId: string;
+    operation: "create" | "update" | "delete";
+    localModifiedAt: string;
+    baseServerUpdatedAt: string | null;
+    payload: Record<string, unknown>;
+};
+
 type SqliteRow = Record<string, unknown>;
 
 function safeStorage(): Storage | null {
@@ -78,6 +86,10 @@ function parsedKey(namespace: string, itemId: string): string {
 
 function parsedIndexKey(namespace: string): string {
     return `${NOTEBOOK_CACHE_PREFIX}:parsed-index:${namespace}`;
+}
+
+function pendingMutationsKey(namespace: string): string {
+    return `${NOTEBOOK_CACHE_PREFIX}:pending:${namespace}`;
 }
 
 async function loadListCacheFromSqlite(cacheNamespace: string, cacheKey: string): Promise<StoredListCacheEntry | null> {
@@ -143,6 +155,12 @@ async function clearListCacheFromSqlite(cacheNamespace: string, cacheKey?: strin
         "DELETE FROM notebook_list_cache WHERE cache_namespace = $1",
         [cacheNamespace],
     );
+}
+
+async function clearAllListCacheFromSqlite(): Promise<void> {
+    const db = await getNotebookCacheDb();
+    if (!db) return;
+    await db.execute("DELETE FROM notebook_list_cache");
 }
 
 async function loadParsedCacheFromSqlite(
@@ -241,6 +259,38 @@ async function saveParsedCacheToSqlite(
     }
 }
 
+async function clearParsedCacheFromSqlite(cacheNamespace: string, itemId?: string): Promise<void> {
+    const db = await getNotebookCacheDb();
+    if (!db) return;
+    if (itemId) {
+        await db.execute(
+            "DELETE FROM notebook_parsed_cache WHERE cache_namespace = $1 AND item_id = $2",
+            [cacheNamespace, itemId],
+        );
+        await db.execute(
+            "DELETE FROM notebook_parsed_cache_index WHERE cache_namespace = $1 AND item_id = $2",
+            [cacheNamespace, itemId],
+        );
+        return;
+    }
+
+    await db.execute(
+        "DELETE FROM notebook_parsed_cache WHERE cache_namespace = $1",
+        [cacheNamespace],
+    );
+    await db.execute(
+        "DELETE FROM notebook_parsed_cache_index WHERE cache_namespace = $1",
+        [cacheNamespace],
+    );
+}
+
+async function clearAllParsedCacheFromSqlite(): Promise<void> {
+    const db = await getNotebookCacheDb();
+    if (!db) return;
+    await db.execute("DELETE FROM notebook_parsed_cache");
+    await db.execute("DELETE FROM notebook_parsed_cache_index");
+}
+
 export async function loadNotebookListCache(
     auth: NotebookAuthContext | null,
     cacheKey: string,
@@ -329,6 +379,69 @@ export async function clearNotebookListCache(
             storage.removeItem(key);
         }
     }
+}
+
+export async function clearNotebookParsedCache(
+    auth: NotebookAuthContext | null,
+    itemId?: string,
+): Promise<void> {
+    const namespace = buildNamespace(auth);
+    if (!namespace) return;
+
+    await clearParsedCacheFromSqlite(namespace, itemId);
+
+    const storage = safeStorage();
+    if (!storage) return;
+
+    if (itemId) {
+        removeKey(parsedKey(namespace, itemId));
+        const indexKey = parsedIndexKey(namespace);
+        const current = readJson<string[]>(indexKey) ?? [];
+        writeJson(indexKey, current.filter((entry) => entry !== itemId));
+        return;
+    }
+
+    const parsedPrefix = `${NOTEBOOK_CACHE_PREFIX}:parsed:${namespace}:`;
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(parsedPrefix)) {
+            storage.removeItem(key);
+        }
+    }
+    removeKey(parsedIndexKey(namespace));
+}
+
+export async function clearAllNotebookCache(): Promise<void> {
+    await Promise.all([
+        clearAllListCacheFromSqlite(),
+        clearAllParsedCacheFromSqlite(),
+    ]);
+
+    const storage = safeStorage();
+    if (!storage) return;
+
+    const prefix = `${NOTEBOOK_CACHE_PREFIX}:`;
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(prefix)) {
+            storage.removeItem(key);
+        }
+    }
+}
+
+export function loadNotebookPendingMutations(auth: NotebookAuthContext | null): NotebookPendingItemMutation[] {
+    const namespace = buildNamespace(auth);
+    if (!namespace) return [];
+    return readJson<NotebookPendingItemMutation[]>(pendingMutationsKey(namespace)) ?? [];
+}
+
+export function saveNotebookPendingMutations(
+    auth: NotebookAuthContext | null,
+    value: NotebookPendingItemMutation[],
+): void {
+    const namespace = buildNamespace(auth);
+    if (!namespace) return;
+    writeJson(pendingMutationsKey(namespace), value);
 }
 
 export async function loadNotebookParsedCache(

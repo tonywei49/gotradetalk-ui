@@ -98,8 +98,27 @@ function mapError(error: unknown): NotebookApiError {
         const typed = error as NotebookServiceError;
         return new NotebookApiError(typed.message, typed.status, typed.code);
     }
+    if (typeof error === "string") {
+        return new NotebookApiError(error, 0, "NETWORK_ERROR");
+    }
+    if (error && typeof error === "object") {
+        const message = "message" in error && typeof error.message === "string"
+            ? error.message
+            : "error" in error && typeof error.error === "string"
+                ? error.error
+                : null;
+        const status = "status" in error && typeof error.status === "number" ? error.status : 0;
+        const code = "code" in error && typeof error.code === "string"
+            ? error.code
+            : status === 0
+                ? "NETWORK_ERROR"
+                : "UNKNOWN";
+        if (message) {
+            return new NotebookApiError(message, status, code);
+        }
+    }
     if (error instanceof Error) {
-        return new NotebookApiError(error.message, 500, "UNKNOWN");
+        return new NotebookApiError(error.message, 0, "NETWORK_ERROR");
     }
     return new NotebookApiError("Unknown notebook API error", 500, "UNKNOWN");
 }
