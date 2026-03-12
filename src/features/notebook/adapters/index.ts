@@ -1,11 +1,10 @@
 import type { NotebookAdapter } from "./types";
 import { httpNotebookAdapter } from "./httpNotebookAdapter";
 import { mockNotebookAdapter } from "./mockNotebookAdapter";
-
-const adapterMode = (import.meta.env.VITE_NOTEBOOK_ADAPTER_MODE as string | undefined)?.trim().toLowerCase();
+import { notebookAdapterMode } from "../adapterMode";
 
 export function getNotebookAdapter(): NotebookAdapter {
-    if (adapterMode === "http") {
+    if (notebookAdapterMode === "http") {
         return httpNotebookAdapter;
     }
     return mockNotebookAdapter;
