@@ -1257,11 +1257,18 @@ export function RoomList({
         }
     };
 
-    const onRejectRequest = async (requesterId: string): Promise<void> => {
+    const onRejectRequest = async (requesterId: string, matrixRoomId: string | null): Promise<void> => {
         if (!searchToken) return;
         try {
             await rejectContact(searchToken, requesterId, searchHsUrl);
             setIncomingRequests((prev) => prev.filter((item) => item.requesterId !== requesterId));
+            if (client && matrixRoomId) {
+                try {
+                    await client.leave(matrixRoomId);
+                } catch {
+                    // ignore room invite rejection failures
+                }
+            }
             await refreshContacts();
         } catch (error) {
             setSearchError(mapActionErrorToMessage(t, error, "roomList.errors.rejectFailed"));
@@ -1269,7 +1276,14 @@ export function RoomList({
     };
 
     const visibleRooms = displayedRooms;
-    const inviteRooms = visibleRooms.filter((entry) => entry.myMembership === "invite");
+    const linkedContactInviteRoomIds = new Set(
+        incomingRequests
+            .map((item) => item.matrixRoomId)
+            .filter((roomId): roomId is string => Boolean(roomId)),
+    );
+    const inviteRooms = visibleRooms.filter((entry) => (
+        entry.myMembership === "invite" && !linkedContactInviteRoomIds.has(entry.roomId)
+    ));
     const activeRooms = visibleRooms.filter((entry) => entry.myMembership !== "invite");
 
     useEffect(() => {
@@ -1595,7 +1609,7 @@ export function RoomList({
                                             >{t("roomList.actions.accept")}</button>
                                             <button
                                                 type="button"
-                                                onClick={() => void onRejectRequest(item.requesterId)}
+                                                onClick={() => void onRejectRequest(item.requesterId, item.matrixRoomId)}
                                                 className="text-xs text-rose-400 hover:text-rose-300"
                                             >{t("roomList.actions.reject")}</button>
                                         </div>
@@ -1748,7 +1762,7 @@ export function RoomList({
                                                 >{t("roomList.actions.accept")}</button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => void onRejectRequest(item.requesterId)}
+                                                    onClick={() => void onRejectRequest(item.requesterId, item.matrixRoomId)}
                                                     className="text-xs text-rose-400 hover:text-rose-300"
                                                 >{t("roomList.actions.reject")}</button>
                                             </div>
