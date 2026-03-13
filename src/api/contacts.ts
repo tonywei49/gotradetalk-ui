@@ -1,4 +1,5 @@
 import { hubApiBaseUrl } from "../config";
+import { readHubError } from "./session";
 
 export type ContactEntry = {
     contact_id: string;
@@ -81,8 +82,7 @@ async function getJson<T>(url: string, accessToken: string, hsUrl?: string | nul
     });
 
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `Request failed (${response.status})`);
+        throw await readHubError(response);
     }
 
     return (await response.json()) as T;
@@ -105,8 +105,7 @@ async function postJson<T>(
     });
 
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `Request failed (${response.status})`);
+        throw await readHubError(response);
     }
 
     return (await response.json()) as T;

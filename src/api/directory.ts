@@ -1,4 +1,5 @@
 import { hubApiBaseUrl } from "../config";
+import { readHubError } from "./session";
 
 type DirectoryCustomer = {
     customer_user_id: string;
@@ -46,8 +47,7 @@ async function getJson<T>(url: string, accessToken?: string, hsUrl?: string | nu
     });
 
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `Request failed (${response.status})`);
+        throw await readHubError(response);
     }
 
     return (await response.json()) as T;

@@ -11,6 +11,7 @@ import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n";
+import { getClientLoginSessionMetadata } from "../utils/clientSession";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
@@ -43,6 +44,7 @@ export function OauthSetupPage() {
     } | null>(null);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
+    const clientSessionMetadata = getClientLoginSessionMetadata();
 
     const email = useMemo(() => session?.user?.email ?? "", [session]);
 
@@ -152,7 +154,7 @@ export function OauthSetupPage() {
                     });
                 }
 
-                const response = await hubClientLogin(email, password, session.access_token);
+                const response = await hubClientLogin(email, password, session.access_token, clientSessionMetadata);
                 setMatrixCredentials(response.matrix);
                 const hubSession = response.supabase ?? {
                     access_token: session.access_token,

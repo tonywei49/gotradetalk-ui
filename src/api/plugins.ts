@@ -1,4 +1,5 @@
 import { hubApiBaseUrl } from "../config";
+import { readHubError } from "./session";
 
 export type PlatformMyPluginItem = {
     plugin_id: string;
@@ -46,20 +47,6 @@ function withQuery(url: string, params: Record<string, string>): string {
     return `${url}?${search}`;
 }
 
-async function readResponseMessage(response: Response): Promise<string> {
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-        try {
-            const data = (await response.json()) as { message?: string; error?: string };
-            if (data?.message) return data.message;
-            if (data?.error) return data.error;
-        } catch {
-            // ignore parse failure
-        }
-    }
-    return (await response.text()) || `Request failed (${response.status})`;
-}
-
 export async function getPlatformMyPlugins(params: {
     accessToken: string;
     hsUrl?: string | null;
@@ -81,7 +68,7 @@ export async function getPlatformMyPlugins(params: {
     });
 
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
 
     return (await response.json()) as { items: PlatformMyPluginItem[] };
@@ -112,7 +99,7 @@ export async function getPlatformPluginConfig(params: {
     });
 
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
 
     return (await response.json()) as PlatformPluginConfigResponse;
@@ -147,7 +134,7 @@ export async function issuePlatformPluginToken(params: {
     });
 
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
 
     return (await response.json()) as PlatformPluginTokenResponse;
@@ -188,7 +175,7 @@ export async function reportPlatformPluginUsage(params: {
     });
 
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
 
     return (await response.json()) as PlatformPluginUsageResponse;

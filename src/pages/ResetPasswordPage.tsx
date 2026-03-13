@@ -10,6 +10,7 @@ import { getSupabaseClient } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { setLanguage } from "../i18n";
+import { getClientLoginSessionMetadata } from "../utils/clientSession";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
@@ -32,6 +33,7 @@ export function ResetPasswordPage() {
     } | null>(null);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
+    const clientSessionMetadata = getClientLoginSessionMetadata();
 
     const email = useMemo(() => session?.user?.email ?? "", [session]);
 
@@ -87,7 +89,7 @@ export function ResetPasswordPage() {
                 if (!email) {
                     throw new Error(t("auth.errors.missingResetEmail"));
                 }
-                const response = await hubClientLogin(email, newPassword, session.access_token);
+                const response = await hubClientLogin(email, newPassword, session.access_token, clientSessionMetadata);
                 setMatrixCredentials(response.matrix);
                 const hubSession = response.supabase ?? {
                     access_token: session.access_token,

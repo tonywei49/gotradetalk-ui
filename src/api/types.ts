@@ -16,6 +16,14 @@ export type HubClientLoginResponse = {
     supabase?: HubSupabaseSession;
 };
 
+export type HubClientSessionMetadata = {
+    session_slot: "computer" | "mobile";
+    platform: "web" | "windows" | "macos" | "linux" | "ios" | "android" | "unknown";
+    app_variant: "web" | "tauri";
+    device_name: string;
+    device_fingerprint: string;
+};
+
 export type HubStaffSessionExchangeResponse = {
     supabase?: HubSupabaseSession;
 };

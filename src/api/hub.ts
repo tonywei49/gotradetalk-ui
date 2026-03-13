@@ -1,7 +1,9 @@
 import { hubApiBaseUrl } from "../config";
+import { readHubError } from "./session";
 import type {
     HubCapabilitiesResponse,
     HubClientLoginResponse,
+    HubClientSessionMetadata,
     HubClientSignupPayload,
     HubMatrixCredentials,
     HubMeResponse,
@@ -32,21 +34,6 @@ function withQuery(url: string, params: Record<string, string>): string {
     return `${url}?${search}`;
 }
 
-async function readResponseMessage(response: Response): Promise<string> {
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-        try {
-            const data = (await response.json()) as { message?: string; error?: string };
-            if (data?.message) return data.message;
-            if (data?.error) return data.error;
-        } catch {
-            // fall through
-        }
-    }
-    const text = await response.text();
-    return text || `Request failed (${response.status})`;
-}
-
 async function postJson<T>(
     url: string,
     body: Record<string, unknown>,
@@ -64,7 +51,7 @@ async function postJson<T>(
     });
 
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
 
     return (await response.json()) as T;
@@ -74,11 +61,13 @@ export async function hubClientLogin(
     account: string,
     password: string,
     accessToken?: string,
+    sessionMetadata?: HubClientSessionMetadata,
 ): Promise<HubClientLoginResponse> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     return postJson<HubClientLoginResponse>(`${hubBaseUrl}/client/login`, {
         account,
         password,
+        ...(sessionMetadata || {}),
     }, accessToken);
 }
 
@@ -163,8 +152,8 @@ export async function hubStaffExchangeSession(params: {
                 }),
             });
             if (!response.ok) {
-                const message = await readResponseMessage(response);
-                throw new Error(message || `Request failed (${response.status})`);
+                const error = await readHubError(response);
+                throw error;
             }
             const payload = (await response.json()) as HubStaffSessionExchangeResponse;
             const session = normalizeHubSession(payload.supabase);
@@ -487,7 +476,7 @@ export async function deleteChatSummaryJob(params: {
         },
     });
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
     return (await response.json()) as { ok: boolean };
 }
@@ -550,7 +539,7 @@ export async function downloadChatSummaryJob(params: {
         },
     });
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
     return response.blob();
 }
@@ -643,7 +632,7 @@ export async function updateTask(params: {
         body: JSON.stringify(params.body),
     });
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
     return (await response.json()) as HubTaskItem;
 }
@@ -667,7 +656,7 @@ export async function deleteTask(params: {
         },
     });
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
     return (await response.json()) as { ok: boolean; id: string };
 }
@@ -683,7 +672,7 @@ async function getJson<T>(url: string, accessToken?: string, extraHeaders?: Reco
     });
 
     if (!response.ok) {
-        throw new Error(await readResponseMessage(response));
+        throw await readHubError(response);
     }
 
     return (await response.json()) as T;

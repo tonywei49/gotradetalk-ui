@@ -31,6 +31,7 @@ import {
     type ChatSummaryJobDetail,
     type ChatSummaryJobItem,
 } from "../api/hub";
+import { HUB_SESSION_REVOKED_EVENT } from "../api/session";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
@@ -1806,6 +1807,22 @@ export const MainLayout: React.FC = () => {
         clearSession();
         navigate("/auth");
     };
+
+    useEffect(() => {
+        let handled = false;
+        const onSessionRevoked = (event: Event): void => {
+            if (handled) return;
+            handled = true;
+            const detail = (event as CustomEvent<{ message?: string }>).detail;
+            clearSession();
+            pushToast("warn", detail?.message || "This session has been replaced by a newer login.", 5000);
+            navigate("/auth");
+        };
+        window.addEventListener(HUB_SESSION_REVOKED_EVENT, onSessionRevoked as EventListener);
+        return () => {
+            window.removeEventListener(HUB_SESSION_REVOKED_EVENT, onSessionRevoked as EventListener);
+        };
+    }, [clearSession, navigate, pushToast]);
 
     const onUploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];

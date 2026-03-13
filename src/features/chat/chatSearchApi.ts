@@ -1,4 +1,5 @@
 import { hubApiBaseUrl } from "../../config";
+import { dispatchHubSessionRevoked } from "../../api/session";
 
 export type ChatSearchScope = "all" | "people" | "rooms" | "messages";
 export type ChatRoomSearchType = "all" | "messages" | "files";
@@ -136,7 +137,11 @@ async function readError(response: Response): Promise<ChatSearchError> {
         if (response.status === 401) code = "INVALID_AUTH_TOKEN";
         if (response.status === 403) code = "SEARCH_FORBIDDEN";
     }
-    return new ChatSearchError(message, response.status, code || "UNKNOWN");
+    const error = new ChatSearchError(message, response.status, code || "UNKNOWN");
+    if (error.code === "SESSION_REVOKED") {
+        dispatchHubSessionRevoked(error.message);
+    }
+    return error;
 }
 
 async function getJson<T>(

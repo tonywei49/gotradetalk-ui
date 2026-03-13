@@ -25,6 +25,7 @@ import { loginWithPassword } from "../matrix/login";
 import { useAuthStore } from "../stores/AuthStore";
 import { useToastStore } from "../stores/ToastStore";
 import { mapAuthErrorToMessage } from "../utils/errorMessages";
+import { getClientLoginSessionMetadata } from "../utils/clientSession";
 import "./AuthPage.css";
 
 type EntryMode = "client" | "company";
@@ -87,6 +88,7 @@ export function AuthPage() {
           }
         | null
     >(null);
+    const clientSessionMetadata = getClientLoginSessionMetadata();
 
     const ensureHubSessionForStaff = async (params: {
         username: string;
@@ -97,7 +99,7 @@ export function AuthPage() {
     }): Promise<HubSupabaseSession> => {
         if (params.username.includes("@")) {
             try {
-                const login = await hubClientLogin(params.username, params.password);
+                const login = await hubClientLogin(params.username, params.password, undefined, clientSessionMetadata);
                 if (login.supabase?.access_token?.startsWith("eyJ")) {
                     return {
                         access_token: login.supabase.access_token,
@@ -181,14 +183,14 @@ export function AuthPage() {
                     if (!session?.access_token) {
                         throw new Error(t("auth.errors.missingSupabaseSession"));
                     }
-                    response = await hubClientLogin(account, password, session.access_token);
+                    response = await hubClientLogin(account, password, session.access_token, clientSessionMetadata);
                     hubSession = response.supabase ?? {
                         access_token: session.access_token,
                         refresh_token: session.refresh_token,
                         expires_at: session.expires_at ?? undefined,
                     };
                 } else {
-                    response = await hubClientLogin(account, password);
+                    response = await hubClientLogin(account, password, undefined, clientSessionMetadata);
                     hubSession = response.supabase ?? null;
                 }
                 setClientSuccess(response);
