@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Senha atualizada.",
         "accountUpdateFailed": "Falha na atualização.",
         "logoutAccount": "Sair da conta",
+        "sessionReplaced": "Esta conta fez login em outro dispositivo.",
         "searchPlaceholder": "Pesquisar",
         "selectItem": "Selecione um item para ver os detalhes.",
         "selectContact": "Selecione um contato para ver os detalhes.",

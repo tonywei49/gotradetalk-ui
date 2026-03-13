@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "تم تحديث كلمة المرور.",
         "accountUpdateFailed": "فشل التحديث.",
         "logoutAccount": "تسجيل الخروج من الحساب",
+        "sessionReplaced": "تم تسجيل الدخول إلى هذا الحساب على جهاز آخر.",
         "searchPlaceholder": "بحث",
         "selectItem": "اختر عنصرًا لعرض التفاصيل.",
         "selectContact": "اختر جهة اتصال لعرض التفاصيل.",

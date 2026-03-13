@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "パスワードを更新しました。",
         "accountUpdateFailed": "更新に失敗しました。",
         "logoutAccount": "アカウントからログアウト",
+        "sessionReplaced": "このアカウントは他のデバイスでログインされました。",
         "searchPlaceholder": "検索",
         "selectItem": "詳細を見るには項目を選択してください。",
         "selectContact": "詳細を見るには連絡先を選択してください。",

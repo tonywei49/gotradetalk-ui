@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "密碼已更新。",
         "accountUpdateFailed": "更新失敗。",
         "logoutAccount": "登出帳號",
+        "sessionReplaced": "該帳號已在其他裝置登入。",
         "searchPlaceholder": "搜尋",
         "selectItem": "請選擇左側項目以檢視詳情。",
         "selectContact": "請選擇聯絡人以檢視詳情。",

@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Password aggiornata.",
         "accountUpdateFailed": "Aggiornamento fallito.",
         "logoutAccount": "Disconnetti account",
+        "sessionReplaced": "Questo account ha effettuato l'accesso su un altro dispositivo.",
         "searchPlaceholder": "Cerca",
         "selectItem": "Seleziona un elemento per vedere i dettagli.",
         "selectContact": "Seleziona un contatto per vedere i dettagli.",

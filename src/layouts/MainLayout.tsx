@@ -1810,19 +1810,18 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         let handled = false;
-        const onSessionRevoked = (event: Event): void => {
+        const onSessionRevoked = (): void => {
             if (handled) return;
             handled = true;
-            const detail = (event as CustomEvent<{ message?: string }>).detail;
             clearSession();
-            pushToast("warn", detail?.message || "This session has been replaced by a newer login.", 5000);
+            pushToast("warn", t("layout.sessionReplaced"), 5000, "center");
             navigate("/auth");
         };
         window.addEventListener(HUB_SESSION_REVOKED_EVENT, onSessionRevoked as EventListener);
         return () => {
             window.removeEventListener(HUB_SESSION_REVOKED_EVENT, onSessionRevoked as EventListener);
         };
-    }, [clearSession, navigate, pushToast]);
+    }, [clearSession, navigate, pushToast, t]);
 
     const onUploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];

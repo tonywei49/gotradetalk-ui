@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Contraseña actualizada.",
         "accountUpdateFailed": "La actualización falló.",
         "logoutAccount": "Cerrar sesión de la cuenta",
+        "sessionReplaced": "Esta cuenta ha iniciado sesión en otro dispositivo.",
         "searchPlaceholder": "Buscar",
         "selectItem": "Selecciona un elemento para ver los detalles.",
         "selectContact": "Selecciona un contacto para ver los detalles.",

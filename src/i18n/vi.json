@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Mật khẩu đã được cập nhật.",
         "accountUpdateFailed": "Cập nhật thất bại.",
         "logoutAccount": "Đăng xuất tài khoản",
+        "sessionReplaced": "Tài khoản này đã đăng nhập trên một thiết bị khác.",
         "searchPlaceholder": "Tìm kiếm",
         "selectItem": "Chọn một mục để xem chi tiết.",
         "selectContact": "Chọn một liên hệ để xem chi tiết.",

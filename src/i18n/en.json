@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Password updated.",
         "accountUpdateFailed": "Update failed.",
         "logoutAccount": "Log out account",
+        "sessionReplaced": "This account has signed in on another device.",
         "searchPlaceholder": "Search",
         "selectItem": "Select an item to view details.",
         "selectContact": "Select a contact to view details.",

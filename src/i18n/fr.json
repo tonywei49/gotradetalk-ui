@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Mot de passe mis a jour.",
         "accountUpdateFailed": "Echec de la mise a jour.",
         "logoutAccount": "Se deconnecter du compte",
+        "sessionReplaced": "Ce compte s'est connecté sur un autre appareil.",
         "searchPlaceholder": "Rechercher",
         "selectItem": "Selectionnez un element pour voir les details.",
         "selectContact": "Selectionnez un contact pour voir les details.",

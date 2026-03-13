@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Kata sandi diperbarui.",
         "accountUpdateFailed": "Pembaruan gagal.",
         "logoutAccount": "Keluar dari akun",
+        "sessionReplaced": "Akun ini telah masuk di perangkat lain.",
         "searchPlaceholder": "Cari",
         "selectItem": "Pilih item untuk melihat detail.",
         "selectContact": "Pilih kontak untuk melihat detail.",

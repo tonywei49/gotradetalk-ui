@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "Пароль обновлен.",
         "accountUpdateFailed": "Не удалось обновить.",
         "logoutAccount": "Выйти из аккаунта",
+        "sessionReplaced": "В этот аккаунт вошли на другом устройстве.",
         "searchPlaceholder": "Поиск",
         "selectItem": "Выберите элемент, чтобы посмотреть подробности.",
         "selectContact": "Выберите контакт, чтобы посмотреть подробности.",

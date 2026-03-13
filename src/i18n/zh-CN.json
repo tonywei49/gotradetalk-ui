@@ -240,6 +240,7 @@
         "accountPasswordUpdated": "密码已更新。",
         "accountUpdateFailed": "更新失败。",
         "logoutAccount": "登出账号",
+        "sessionReplaced": "该账号已在其他设备登录。",
         "searchPlaceholder": "搜索",
         "selectItem": "请选择左侧项目查看详情。",
         "selectContact": "请选择联系人查看详情。",
