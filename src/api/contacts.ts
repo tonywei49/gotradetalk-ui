@@ -82,7 +82,7 @@ async function getJson<T>(url: string, accessToken: string, hsUrl?: string | nul
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, accessToken);
     }
 
     return (await response.json()) as T;
@@ -105,7 +105,7 @@ async function postJson<T>(
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, accessToken);
     }
 
     return (await response.json()) as T;

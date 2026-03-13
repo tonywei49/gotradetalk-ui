@@ -47,7 +47,7 @@ async function getJson<T>(url: string, accessToken?: string, hsUrl?: string | nu
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, accessToken);
     }
 
     return (await response.json()) as T;

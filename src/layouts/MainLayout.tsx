@@ -31,7 +31,7 @@ import {
     type ChatSummaryJobDetail,
     type ChatSummaryJobItem,
 } from "../api/hub";
-import { HUB_SESSION_REVOKED_EVENT } from "../api/session";
+import { HUB_SESSION_REVOKED_EVENT, type HubSessionRevokedDetail } from "../api/session";
 import type { HubProfileSummary } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
@@ -1803,25 +1803,39 @@ export const MainLayout: React.FC = () => {
         };
     }, []);
 
-    const onLogout = (): void => {
+    const clearLocalAuthSession = useCallback((): void => {
         clearSession();
-        navigate("/auth");
+        void getSupabaseClient()
+            .auth.signOut({ scope: "local" })
+            .catch(() => {
+                // ignore local sign-out failures during session cleanup
+            });
+    }, [clearSession]);
+
+    const onLogout = (): void => {
+        clearLocalAuthSession();
+        navigate("/auth", { replace: true });
     };
 
     useEffect(() => {
         let handled = false;
-        const onSessionRevoked = (): void => {
+        const onSessionRevoked = (event: Event): void => {
             if (handled) return;
+            const detail = (event as CustomEvent<HubSessionRevokedDetail>).detail;
+            const revokedAccessToken = detail?.accessToken;
+            if (revokedAccessToken && revokedAccessToken !== hubSession?.access_token) {
+                return;
+            }
             handled = true;
-            clearSession();
+            clearLocalAuthSession();
             pushToast("warn", t("layout.sessionReplaced"), 5000, "center");
-            navigate("/auth");
+            navigate("/auth", { replace: true });
         };
         window.addEventListener(HUB_SESSION_REVOKED_EVENT, onSessionRevoked as EventListener);
         return () => {
             window.removeEventListener(HUB_SESSION_REVOKED_EVENT, onSessionRevoked as EventListener);
         };
-    }, [clearSession, navigate, pushToast, t]);
+    }, [clearLocalAuthSession, hubSession?.access_token, navigate, pushToast, t]);
 
     const onUploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];

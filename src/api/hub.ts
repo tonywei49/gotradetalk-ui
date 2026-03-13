@@ -51,7 +51,7 @@ async function postJson<T>(
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, accessToken);
     }
 
     return (await response.json()) as T;
@@ -152,7 +152,7 @@ export async function hubStaffExchangeSession(params: {
                 }),
             });
             if (!response.ok) {
-                const error = await readHubError(response);
+                const error = await readHubError(response, params.matrixAccessToken);
                 throw error;
             }
             const payload = (await response.json()) as HubStaffSessionExchangeResponse;
@@ -476,7 +476,7 @@ export async function deleteChatSummaryJob(params: {
         },
     });
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
     return (await response.json()) as { ok: boolean };
 }
@@ -539,7 +539,7 @@ export async function downloadChatSummaryJob(params: {
         },
     });
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
     return response.blob();
 }
@@ -632,7 +632,7 @@ export async function updateTask(params: {
         body: JSON.stringify(params.body),
     });
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
     return (await response.json()) as HubTaskItem;
 }
@@ -656,7 +656,7 @@ export async function deleteTask(params: {
         },
     });
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
     return (await response.json()) as { ok: boolean; id: string };
 }
@@ -672,7 +672,7 @@ async function getJson<T>(url: string, accessToken?: string, extraHeaders?: Reco
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, accessToken);
     }
 
     return (await response.json()) as T;

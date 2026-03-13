@@ -68,7 +68,7 @@ export async function getPlatformMyPlugins(params: {
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
 
     return (await response.json()) as { items: PlatformMyPluginItem[] };
@@ -99,7 +99,7 @@ export async function getPlatformPluginConfig(params: {
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
 
     return (await response.json()) as PlatformPluginConfigResponse;
@@ -134,7 +134,7 @@ export async function issuePlatformPluginToken(params: {
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
 
     return (await response.json()) as PlatformPluginTokenResponse;
@@ -175,7 +175,7 @@ export async function reportPlatformPluginUsage(params: {
     });
 
     if (!response.ok) {
-        throw await readHubError(response);
+        throw await readHubError(response, params.accessToken);
     }
 
     return (await response.json()) as PlatformPluginUsageResponse;

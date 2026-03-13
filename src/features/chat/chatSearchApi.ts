@@ -123,7 +123,7 @@ function ensureAuth(auth: ChatSearchAuth): void {
     }
 }
 
-async function readError(response: Response): Promise<ChatSearchError> {
+async function readError(response: Response, auth: ChatSearchAuth): Promise<ChatSearchError> {
     let message = response.statusText || "Request failed";
     let code = "UNKNOWN";
     try {
@@ -139,7 +139,7 @@ async function readError(response: Response): Promise<ChatSearchError> {
     }
     const error = new ChatSearchError(message, response.status, code || "UNKNOWN");
     if (error.code === "SESSION_REVOKED") {
-        dispatchHubSessionRevoked(error.message);
+        dispatchHubSessionRevoked(error.message, auth.accessToken);
     }
     return error;
 }
@@ -169,7 +169,7 @@ async function getJson<T>(
         },
     });
     if (!response.ok) {
-        throw await readError(response);
+        throw await readError(response, auth);
     }
     return (await response.json()) as T;
 }

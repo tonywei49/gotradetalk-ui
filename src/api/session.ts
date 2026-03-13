@@ -1,5 +1,10 @@
 export const HUB_SESSION_REVOKED_EVENT = "gtt:hub-session-revoked";
 
+export type HubSessionRevokedDetail = {
+    message: string;
+    accessToken?: string;
+};
+
 export class HubApiError extends Error {
     public readonly status: number;
     public readonly code: string;
@@ -12,16 +17,16 @@ export class HubApiError extends Error {
     }
 }
 
-export function dispatchHubSessionRevoked(message: string): void {
+export function dispatchHubSessionRevoked(message: string, accessToken?: string): void {
     if (typeof window === "undefined") return;
     window.dispatchEvent(
         new CustomEvent(HUB_SESSION_REVOKED_EVENT, {
-            detail: { message },
+            detail: { message, accessToken } satisfies HubSessionRevokedDetail,
         }),
     );
 }
 
-export async function readHubError(response: Response): Promise<HubApiError> {
+export async function readHubError(response: Response, accessToken?: string): Promise<HubApiError> {
     let message = response.statusText || "Request failed";
     let code = "UNKNOWN";
 
@@ -43,7 +48,7 @@ export async function readHubError(response: Response): Promise<HubApiError> {
     if (!code && response.status === 401) code = "INVALID_AUTH_TOKEN";
     const error = new HubApiError(message || `Request failed (${response.status})`, response.status, code || "UNKNOWN");
     if (error.code === "SESSION_REVOKED") {
-        dispatchHubSessionRevoked(error.message);
+        dispatchHubSessionRevoked(error.message, accessToken);
     }
     return error;
 }
