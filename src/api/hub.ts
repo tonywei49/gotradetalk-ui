@@ -132,6 +132,8 @@ export async function hubStaffExchangeSession(params: {
     hsUrl: string;
     password: string;
     matrixUserId?: string | null;
+    matrixDeviceId?: string | null;
+    sessionMetadata?: HubClientSessionMetadata;
 }): Promise<HubSupabaseSession> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     let lastErrorMessage = "NO_VALID_HUB_TOKEN";
@@ -149,6 +151,12 @@ export async function hubStaffExchangeSession(params: {
                     hs_url: params.hsUrl,
                     password: params.password,
                     matrix_user_id: params.matrixUserId ?? undefined,
+                    matrix_device_id: params.matrixDeviceId ?? undefined,
+                    session_slot: params.sessionMetadata?.session_slot,
+                    platform: params.sessionMetadata?.platform,
+                    app_variant: params.sessionMetadata?.app_variant,
+                    device_name: params.sessionMetadata?.device_name,
+                    device_fingerprint: params.sessionMetadata?.device_fingerprint,
                 }),
             });
             if (!response.ok) {

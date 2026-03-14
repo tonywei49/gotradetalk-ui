@@ -70,6 +70,7 @@ export function AuthPage() {
     const [forceResetAccessToken, setForceResetAccessToken] = useState("");
     const [forceResetHsUrl, setForceResetHsUrl] = useState("");
     const [forceResetUserId, setForceResetUserId] = useState("");
+    const [forceResetDeviceId, setForceResetDeviceId] = useState("");
     const [forceResetInitialPassword, setForceResetInitialPassword] = useState("");
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageContext, setPendingLanguageContext] = useState<
@@ -96,6 +97,7 @@ export function AuthPage() {
         matrixAccessToken: string;
         hsUrl: string;
         matrixUserId: string;
+        matrixDeviceId?: string | null;
     }): Promise<HubSupabaseSession> => {
         if (params.username.includes("@")) {
             try {
@@ -117,6 +119,8 @@ export function AuthPage() {
             hsUrl: params.hsUrl,
             password: params.password,
             matrixUserId: params.matrixUserId,
+            matrixDeviceId: params.matrixDeviceId,
+            sessionMetadata: clientSessionMetadata,
         });
         if (!exchanged.access_token || !exchanged.access_token.startsWith("eyJ")) {
             throw new Error("NO_VALID_HUB_TOKEN");
@@ -251,11 +255,13 @@ export function AuthPage() {
                     matrixAccessToken: credentials.accessToken,
                     hsUrl: credentials.homeserverUrl,
                     matrixUserId: credentials.userId,
+                    matrixDeviceId: credentials.deviceId,
                 });
                 if (passwordState.password_state === "RESET_REQUIRED") {
                     setForceResetAccessToken(credentials.accessToken);
                     setForceResetHsUrl(credentials.homeserverUrl);
                     setForceResetUserId(credentials.userId);
+                    setForceResetDeviceId(credentials.deviceId);
                     setForceResetInitialPassword(companyPassword);
                     setShowForceReset(true);
                     return;
@@ -778,6 +784,7 @@ export function AuthPage() {
                                         matrixAccessToken: forceResetAccessToken,
                                         hsUrl: forceResetHsUrl,
                                         matrixUserId: forceResetUserId,
+                                        matrixDeviceId: forceResetDeviceId,
                                     });
                                     setPendingLanguageContext({
                                         matrixUserId: forceResetUserId,
@@ -787,7 +794,7 @@ export function AuthPage() {
                                         hubSession,
                                         matrixCredentials: {
                                             access_token: forceResetAccessToken,
-                                            device_id: "",
+                                            device_id: forceResetDeviceId,
                                             user_id: forceResetUserId,
                                             hs_url: forceResetHsUrl,
                                         },
