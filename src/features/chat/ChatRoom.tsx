@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -1006,6 +1006,13 @@ export const ChatRoom: React.FC = () => {
     const { events, room, showingCachedEvents } = useRoomTimeline(matrixClient, activeRoomId, { limit: 20 });
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const roomStickBottomRef = useRef<Record<string, boolean>>({});
+    const historyScrollAnchorRef = useRef<{
+        roomId: string;
+        previousScrollHeight: number;
+        previousScrollTop: number;
+        previousEventCount: number;
+    } | null>(null);
+    const suppressAutoStickBottomRef = useRef(false);
     const previousRoomIdRef = useRef<string | null>(null);
     const skipRoomResetOnFirstMountRef = useRef(true);
     const lastReadReceiptEventByRoomRef = useRef<Record<string, string>>({});
@@ -2002,6 +2009,7 @@ export const ChatRoom: React.FC = () => {
         }
         previousRoomIdRef.current = activeRoomId;
         if (!activeRoomId || jumpToEventId) return;
+        if (suppressAutoStickBottomRef.current) return;
         const shouldStickBottom = roomStickBottomRef.current[activeRoomId] ?? true;
         if (!shouldStickBottom) return;
         const timer = window.setTimeout(() => {
@@ -2013,11 +2021,23 @@ export const ChatRoom: React.FC = () => {
         return () => window.clearTimeout(timer);
     }, [activeRoomId, jumpToEventId]);
 
+    useLayoutEffect(() => {
+        const anchor = historyScrollAnchorRef.current;
+        const container = timelineRef.current;
+        if (!anchor || !container || !activeRoomId || anchor.roomId !== activeRoomId) return;
+        if (mergedEvents.length <= anchor.previousEventCount) return;
+        const delta = container.scrollHeight - anchor.previousScrollHeight;
+        container.scrollTop = anchor.previousScrollTop + delta;
+        historyScrollAnchorRef.current = null;
+        suppressAutoStickBottomRef.current = false;
+    }, [activeRoomId, mergedEvents.length]);
+
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
         if (!room || !matrixClient) return;
         const container = timelineRef.current;
         if (!container) return;
+        if (suppressAutoStickBottomRef.current) return;
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
         const shouldStickBottom = activeRoomId ? (roomStickBottomRef.current[activeRoomId] ?? true) : false;
         if (shouldStickBottom || distanceFromBottom < 120) {
@@ -2065,11 +2085,33 @@ export const ChatRoom: React.FC = () => {
 
         // 滾動加載更多消息
         if (container.scrollTop > 0) return;
+        const activeRoom = activeRoomId;
+        const anchor = activeRoom
+            ? {
+                roomId: activeRoom,
+                previousScrollHeight: container.scrollHeight,
+                previousScrollTop: container.scrollTop,
+                previousEventCount: mergedEvents.length,
+            }
+            : null;
         setScrollLoading(true);
+        if (activeRoom) {
+            roomStickBottomRef.current[activeRoom] = false;
+        }
+        if (anchor) {
+            historyScrollAnchorRef.current = anchor;
+            suppressAutoStickBottomRef.current = true;
+        }
         try {
             await scrollbackTimeline(matrixClient, room, 30);
         } finally {
-            setScrollLoading(false);
+            window.setTimeout(() => {
+                if (historyScrollAnchorRef.current === anchor) {
+                    historyScrollAnchorRef.current = null;
+                    suppressAutoStickBottomRef.current = false;
+                }
+                setScrollLoading(false);
+            }, 120);
         }
     };
 
