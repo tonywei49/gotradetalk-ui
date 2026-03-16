@@ -1,5 +1,6 @@
 .gt_policyPage {
     min-height: 100vh;
+    min-height: 100dvh;
     background: #eef1f5;
     display: flex;
     justify-content: center;

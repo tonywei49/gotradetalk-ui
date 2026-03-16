@@ -1,0 +1,16 @@
+{
+  "identifier": "com.gotradetalk.ios",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "GoTradeTalk",
+        "visible": true
+      }
+    ]
+  },
+  "bundle": {
+    "shortDescription": "GoTradeTalk iOS client",
+    "longDescription": "iOS packaging for the GoTradeTalk chat client."
+  }
+}

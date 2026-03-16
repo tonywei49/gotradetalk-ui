@@ -1,11 +1,21 @@
 .gt_app {
+    box-sizing: border-box;
     min-height: 100vh;
+    min-height: 100dvh;
+    width: 100%;
     padding: 48px 24px 64px;
     color: #1b1d1f;
+    overflow-x: hidden;
     background:
         radial-gradient(1200px 600px at 20% -10%, rgba(255, 190, 120, 0.25), transparent 60%),
         radial-gradient(900px 500px at 90% 10%, rgba(120, 190, 255, 0.22), transparent 60%),
         linear-gradient(180deg, #f7f6f2 0%, #f3f4f7 100%);
+}
+
+.gt_app *,
+.gt_app *::before,
+.gt_app *::after {
+    box-sizing: border-box;
 }
 
 .dark .gt_app {
@@ -87,6 +97,7 @@
 }
 
 .gt_auth {
+    width: min(1100px, 100%);
     max-width: 1100px;
     margin: 0 auto;
     background: #ffffffd9;
@@ -183,8 +194,9 @@
     border-radius: 12px;
     border: 1px solid #e5e7eb;
     padding: 12px 14px;
-    font-size: 14px;
+    font-size: 16px;
     background: #ffffff;
+    width: 100%;
 }
 
 .dark .gt_field input,
@@ -198,8 +210,14 @@
     border-radius: 12px;
     border: 1px solid #e5e7eb;
     padding: 12px 14px;
-    font-size: 14px;
+    font-size: 16px;
     background: #ffffff;
+    width: 100%;
+}
+
+.gt_field input[type="password"] {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: 0.08em;
 }
 
 .gt_field input:focus {
@@ -340,6 +358,14 @@
     border-color: rgba(239, 68, 68, 0.35);
 }
 
+.gt_errorDetail {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.45;
+    opacity: 0.88;
+    word-break: break-word;
+}
+
 .gt_success {
     color: #166534;
     background: #f0fdf4;
@@ -373,6 +399,9 @@
     padding: 24px;
     box-shadow: 0 30px 80px rgba(15, 23, 42, 0.3);
     position: relative;
+    max-height: min(720px, calc(100dvh - 48px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .dark .gt_modal {
@@ -410,16 +439,55 @@
 }
 
 @media (max-width: 720px) {
+    .gt_app {
+        padding:
+            max(16px, env(safe-area-inset-top))
+            12px
+            calc(24px + env(safe-area-inset-bottom));
+    }
+
     .gt_auth {
-        padding: 24px;
+        padding: 18px 14px 20px;
+        border-radius: 20px;
     }
 
     .gt_tabs {
         flex-direction: column;
+        gap: 10px;
     }
 
     .gt_actions {
         flex-direction: column;
+    }
+
+    .gt_tab,
+    .gt_googleButton,
+    .gt_primary,
+    .gt_secondary,
+    .gt_link,
+    .gt_langSelect {
+        font-size: 16px;
+    }
+
+    .gt_modalBackdrop {
+        align-items: flex-start;
+        overflow-y: auto;
+        padding:
+            max(12px, env(safe-area-inset-top))
+            12px
+            calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .gt_modal {
+        margin: 0 auto;
+        max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        border-radius: 18px;
+        padding: 18px 14px 20px;
+    }
+
+    .gt_header {
+        gap: 16px;
+        margin-bottom: 24px;
     }
 }
 

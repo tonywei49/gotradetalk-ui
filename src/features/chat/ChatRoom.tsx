@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -67,6 +67,7 @@ import { getNotebookAdapter } from "../notebook";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
 import { TaskQuickCreate, TaskRoomBar, type TaskChatContext } from "../tasks";
+import { isMobilePlatform } from "../../runtime/appRuntime";
 import {
     chatSearchLocate,
     chatSearchRoom,
@@ -167,6 +168,261 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
     return withoutPrefix.slice(0, colonIndex);
 }
 
+function normalizeVisibleText(value: string | null | undefined): string {
+    return String(value || "")
+        .replace(/\uFFFD/g, "")
+        .replace(/[\u200B-\u200D\u2060]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function normalizeMarkdownDisplayText(value: string): string {
+    return normalizeMarkdownTables(value
+        .replace(/\uFFFD/g, "")
+        .replace(/^(\s*(?:[-*+]|\d+\.)\s+)[\p{Extended_Pictographic}\uFE0F\u200D]+\s*/gmu, "$1")
+        .replace(/^(\s*)[\p{Extended_Pictographic}\uFE0F\u200D]+\s+/gmu, "$1"));
+}
+
+function normalizeMarkdownTables(value: string): string {
+    const lines = value.split(/\r?\n/);
+    if (lines.length < 2) return value;
+
+    const result: string[] = [];
+    let index = 0;
+
+    const isPipeRow = (line: string): boolean => {
+        const trimmed = line.trim();
+        return !trimmed.startsWith("```") && (trimmed.match(/\|/g)?.length ?? 0) >= 2;
+    };
+
+    const isSeparatorRow = (line: string): boolean => {
+        const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+        if (!trimmed) return false;
+        return trimmed.split("|").every((part) => /^:?-{3,}:?$/.test(part.trim()));
+    };
+
+    const normalizePipeRow = (line: string): string => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        const wrapped = trimmed.startsWith("|") ? trimmed : `| ${trimmed}`;
+        return wrapped.endsWith("|") ? wrapped : `${wrapped} |`;
+    };
+
+    const stripTableIndent = (line: string): string => line.replace(/^(?: {4}|\t)+/, "").trimEnd();
+
+    const extractTableRows = (blockLines: string[]): string[] | null => {
+        const stripped = blockLines.map(stripTableIndent);
+        let startIndex = -1;
+        for (let candidateIndex = 0; candidateIndex < stripped.length - 1; candidateIndex += 1) {
+            if (isPipeRow(stripped[candidateIndex] ?? "") && isSeparatorRow(stripped[candidateIndex + 1] ?? "")) {
+                startIndex = candidateIndex;
+                break;
+            }
+        }
+        if (startIndex < 0) return null;
+
+        let endIndex = startIndex + 2;
+        while (endIndex < stripped.length && isPipeRow(stripped[endIndex] ?? "")) {
+            endIndex += 1;
+        }
+
+        const onlyTableContent =
+            stripped.slice(0, startIndex).every((line) => line.trim() === "") &&
+            stripped.slice(endIndex).every((line) => line.trim() === "");
+        if (!onlyTableContent) return null;
+
+        return stripped.slice(startIndex, endIndex).map(normalizePipeRow);
+    };
+
+    const unwrapFencedTableBlock = (startIndex: number): { rows: string[]; nextIndex: number } | null => {
+        const openingFence = (lines[startIndex] ?? "").trim();
+        if (!openingFence.startsWith("```")) return null;
+        let endIndex = startIndex + 1;
+        while (endIndex < lines.length && !(lines[endIndex] ?? "").trim().startsWith("```")) {
+            endIndex += 1;
+        }
+        if (endIndex >= lines.length) return null;
+
+        const rows = extractTableRows(lines.slice(startIndex + 1, endIndex));
+        if (!rows) return null;
+        return { rows, nextIndex: endIndex + 1 };
+    };
+
+    while (index < lines.length) {
+        const current = lines[index] ?? "";
+        const next = lines[index + 1] ?? "";
+        const fencedTableBlock = unwrapFencedTableBlock(index);
+        if (fencedTableBlock) {
+            if (result.length > 0 && result[result.length - 1]?.trim() !== "") {
+                result.push("");
+            }
+            result.push(...fencedTableBlock.rows);
+            index = fencedTableBlock.nextIndex;
+            if (index < lines.length && (lines[index] ?? "").trim() !== "") {
+                result.push("");
+            }
+            continue;
+        }
+
+        const strippedCurrent = stripTableIndent(current);
+        const strippedNext = stripTableIndent(next);
+        if (isPipeRow(strippedCurrent) && isSeparatorRow(strippedNext)) {
+            if (result.length > 0 && result[result.length - 1]?.trim() !== "") {
+                result.push("");
+            }
+            result.push(normalizePipeRow(strippedCurrent));
+            result.push(normalizePipeRow(strippedNext));
+            index += 2;
+            while (index < lines.length && isPipeRow(stripTableIndent(lines[index] ?? ""))) {
+                result.push(normalizePipeRow(stripTableIndent(lines[index] ?? "")));
+                index += 1;
+            }
+            if (index < lines.length && (lines[index] ?? "").trim() !== "") {
+                result.push("");
+            }
+            continue;
+        }
+        result.push(current);
+        index += 1;
+    }
+
+    return result.join("\n");
+}
+
+const emojiSegmenter = typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
+
+const EMOJI_GRAPHEME_PATTERN = /^(?:[#*0-9]\uFE0F?\u20E3|[\u{1F1E6}-\u{1F1FF}]{2}|(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?)(?:\u200D(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?))*)$/u;
+
+function splitGraphemes(value: string): string[] {
+    if (!value) return [];
+    if (emojiSegmenter) {
+        return Array.from(emojiSegmenter.segment(value), (item) => item.segment);
+    }
+    const codepoints = Array.from(value);
+    const segments: string[] = [];
+
+    const isRegionalIndicator = (char: string | undefined): boolean => {
+        const codepoint = char?.codePointAt(0);
+        return codepoint != null && codepoint >= 0x1f1e6 && codepoint <= 0x1f1ff;
+    };
+
+    const isVariationSelector = (char: string | undefined): boolean => {
+        const codepoint = char?.codePointAt(0);
+        return codepoint === 0xfe0e || codepoint === 0xfe0f;
+    };
+
+    for (let index = 0; index < codepoints.length; index += 1) {
+        let segment = codepoints[index] ?? "";
+        if (!segment) continue;
+
+        if (isRegionalIndicator(segment) && isRegionalIndicator(codepoints[index + 1])) {
+            segment += codepoints[index + 1];
+            index += 1;
+            segments.push(segment);
+            continue;
+        }
+
+        while (isVariationSelector(codepoints[index + 1])) {
+            segment += codepoints[index + 1];
+            index += 1;
+        }
+
+        while (codepoints[index + 1] === "\u200D" && codepoints[index + 2]) {
+            segment += codepoints[index + 1] + codepoints[index + 2];
+            index += 2;
+            while (isVariationSelector(codepoints[index + 1])) {
+                segment += codepoints[index + 1];
+                index += 1;
+            }
+        }
+
+        segments.push(segment);
+    }
+
+    return segments;
+}
+
+function isEmojiGrapheme(value: string): boolean {
+    return EMOJI_GRAPHEME_PATTERN.test(value);
+}
+
+function renderTextWithEmoji(value: string, keyPrefix: string): ReactNode[] {
+    const segments = splitGraphemes(value);
+    if (segments.length === 0) return [value];
+
+    const nodes: ReactNode[] = [];
+    let textBuffer = "";
+
+    const flushText = (suffix: string): void => {
+        if (!textBuffer) return;
+        nodes.push(<React.Fragment key={`${keyPrefix}-text-${suffix}`}>{textBuffer}</React.Fragment>);
+        textBuffer = "";
+    };
+
+    segments.forEach((segment, index) => {
+        if (!isEmojiGrapheme(segment)) {
+            textBuffer += segment;
+            return;
+        }
+
+        flushText(String(index));
+        nodes.push(
+            <span
+                key={`${keyPrefix}-emoji-${index}`}
+                role="img"
+                aria-label={segment}
+                className="mx-[0.05em] inline-block select-none align-[-0.08em] leading-none"
+                style={{
+                    fontFamily: "\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Noto Color Emoji\", sans-serif",
+                }}
+            >
+                {segment}
+            </span>,
+        );
+    });
+
+    flushText("tail");
+    return nodes.length > 0 ? nodes : [value];
+}
+
+function renderNodesWithEmoji(children: ReactNode, keyPrefix: string): ReactNode {
+    return React.Children.map(children, (child, index) => {
+        const childKey = `${keyPrefix}-${index}`;
+        if (typeof child === "string") {
+            return renderTextWithEmoji(child, childKey);
+        }
+        if (typeof child === "number") {
+            return renderTextWithEmoji(String(child), childKey);
+        }
+        if (React.isValidElement(child)) {
+            const elementChildren = (child.props as { children?: ReactNode } | null)?.children;
+            if (elementChildren == null) {
+                return child;
+            }
+            return React.cloneElement(
+                child,
+                undefined,
+                renderNodesWithEmoji(elementChildren, childKey),
+            );
+        }
+        return child;
+    });
+}
+
+function EmojiInlineText({
+    text,
+    className,
+    prefix,
+}: {
+    text: string;
+    className?: string;
+    prefix: string;
+}) {
+    return <span className={className}>{renderTextWithEmoji(text, prefix)}</span>;
+}
+
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
     createdAt: number;
@@ -174,50 +430,51 @@ type DraftMediaRegistryEntry = {
 };
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
+    const normalizedText = normalizeMarkdownDisplayText(text);
     const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
     const mutedTextClass = isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-400";
     const borderClass = isMe ? "border-white/20" : "border-slate-300/60 dark:border-slate-600";
     const tableHeaderClass = isMe ? "bg-white/10" : "bg-slate-100 dark:bg-slate-700";
     const codeClass = isMe
-        ? "rounded bg-white/15 px-1 py-0.5 text-[12px] text-white"
-        : "rounded bg-slate-100 px-1 py-0.5 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+        ? "rounded bg-white/15 px-1 py-0.5 text-[12px] text-white whitespace-pre-wrap break-all [overflow-wrap:anywhere]"
+        : "rounded bg-slate-100 px-1 py-0.5 text-[12px] text-slate-700 whitespace-pre-wrap break-all [overflow-wrap:anywhere] dark:bg-slate-700 dark:text-slate-100";
     const preClass = isMe
-        ? "my-2 overflow-x-auto rounded-lg bg-black/20 p-2 text-[12px] text-white"
-        : "my-2 overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+        ? "my-2 max-w-full overflow-x-auto rounded-lg bg-black/20 p-2 text-[12px] text-white"
+        : "my-2 max-w-full overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
 
     return (
-        <div className="max-w-full break-words">
+        <div className="max-w-full break-words [overflow-wrap:anywhere]">
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 components={{
-                    p: ({ children }) => <p className="my-1 last:mb-0">{children}</p>,
+                    p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesWithEmoji(children, "p")}</p>,
                     br: () => <br />,
-                    ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
-                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
-                    li: ({ children }) => <li className="my-0.5">{children}</li>,
+                    ul: ({ children }) => <ul className="my-1 list-disc pl-5">{renderNodesWithEmoji(children, "ul")}</ul>,
+                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{renderNodesWithEmoji(children, "ol")}</ol>,
+                    li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesWithEmoji(children, "li")}</li>,
                     blockquote: ({ children }) => (
-                        <blockquote className={`my-2 border-l-2 pl-2 italic ${borderClass} ${mutedTextClass}`}>{children}</blockquote>
+                        <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] ${borderClass} ${mutedTextClass}`}>{renderNodesWithEmoji(children, "blockquote")}</blockquote>
                     ),
-                    code: ({ children }) => <code className={codeClass}>{children}</code>,
-                    pre: ({ children }) => <pre className={preClass}>{children}</pre>,
+                    code: ({ children }) => <code className={codeClass}>{renderNodesWithEmoji(children, "code")}</code>,
+                    pre: ({ children }) => <pre className={preClass}>{renderNodesWithEmoji(children, "pre")}</pre>,
                     table: ({ children }) => (
-                        <div className="my-2 overflow-x-auto">
-                            <table className={`min-w-full border-collapse text-left text-[12px] ${textClass}`}>{children}</table>
+                        <div className="my-2 max-w-full overflow-x-auto">
+                            <table className={`min-w-max border-collapse text-left text-[12px] ${textClass}`}>{renderNodesWithEmoji(children, "table")}</table>
                         </div>
                     ),
-                    thead: ({ children }) => <thead className={tableHeaderClass}>{children}</thead>,
-                    tbody: ({ children }) => <tbody>{children}</tbody>,
-                    tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{children}</tr>,
-                    th: ({ children }) => <th className={`border px-2 py-1 font-semibold ${borderClass}`}>{children}</th>,
-                    td: ({ children }) => <td className={`border px-2 py-1 align-top ${borderClass}`}>{children}</td>,
+                    thead: ({ children }) => <thead className={tableHeaderClass}>{renderNodesWithEmoji(children, "thead")}</thead>,
+                    tbody: ({ children }) => <tbody>{renderNodesWithEmoji(children, "tbody")}</tbody>,
+                    tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{renderNodesWithEmoji(children, "tr")}</tr>,
+                    th: ({ children }) => <th className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 font-semibold [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesWithEmoji(children, "th")}</th>,
+                    td: ({ children }) => <td className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 align-top [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesWithEmoji(children, "td")}</td>,
                     a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noreferrer" className="underline">
-                            {children}
+                        <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
+                            {renderNodesWithEmoji(children, "a")}
                         </a>
                     )
                 }}
             >
-                {text}
+                {normalizedText}
             </ReactMarkdown>
         </div>
     );
@@ -331,7 +588,8 @@ const MessageBubble = ({
     const [showFileMenu, setShowFileMenu] = useState(false);
     const [showQuickActionMenu, setShowQuickActionMenu] = useState(false);
     const [showQuickActionMenuUpward, setShowQuickActionMenuUpward] = useState(false);
-    const [showFileMenuUpward, setShowFileMenuUpward] = useState(false);
+    const [quickActionMenuStyle, setQuickActionMenuStyle] = useState<{ top: number; left: number } | null>(null);
+    const [fileMenuStyle, setFileMenuStyle] = useState<{ top: number; left: number } | null>(null);
     const quickActionMenuRef = useRef<HTMLDivElement | null>(null);
     const fileMenuRef = useRef<HTMLDivElement | null>(null);
     const quickActionButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -408,10 +666,20 @@ const MessageBubble = ({
         const onPointerDown = (event: MouseEvent | TouchEvent): void => {
             const target = event.target as Node | null;
             if (!target) return;
-            if (showQuickActionMenu && quickActionMenuRef.current && !quickActionMenuRef.current.contains(target)) {
+            if (
+                showQuickActionMenu &&
+                quickActionMenuRef.current &&
+                !quickActionMenuRef.current.contains(target) &&
+                !quickActionButtonRef.current?.contains(target)
+            ) {
                 setShowQuickActionMenu(false);
             }
-            if (showFileMenu && fileMenuRef.current && !fileMenuRef.current.contains(target)) {
+            if (
+                showFileMenu &&
+                fileMenuRef.current &&
+                !fileMenuRef.current.contains(target) &&
+                !fileActionButtonRef.current?.contains(target)
+            ) {
                 setShowFileMenu(false);
             }
         };
@@ -423,26 +691,45 @@ const MessageBubble = ({
         };
     }, [showQuickActionMenu, showFileMenu]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!showQuickActionMenu) return;
         const trigger = quickActionButtonRef.current;
         if (!trigger) return;
         const rect = trigger.getBoundingClientRect();
         const estimatedMenuHeight = 220;
-        setShowQuickActionMenuUpward(window.innerHeight - rect.bottom < estimatedMenuHeight);
+        const estimatedMenuWidth = 160;
+        const openUpward = window.innerHeight - rect.bottom < estimatedMenuHeight;
+        const left = Math.min(
+            window.innerWidth - estimatedMenuWidth - 8,
+            Math.max(8, rect.right - estimatedMenuWidth),
+        );
+        const top = openUpward
+            ? Math.max(8, rect.top - estimatedMenuHeight - 8)
+            : Math.min(window.innerHeight - estimatedMenuHeight - 8, rect.bottom + 8);
+        setShowQuickActionMenuUpward(openUpward);
+        setQuickActionMenuStyle({ top, left });
     }, [showQuickActionMenu]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!showFileMenu) return;
         const trigger = fileActionButtonRef.current;
         if (!trigger) return;
         const rect = trigger.getBoundingClientRect();
-        const estimatedMenuHeight = 80;
-        setShowFileMenuUpward(window.innerHeight - rect.bottom < estimatedMenuHeight);
+        const estimatedMenuHeight = 68;
+        const estimatedMenuWidth = 96;
+        const openUpward = window.innerHeight - rect.bottom < estimatedMenuHeight;
+        const left = Math.min(
+            window.innerWidth - estimatedMenuWidth - 8,
+            Math.max(8, rect.right - estimatedMenuWidth),
+        );
+        const top = openUpward
+            ? Math.max(8, rect.top - estimatedMenuHeight - 8)
+            : Math.min(window.innerHeight - estimatedMenuHeight - 8, rect.bottom + 8);
+        setFileMenuStyle({ top, left });
     }, [showFileMenu]);
 
     return (
-        <div className={`flex w-full mb-3 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
+        <div className={`mb-3 flex w-full min-w-0 ${isMe ? "justify-end" : "justify-start"} ${isSending ? "opacity-60" : ""}`}>
             {/* Avatar (Incoming only) */}
             {!isMe && (
                 senderAvatarUrl ? (
@@ -452,18 +739,18 @@ const MessageBubble = ({
                 )
             )}
 
-            <div className={`flex flex-col max-w-[70%] ${isMe ? "items-end" : "items-start"}`}>
+            <div className={`flex min-w-0 flex-col max-w-[min(88vw,24rem)] sm:max-w-[70%] ${isMe ? "items-end" : "items-start"}`}>
                 {/* Sender Name (Incoming only) */}
                 {!isMe && (
-                    <div className="mb-1 ml-1 flex items-center gap-2 text-[11px] text-gray-500 dark:text-slate-400">
-                        <span>{senderLabel}</span>
-                        <span className="text-[10px] text-gray-400 dark:text-slate-500">{timeLabel}</span>
+                    <div className="mb-1 ml-1 flex max-w-full min-w-0 items-center gap-2 text-[11px] text-gray-500 dark:text-slate-400">
+                        <span className="truncate">{renderNodesWithEmoji(senderLabel, `sender-${eventId}`)}</span>
+                        <span className="flex-shrink-0 text-[10px] text-gray-400 dark:text-slate-500">{timeLabel}</span>
                     </div>
                 )}
 
-                <div className="flex items-end gap-2">
+                    <div className="flex min-w-0 items-end gap-2">
                     {isMe && hasQuickActions && (
-                        <div ref={quickActionMenuRef} className="relative self-end mb-1">
+                        <div className="relative self-end mb-1">
                             <button
                                 ref={quickActionButtonRef}
                                 type="button"
@@ -475,6 +762,7 @@ const MessageBubble = ({
                             </button>
                             {showQuickActionMenu && (
                                 <MessageActionsMenu
+                                    ref={quickActionMenuRef}
                                     canToggleTranslation={canToggleTranslation}
                                     translationLoading={translationLoading}
                                     translationMode={effectiveTranslationMode}
@@ -485,6 +773,8 @@ const MessageBubble = ({
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
                                     openUpward={showQuickActionMenuUpward}
                                     align="right"
+                                    className="fixed"
+                                    style={quickActionMenuStyle ?? undefined}
                                     onSetTranslationMode={(mode) => {
                                         setShowQuickActionMenu(false);
                                         onSetTranslationMode?.(mode);
@@ -520,7 +810,7 @@ const MessageBubble = ({
                         </div>
                     )}
                     {isMe && isFileLike && canDeleteFile && onDeleteFile && (
-                        <div ref={fileMenuRef} className="relative self-end mb-1">
+                        <div className="relative self-end mb-1">
                             <button
                                 ref={fileActionButtonRef}
                                 type="button"
@@ -533,9 +823,11 @@ const MessageBubble = ({
                                 <EllipsisVerticalIcon className="h-4 w-4" />
                             </button>
                             {showFileMenu && (
-                                <div className={`absolute right-0 z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                                    showFileMenuUpward ? "bottom-full mb-1" : "top-full mt-1"
-                                }`}>
+                                <div
+                                    ref={fileMenuRef}
+                                    className="fixed z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900"
+                                    style={fileMenuStyle ?? undefined}
+                                >
                                     <button
                                         type="button"
                                         data-testid={`chat-file-delete-${eventId}`}
@@ -556,7 +848,7 @@ const MessageBubble = ({
                     {/* Bubble */}
                     <div
                         className={`
-              px-3 py-2 text-[13px] leading-relaxed shadow-sm relative
+              relative min-w-0 overflow-visible px-3 py-2 text-[13px] leading-relaxed shadow-sm
               ${isMe
                                 ? "bg-[#2F5C56] text-white rounded-2xl rounded-tr-sm"
                                 : "bg-white text-slate-800 rounded-2xl rounded-tl-sm border border-gray-100 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
@@ -572,14 +864,14 @@ const MessageBubble = ({
                                 <img
                                     src={mediaUrl}
                                     alt={messageText || t("chat.imageAlt")}
-                                    className="max-w-[280px] rounded-lg"
+                                    className="max-w-[min(72vw,280px)] rounded-lg"
                                 />
                             </button>
                         ) : isVideo ? (
                             <button
                                 type="button"
                                 onClick={() => onOpenMedia({ url: mediaUrl, type: "video" })}
-                                className="relative block max-w-[320px]"
+                                className="relative block max-w-[min(76vw,320px)]"
                             >
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     <div className="rounded-full bg-black/50 px-3 py-2 text-xs text-white">
@@ -588,14 +880,14 @@ const MessageBubble = ({
                                 </div>
                                 <video
                                     src={mediaUrl}
-                                    className="max-w-[320px] rounded-lg opacity-80"
+                                    className="max-w-[min(76vw,320px)] rounded-lg opacity-80"
                                     muted
                                     preload="metadata"
                                 />
                             </button>
                         ) : isAudio ? (
                             <div className="space-y-2">
-                                <audio controls preload="metadata" className="w-64">
+                                <audio controls preload="metadata" className="max-w-full w-[min(16rem,62vw)]">
                                     <source src={mediaUrl} type={content?.info?.mimetype || undefined} />
                                 </audio>
                                 <a
@@ -659,7 +951,7 @@ const MessageBubble = ({
                     </div>
 
                     {!isMe && hasQuickActions && (
-                        <div ref={quickActionMenuRef} className="relative self-end mb-1">
+                        <div className="relative self-end mb-1">
                             <button
                                 ref={quickActionButtonRef}
                                 type="button"
@@ -671,6 +963,7 @@ const MessageBubble = ({
                             </button>
                             {showQuickActionMenu && (
                                 <MessageActionsMenu
+                                    ref={quickActionMenuRef}
                                     canToggleTranslation={canToggleTranslation}
                                     translationLoading={translationLoading}
                                     translationMode={effectiveTranslationMode}
@@ -681,6 +974,8 @@ const MessageBubble = ({
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
                                     openUpward={showQuickActionMenuUpward}
                                     align="left"
+                                    className="fixed"
+                                    style={quickActionMenuStyle ?? undefined}
                                     onSetTranslationMode={(mode) => {
                                         setShowQuickActionMenu(false);
                                         onSetTranslationMode?.(mode);
@@ -716,7 +1011,7 @@ const MessageBubble = ({
                         </div>
                     )}
                     {!isMe && isFileLike && canDeleteFile && onDeleteFile && (
-                        <div ref={fileMenuRef} className="relative self-end mb-1">
+                        <div className="relative self-end mb-1">
                             <button
                                 ref={fileActionButtonRef}
                                 type="button"
@@ -729,9 +1024,11 @@ const MessageBubble = ({
                                 <EllipsisVerticalIcon className="h-4 w-4" />
                             </button>
                             {showFileMenu && (
-                                <div className={`absolute z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                                    showFileMenuUpward ? "bottom-full left-0 mb-1" : "top-full left-0 mt-1"
-                                }`}>
+                                <div
+                                    ref={fileMenuRef}
+                                    className="fixed z-20 w-24 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900"
+                                    style={fileMenuStyle ?? undefined}
+                                >
                                     <button
                                         type="button"
                                         data-testid={`chat-file-delete-${eventId}`}
@@ -984,10 +1281,6 @@ export const ChatRoom: React.FC = () => {
         onJumpHandled,
         notebookAssistEnabled,
         notebookCapabilities,
-        notebookCapabilityError,
-        onRetryNotebookCapability,
-        onReloginForNotebook,
-        hasNotebookAuthToken,
         notebookApiBaseUrl,
         taskStatuses,
         roomTasks,
@@ -1293,10 +1586,11 @@ export const ChatRoom: React.FC = () => {
     };
     const getUserLabel = (userId: string | null | undefined, displayName?: string | null): string => {
         const localpart = getLocalPart(userId);
-        if (localpart && displayName && displayName !== localpart) {
-            return `${localpart} (${displayName})`;
+        const normalizedDisplayName = normalizeVisibleText(displayName);
+        if (localpart && normalizedDisplayName && normalizedDisplayName !== localpart) {
+            return `${localpart} (${normalizedDisplayName})`;
         }
-        return localpart || displayName || userId || t("common.unknown");
+        return localpart || normalizedDisplayName || userId || t("common.unknown");
     };
     const updateTypingMemberLabels = useCallback(() => {
         if (!room || !userId) {
@@ -1516,6 +1810,11 @@ export const ChatRoom: React.FC = () => {
         if (!matrixUserId) return null;
         return contactLookup.get(matrixUserId) ?? null;
     }, [contactLookup]);
+    const getResolvedUserLabel = useCallback((matrixUserId: string | null | undefined, displayName?: string | null): string => {
+        const linkedContact = resolveContactByMatrixUserId(matrixUserId);
+        const preferredDisplayName = normalizeVisibleText(linkedContact?.display_name || linkedContact?.user_local_id || displayName);
+        return getUserLabel(matrixUserId, preferredDisplayName);
+    }, [resolveContactByMatrixUserId]);
 
     const roomKind = useMemo(() => {
         if (!room) return null;
@@ -2162,6 +2461,9 @@ export const ChatRoom: React.FC = () => {
         setQuotedMessage(null);
         setActiveMention(null);
         setUploadError(null);
+        if (isMobilePlatform()) {
+            composerRef.current?.blur();
+        }
         let sentEventId: string | undefined;
         if (finalText) sentEventId = await sendTextMessage(matrixClient, activeRoomId, finalText, mentionContent);
         const peerLang = (directPeerContact?.translation_locale || directPeerContact?.locale || "").trim();
@@ -2283,7 +2585,7 @@ export const ChatRoom: React.FC = () => {
     const quoteMessage = (event: MatrixEvent): void => {
         const sender = event.getSender();
         const senderMember = sender ? room?.getMember(sender) : null;
-        const senderLabel = getUserLabel(sender, senderMember?.name);
+        const senderLabel = getResolvedUserLabel(sender, senderMember?.name);
         const preview = getQuotedMessagePreview(event);
         if (!preview) return;
         setQuotedMessage({
@@ -2391,7 +2693,7 @@ export const ChatRoom: React.FC = () => {
     const otherMember = room
         ? room.getJoinedMembers().find((member) => member.userId !== userId)
         : undefined;
-    const headerName = room?.name || getUserLabel(otherMember?.userId, otherMember?.name) || t("chat.headerFallback");
+    const headerName = normalizeVisibleText(room?.name) || getResolvedUserLabel(otherMember?.userId, otherMember?.name) || t("chat.headerFallback");
     const roomName = room?.name || t("chat.roomNameFallback", t("chat.groupNameFallback"));
     const roomDisplayName = room?.name || headerName || t("chat.headerFallback");
     const memberEntries = useMemo(() => {
@@ -2706,10 +3008,10 @@ export const ChatRoom: React.FC = () => {
     }
 
     return (
-        <div className="flex flex-col h-full w-full min-h-0">
+        <div className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {/* 4. Header */}
-            <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 shadow-sm z-10 dark:bg-slate-900 dark:border-slate-800">
-                <div className="flex items-center gap-3">
+            <header className="z-10 flex min-h-14 flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:min-h-16 sm:px-6">
+                <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
                     {onMobileBack && (
                         <button
                             type="button"
@@ -2722,18 +3024,18 @@ export const ChatRoom: React.FC = () => {
                     )}
                     {isMultiMemberRoom ? (
                         <>
-                            <div className="w-11 h-11 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-300 text-sm font-semibold">
+                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 sm:h-11 sm:w-11">
                                 {roomName.charAt(0).toUpperCase()}
                             </div>
-                            <div className="flex flex-col">
-                                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                            <div className="min-w-0 flex-1">
+                                <h2 className="truncate text-base font-bold text-slate-800 dark:text-slate-100 sm:text-lg">
                                     {roomName}
                                 </h2>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setShowMembersModal(true)}
-                                className="ml-2 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                className="ml-1 inline-flex h-9 flex-shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300 sm:ml-2 sm:px-3 sm:text-xs"
                             >
                                 {t("chat.membersButton")}
                                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-2 text-[10px] font-bold text-white">
@@ -2743,10 +3045,10 @@ export const ChatRoom: React.FC = () => {
                         </>
                     ) : (
                         <>
-                            <div className="flex flex-col">
-                                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{headerName}</h2>
-                                <span className="text-xs text-green-600 flex items-center gap-1 dark:text-emerald-400">
-                                    <span className="w-2 h-2 bg-green-500 rounded-full dark:bg-emerald-400"></span>
+                            <div className="min-w-0 flex-1">
+                                <h2 className="truncate text-base font-bold text-slate-800 dark:text-slate-100 sm:text-lg">{headerName}</h2>
+                                <span className="flex items-center gap-1 truncate text-[11px] text-green-600 dark:text-emerald-400 sm:text-xs">
+                                    <span className="h-2 w-2 flex-shrink-0 rounded-full bg-green-500 dark:bg-emerald-400"></span>
                                     {t("common.online")}
                                 </span>
                             </div>
@@ -2754,7 +3056,7 @@ export const ChatRoom: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowMembersModal(true)}
-                                    className="ml-2 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                    className="ml-1 inline-flex h-9 flex-shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-slate-100 sm:ml-2 sm:px-3 sm:text-xs"
                                 >
                                     {t("chat.membersButton")}
                                     <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-2 text-[10px] font-bold text-white">
@@ -2766,7 +3068,7 @@ export const ChatRoom: React.FC = () => {
                     )}
                 </div>
 
-                <div className="flex items-center gap-4 text-gray-500 dark:text-slate-400">
+                <div className="ml-2 flex flex-shrink-0 items-center gap-1 text-gray-500 dark:text-slate-400 sm:gap-4">
                     <button
                         ref={roomSearchButtonRef}
                         type="button"
@@ -3014,7 +3316,7 @@ export const ChatRoom: React.FC = () => {
                 ref={timelineRef}
                 data-testid="chat-timeline"
                 onScroll={() => void onScroll()}
-                className="flex-1 min-h-0 overflow-y-auto p-6 bg-[#F2F4F7] dark:bg-slate-950"
+                className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto bg-[#F2F4F7] px-3 py-4 dark:bg-slate-950 sm:p-6"
             >
                 {showingCachedEvents && (
                     <div className="mb-4 rounded-xl border border-emerald-200/70 bg-emerald-50/80 px-4 py-2 text-xs text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -3044,7 +3346,7 @@ export const ChatRoom: React.FC = () => {
                         const targetUserId = event.getStateKey() ?? "";
                         if (!targetUserId) return null;
                         const targetMember = room.getMember(targetUserId);
-                        const targetLabel = getUserLabel(targetUserId, targetMember?.name ?? prevContent.displayname);
+                        const targetLabel = getResolvedUserLabel(targetUserId, targetMember?.name ?? prevContent.displayname);
                         const actorUserId = event.getSender();
                         const noticeText =
                             content.membership === "join"
@@ -3097,7 +3399,7 @@ export const ChatRoom: React.FC = () => {
                             : null;
                     const sender = event.getSender();
                     const senderMember = sender ? room?.getMember(sender) : null;
-                    const senderLabel = getUserLabel(sender, senderMember?.name);
+                    const senderLabel = getResolvedUserLabel(sender, senderMember?.name);
                     const senderAvatarMxc = senderMember?.user?.avatarUrl ?? null;
                     const senderAvatarUrl = senderAvatarMxc && matrixClient
                         ? matrixClient.mxcUrlToHttp(senderAvatarMxc, 48, 48, "crop") ?? matrixClient.mxcUrlToHttp(senderAvatarMxc) ?? null
@@ -3189,7 +3491,10 @@ export const ChatRoom: React.FC = () => {
             )}
 
             {/* Composer */}
-            <div data-testid="chat-composer" className="bg-white border-t border-gray-200 p-4 flex-shrink-0 dark:bg-slate-900 dark:border-slate-800 relative">
+            <div
+                data-testid="chat-composer"
+                className="relative flex-shrink-0 border-t border-gray-200 bg-white p-3 pb-3 dark:border-slate-800 dark:bg-slate-900 sm:p-4 sm:pb-4"
+            >
                 {isDirectPeerAbsent && (
                     <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
                         {t("chat.directPeerLeftNotice")}
@@ -3198,30 +3503,6 @@ export const ChatRoom: React.FC = () => {
                 {isSoloInRoom && (
                     <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
                         {t("chat.singleMemberNotice", "此房间就剩你一人，发的讯息都是在和空气聊天哦")}
-                    </div>
-                )}
-                {notebookCapabilityError && (
-                    <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                        <div>{notebookCapabilityError}</div>
-                        <div className="mt-2 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => onRetryNotebookCapability?.()}
-                                className="rounded-md border border-rose-300 px-2 py-1 font-semibold hover:bg-rose-100 dark:border-rose-700 dark:hover:bg-rose-900/40"
-                            >
-                                {t("chat.notebook.retry")}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onReloginForNotebook?.()}
-                                className="rounded-md bg-rose-600 px-2 py-1 font-semibold text-white hover:bg-rose-700"
-                            >
-                                {t("chat.notebook.relogin")}
-                            </button>
-                            {!hasNotebookAuthToken && (
-                                <span className="self-center text-[11px] opacity-90">{t("chat.notebook.noValidHubTokenHint")}</span>
-                            )}
-                        </div>
                     </div>
                 )}
                 {typingMemberLabels.length > 0 && (
@@ -3727,9 +4008,11 @@ export const ChatRoom: React.FC = () => {
                                             className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
                                         >
                                             <div className="min-w-0">
-                                                <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                                    {getUserLabel(member.userId, member.name)}
-                                                </div>
+                                                <EmojiInlineText
+                                                    prefix={`member-${member.userId}`}
+                                                    text={getResolvedUserLabel(member.userId, member.name)}
+                                                    className="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100"
+                                                />
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 {member.powerLevel >= 50 && (
@@ -3743,7 +4026,7 @@ export const ChatRoom: React.FC = () => {
                                                         onClick={() => {
                                                             setMemberToRemove({
                                                                 userId: member.userId,
-                                                                label: getUserLabel(member.userId, member.name),
+                                                                label: getResolvedUserLabel(member.userId, member.name),
                                                                 membership: "join",
                                                             });
                                                             setRemoveMemberError(null);
@@ -3775,9 +4058,11 @@ export const ChatRoom: React.FC = () => {
                                                 className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
                                             >
                                                 <div className="min-w-0">
-                                                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                                        {getUserLabel(member.userId, member.name)}
-                                                    </div>
+                                                    <EmojiInlineText
+                                                        prefix={`invited-member-${member.userId}`}
+                                                        text={getResolvedUserLabel(member.userId, member.name)}
+                                                        className="block truncate text-sm font-semibold text-slate-800 dark:text-slate-100"
+                                                    />
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {canRemoveMembers && member.userId !== userId && (
@@ -3786,7 +4071,7 @@ export const ChatRoom: React.FC = () => {
                                                             onClick={() => {
                                                                 setMemberToRemove({
                                                                     userId: member.userId,
-                                                                    label: getUserLabel(member.userId, member.name),
+                                                                    label: getResolvedUserLabel(member.userId, member.name),
                                                                     membership: "invite",
                                                                 });
                                                                 setRemoveMemberError(null);
@@ -4003,7 +4288,10 @@ export const ChatRoom: React.FC = () => {
                                         return;
                                     }
                                     const prevName = room.name || t("chat.roomNameFallback", t("chat.groupNameFallback"));
-                                    const actorName = getUserLabel(userId, room.getMember(userId || "")?.name || matrixClient.getUser(userId || "")?.displayName);
+                                    const actorName = getResolvedUserLabel(
+                                        userId,
+                                        room.getMember(userId || "")?.name || matrixClient.getUser(userId || "")?.displayName,
+                                    );
                                     setRenameBusy(true);
                                     setRenameError(null);
                                     void (async () => {

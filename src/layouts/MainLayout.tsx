@@ -11,6 +11,8 @@ import {
     PuzzlePieceIcon,
     SparklesIcon,
     CommandLineIcon,
+    SunIcon,
+    MoonIcon,
 } from "@heroicons/react/24/outline";
 import { ClientEvent, EventTimeline, EventType, Preset, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
@@ -103,6 +105,23 @@ type NavBarItemProps = {
     label?: string;
 };
 
+type MobileNavChipProps = {
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    active?: boolean;
+    onClick?: () => void;
+    badgeCount?: number;
+    label: string;
+};
+
+type AppShellNavItem = {
+    key: string;
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    active: boolean;
+    label: string;
+    badgeCount?: number;
+    onClick: () => void;
+};
+
 type SharedContactRoomEntry = {
     roomId: string;
     displayName: string;
@@ -134,6 +153,29 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "", l
             )}
         </div>
     </div>
+);
+
+const MobileNavChip = ({ icon: Icon, active, onClick, badgeCount, label }: MobileNavChipProps) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={`relative inline-flex min-w-max items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition ${
+            active
+                ? "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm dark:border-emerald-400/70 dark:bg-emerald-500/15 dark:text-emerald-100"
+                : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-500/50 dark:hover:text-slate-100"
+        }`}
+        aria-pressed={active}
+    >
+        <span className="relative inline-flex h-5 w-5 items-center justify-center">
+            <Icon className="h-5 w-5" />
+            {typeof badgeCount === "number" && badgeCount > 0 ? (
+                <span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-semibold leading-4 text-white">
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                </span>
+            ) : null}
+        </span>
+        <span>{label}</span>
+    </button>
 );
 
 function resolvePluginNavIcon(icon?: PluginIconKey): React.ComponentType<React.SVGProps<SVGSVGElement>> {
@@ -411,6 +453,9 @@ function mapChatSummaryErrorMessage(
     if (normalized === "unauthorized" || normalized.includes("missing auth token") || normalized.includes("invalid auth token")) {
         return t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again.");
     }
+    if (normalized.includes("m_unknown_token") || normalized.includes("unknown access token")) {
+        return t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again.");
+    }
     if (normalized.includes("failed to load summary jobs")) {
         return t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
     }
@@ -647,8 +692,10 @@ export const MainLayout: React.FC = () => {
         name: string;
         revokeOnClose?: boolean;
     } | null>(null);
+    const [fileThumbnailUrls, setFileThumbnailUrls] = useState<Record<string, string>>({});
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+    const fileThumbnailUrlsRef = useRef<Record<string, string>>({});
     const [notebookFileActionError, setNotebookFileActionError] = useState<string | null>(null);
     const [notebookUploadState, setNotebookUploadState] = useState<{
         busy: boolean;
@@ -692,6 +739,22 @@ export const MainLayout: React.FC = () => {
             }
         };
     }, [filePreview]);
+    useEffect(() => {
+        fileThumbnailUrlsRef.current = fileThumbnailUrls;
+    }, [fileThumbnailUrls]);
+    useEffect(() => {
+        return () => {
+            Object.values(fileThumbnailUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+        };
+    }, []);
+    const closeFilePreview = useCallback(() => {
+        setFilePreview((current) => {
+            if (current?.revokeOnClose) {
+                URL.revokeObjectURL(current.url);
+            }
+            return null;
+        });
+    }, []);
     const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
     const [summaryJobActionBusy, setSummaryJobActionBusy] = useState(false);
     const [summaryGenerationNotice, setSummaryGenerationNotice] = useState<string | null>(null);
@@ -761,6 +824,21 @@ export const MainLayout: React.FC = () => {
     const accountSubtitle = accountSubtitleParts.length
         ? accountSubtitleParts.join(" · ")
         : t("layout.accountSubtitleFallback");
+    const openPrimaryTab = useCallback((tab: "chat" | "notebook" | "contacts" | "files" | "tasks" | "settings" | "account") => {
+        setMobileView("list");
+        setActiveTab(tab);
+        if (tab === "settings") {
+            setSettingsDetail("none");
+        }
+    }, []);
+    const pluginRuntimeContextValue = useMemo(() => ({
+        userType,
+        matrixUserId: matrixCredentials?.user_id ?? null,
+        matrixUserLocalId: formatMatrixUserLocalId(matrixCredentials?.user_id),
+        matrixHomeServer: matrixCredentials?.hs_url ?? null,
+        hasHubSession: Boolean(hubSession?.access_token),
+        platformManaged: true,
+    }), [hubSession?.access_token, matrixCredentials?.hs_url, matrixCredentials?.user_id, userType]);
     const displayLangOptions = displayLanguageOptions;
     const localeTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const translationDefaultStorageKey = useMemo(
@@ -963,6 +1041,8 @@ export const MainLayout: React.FC = () => {
             }),
         [capabilityLoaded, capabilityValues, userType],
     );
+    const hasNotebookLocalWorkspace = Boolean(notebookAuth?.matrixUserId);
+    const notebookWorkspaceAvailable = hasNotebookLocalWorkspace;
     useEffect(() => {
         if (!desktopUpdaterAvailable) return;
 
@@ -1128,7 +1208,7 @@ export const MainLayout: React.FC = () => {
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
         auth: notebookAuth,
-        enabled: notebookReady && notebookCapabilityState.canUseNotebookBasic,
+        enabled: notebookReady && notebookWorkspaceAvailable,
         refreshToken: notebookRefreshToken,
     });
     useEffect(() => {
@@ -1738,12 +1818,11 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (
             activeTab === "notebook" &&
-            notebookCapabilityState.loaded &&
-            !notebookCapabilityState.canUseNotebookBasic
+            !notebookWorkspaceAvailable
         ) {
             setActiveTab("chat");
         }
-    }, [activeTab, notebookCapabilityState.canUseNotebookBasic, notebookCapabilityState.loaded]);
+    }, [activeTab, notebookWorkspaceAvailable]);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -2571,6 +2650,18 @@ export const MainLayout: React.FC = () => {
         const match = translationLanguageOptions.find((option) => option.value === locale);
         return match?.label ?? locale;
     };
+    const getDisplayLanguageLabel = (locale: string | null | undefined): string => {
+        const normalized = String(locale || "").trim();
+        if (!normalized) return t("common.placeholder");
+        const match = displayLanguageOptions.find((option) => option.value === normalized);
+        return match?.label ?? normalized;
+    };
+    const getTranslationLanguageLabel = (locale: string | null | undefined): string => {
+        const normalized = String(locale || "").trim();
+        if (!normalized) return t("common.placeholder");
+        const match = translationLanguageOptions.find((option) => option.value === normalized);
+        return match?.label ?? normalized;
+    };
 
     const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 < Date.now() : false;
     const useHubToken = Boolean(hubAccessToken) && !hubTokenExpired;
@@ -2767,6 +2858,70 @@ export const MainLayout: React.FC = () => {
         () => roomSummaryList.find((item) => item.roomId === selectedFileRoomId) ?? null,
         [roomSummaryList, selectedFileRoomId],
     );
+    const mobileNavItems = useMemo<AppShellNavItem[]>(() => {
+        const items: AppShellNavItem[] = [
+            {
+                key: "contacts",
+                icon: UserGroupIcon,
+                active: activeTab === "contacts",
+                badgeCount: inviteBadgeCount,
+                label: t("roomList.sections.contacts"),
+                onClick: () => openPrimaryTab("contacts"),
+            },
+            {
+                key: "chat",
+                icon: ChatBubbleLeftRightIcon,
+                active: activeTab === "chat",
+                badgeCount: unreadBadgeCount,
+                label: t("main.sidebar.rooms"),
+                onClick: () => openPrimaryTab("chat"),
+            },
+        ];
+
+        if (notebookWorkspaceAvailable) {
+            items.push({
+                key: "notebook",
+                icon: BookOpenIcon,
+                active: activeTab === "notebook",
+                label: t("chat.notebook.panelTitle"),
+                onClick: () => openPrimaryTab("notebook"),
+            });
+        }
+
+        items.push(
+            {
+                key: "files",
+                icon: FolderIcon,
+                active: activeTab === "files",
+                label: t("layout.filesTitle"),
+                onClick: () => openPrimaryTab("files"),
+            },
+            {
+                key: "tasks",
+                icon: ClockIcon,
+                active: activeTab === "tasks",
+                label: t("tasks.title"),
+                onClick: () => openPrimaryTab("tasks"),
+            },
+            ...pluginNavItems.map((item) => ({
+                key: `plugin:${item.pluginId}:${item.id}`,
+                icon: resolvePluginNavIcon(item.icon),
+                active: false,
+                badgeCount: item.badgeCount,
+                label: item.label,
+                onClick: () => item.onSelect?.(pluginRuntimeContextValue),
+            })),
+            {
+                key: "settings",
+                icon: Cog6ToothIcon,
+                active: activeTab === "settings",
+                label: t("layout.settings"),
+                onClick: () => openPrimaryTab("settings"),
+            },
+        );
+
+        return items;
+    }, [activeTab, inviteBadgeCount, notebookWorkspaceAvailable, openPrimaryTab, pluginNavItems, pluginRuntimeContextValue, t, unreadBadgeCount]);
 
     const visibleSelectedRoomFiles = useMemo(
         () =>
@@ -2845,6 +3000,58 @@ export const MainLayout: React.FC = () => {
         setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
     }, [selectedRoomFiles]);
 
+    useEffect(() => {
+        if (activeTab !== "files") return;
+        const previewableItems = pagedVisibleSelectedRoomFiles.filter((item) => {
+            const previewType = getFilePreviewType(item);
+            return previewType === "image" || previewType === "video";
+        });
+        const previewableIds = new Set(previewableItems.map((item) => item.eventId));
+
+        setFileThumbnailUrls((prev) => {
+            const next: Record<string, string> = {};
+            Object.entries(prev).forEach(([eventId, url]) => {
+                if (previewableIds.has(eventId)) {
+                    next[eventId] = url;
+                } else {
+                    URL.revokeObjectURL(url);
+                }
+            });
+            return next;
+        });
+
+        let cancelled = false;
+        previewableItems.forEach((item) => {
+            const httpUrl = getHttpFileUrl(item);
+            if (!httpUrl) return;
+            if (fileThumbnailUrls[item.eventId]) return;
+            void (async () => {
+                try {
+                    const blob = await fetchMediaBlob(httpUrl, matrixCredentials?.access_token);
+                    const objectUrl = URL.createObjectURL(blob);
+                    if (cancelled) {
+                        URL.revokeObjectURL(objectUrl);
+                        return;
+                    }
+                    setFileThumbnailUrls((prev) => {
+                        const existing = prev[item.eventId];
+                        if (existing) {
+                            URL.revokeObjectURL(objectUrl);
+                            return prev;
+                        }
+                        return { ...prev, [item.eventId]: objectUrl };
+                    });
+                } catch {
+                    // Keep the card usable even if the preview thumbnail cannot be prefetched.
+                }
+            })();
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, pagedVisibleSelectedRoomFiles, matrixCredentials?.access_token, fileThumbnailUrls]);
+
     const getHttpFileUrl = (item: FileLibraryItem): string | null => {
         if (!matrixClient) return null;
         return matrixClient.mxcUrlToHttp(item.mxcUrl);
@@ -2864,13 +3071,22 @@ export const MainLayout: React.FC = () => {
             eventId: item.eventId,
             fileName: item.body,
         });
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = item.body || "file";
-        anchor.rel = "noopener noreferrer";
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
+        void (async () => {
+            try {
+                const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
+                const blobUrl = URL.createObjectURL(blob);
+                const anchor = document.createElement("a");
+                anchor.href = blobUrl;
+                anchor.download = item.body || "file";
+                anchor.rel = "noopener noreferrer";
+                document.body.appendChild(anchor);
+                anchor.click();
+                document.body.removeChild(anchor);
+                URL.revokeObjectURL(blobUrl);
+            } catch {
+                setFileActionError(t("layout.fileDownloadFailed", "File download failed."));
+            }
+        })();
     };
 
     const onPreviewFileItem = (item: FileLibraryItem): void => {
@@ -2883,9 +3099,25 @@ export const MainLayout: React.FC = () => {
             type: previewType,
             fileName: item.body,
         });
-        setPreviewZoom(1);
-        setPreviewOffset({ x: 0, y: 0 });
-        setFilePreview({ url, type: previewType, name: item.body });
+        setFileActionError(null);
+        void (async () => {
+            try {
+                const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
+                const previewUrl = previewType === "pdf"
+                    ? await blobToDataUrl(blob)
+                    : URL.createObjectURL(blob);
+                setPreviewZoom(1);
+                setPreviewOffset({ x: 0, y: 0 });
+                setFilePreview({
+                    url: previewUrl,
+                    type: previewType,
+                    name: item.body,
+                    revokeOnClose: previewType !== "pdf",
+                });
+            } catch {
+                setFileActionError(t("layout.filePreviewFailed", "File preview failed."));
+            }
+        })();
     };
 
     const onJumpToFileMessage = (item: FileLibraryItem): void => {
@@ -3000,11 +3232,11 @@ export const MainLayout: React.FC = () => {
     };
 
     const summaryWorkspacePanel = (
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full min-w-0 max-w-none">
             <div className="mb-4 text-base font-semibold text-slate-800 dark:text-slate-100">
                 {t("layout.notebook.summaryWorkspaceTitle", "AI Chat Summary")}
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-950">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-6 dark:border-slate-700 dark:bg-slate-950">
                 {summaryGenerationNotice ? (
                     <div className={`mb-3 rounded-lg px-3 py-2 text-xs ${
                         summaryGenerationNoticeTone === "error"
@@ -3035,7 +3267,7 @@ export const MainLayout: React.FC = () => {
                             <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                                 {`${formatSummaryDisplayDateTime(summaryPreviewJob.from_date)} ~ ${formatSummaryDisplayDateTime(summaryPreviewJob.to_date)}`}
                             </div>
-                            <pre className="max-h-[56vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                            <pre className="max-h-[56vh] max-w-full overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
                                 {summaryPreviewJob.summary_text || ""}
                             </pre>
                         </div>
@@ -3061,9 +3293,9 @@ export const MainLayout: React.FC = () => {
                                 className="rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900"
                             >
                                 <div className="mb-1 flex items-center justify-between gap-3">
-                                    <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                        {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
-                                    </div>
+                                        <div className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                            {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
+                                        </div>
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                         job.status === "completed"
                                             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
@@ -3083,7 +3315,7 @@ export const MainLayout: React.FC = () => {
                                 </div>
                                 {job.status === "processing" ? (
                                     <div className="mt-2 space-y-1">
-                                        <div className="text-xs text-slate-600 dark:text-slate-300">
+                                        <div className="break-words text-xs text-slate-600 dark:text-slate-300">
                                             {job.progress_message || t("layout.notebook.summaryStatusProcessing", "Processing")}
                                             {Number.isFinite(Number(job.progress_current)) && Number.isFinite(Number(job.progress_total)) && Number(job.progress_total) > 0
                                                 ? ` (${Number(job.progress_current)}/${Number(job.progress_total)})`
@@ -3106,7 +3338,7 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 ) : null}
                                 {job.status === "failed" ? (
-                                    <div className="mt-1 text-xs text-rose-500 dark:text-rose-300">
+                                    <div className="mt-1 break-words text-xs text-rose-500 dark:text-rose-300">
                                         {job.progress_message || job.error_message || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.")}
                                     </div>
                                 ) : null}
@@ -3159,9 +3391,42 @@ export const MainLayout: React.FC = () => {
     );
 
     return (
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
+        <div className="flex h-[100dvh] min-h-0 w-full min-w-0 flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
+            <div className="border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
+                <div className="px-3 pb-2 pt-[calc(env(safe-area-inset-top,0px)+0.6rem)]">
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => openPrimaryTab("account")}
+                            className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#2F5C56] text-sm font-bold text-white shadow-sm"
+                            aria-label={t("layout.accountSettings")}
+                        >
+                            {accountAvatarUrl ? (
+                                <img src={accountAvatarUrl} alt={accountId} className="h-full w-full object-cover" />
+                            ) : (
+                                accountInitial
+                            )}
+                        </button>
+                        <div className="min-w-0 flex-1 overflow-x-auto pb-1">
+                            <div className="flex min-w-max items-center gap-2 pr-1">
+                                {mobileNavItems.map((item) => (
+                                    <MobileNavChip
+                                        key={item.key}
+                                        icon={item.icon}
+                                        active={item.active}
+                                        badgeCount={item.badgeCount}
+                                        label={item.label}
+                                        onClick={item.onClick}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
-            <nav className="w-full bg-gray-900 flex items-center justify-between px-4 py-2 flex-shrink-0 z-20 dark:bg-slate-900 lg:w-16 lg:flex-col lg:justify-start lg:py-4">
+            <nav className="hidden flex-shrink-0 items-center justify-between bg-gray-900 px-4 py-2 dark:bg-slate-900 lg:flex lg:w-16 lg:flex-col lg:justify-start lg:py-4">
                 {/* App Logo Placeholder */}
                 <div className="relative lg:mb-8">
                     <button
@@ -3224,7 +3489,7 @@ export const MainLayout: React.FC = () => {
                         }}
                         className="order-2 lg:order-none"
                     />
-                    {notebookCapabilityState.canUseNotebookBasic && (
+                    {notebookWorkspaceAvailable && (
                         <NavBarItem
                             icon={BookOpenIcon}
                             active={activeTab === "notebook"}
@@ -3349,7 +3614,7 @@ export const MainLayout: React.FC = () => {
                                                 }`}
                                             aria-label={t("layout.light")}
                                         >
-                                            <span aria-hidden="true">☀</span>
+                                            <SunIcon className="h-4 w-4" />
                                         </button>
                                         <button
                                             type="button"
@@ -3360,7 +3625,7 @@ export const MainLayout: React.FC = () => {
                                                 }`}
                                             aria-label={t("layout.dark")}
                                         >
-                                            <span aria-hidden="true">🌙</span>
+                                            <MoonIcon className="h-4 w-4" />
                                         </button>
                                     </div>
                                 </div>
@@ -3510,7 +3775,55 @@ export const MainLayout: React.FC = () => {
                                 {t("layout.accountSettings")}
                             </div>
                         </div>
-                        <div className="p-4 space-y-3">
+                        <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar p-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] space-y-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                                <div className="flex items-center gap-3">
+                                    {accountAvatarUrl ? (
+                                        <img src={accountAvatarUrl} alt={accountId} className="h-14 w-14 rounded-2xl object-cover" />
+                                    ) : (
+                                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-200 text-lg font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-100">
+                                            {accountInitial}
+                                        </div>
+                                    )}
+                                    <div className="min-w-0">
+                                        <div className="truncate text-base font-semibold text-slate-900 dark:text-slate-50">
+                                            {meProfile?.display_name || accountId}
+                                        </div>
+                                    <div className="truncate text-sm text-slate-500 dark:text-slate-400">
+                                        {accountId}
+                                    </div>
+                                    <div className="truncate text-xs text-slate-400 dark:text-slate-500">
+                                        {accountSubtitle}
+                                    </div>
+                                </div>
+                            </div>
+                                <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Company</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.company_name || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Title</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.job_title || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Country</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.country || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Matrix ID</div>
+                                        <div className="mt-1 break-all text-slate-700 dark:text-slate-100">{meProfile?.matrix_user_id || matrixCredentials?.user_id || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Display Language</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{getDisplayLanguageLabel(meProfile?.locale || displayLanguage)}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Chat Language</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{getTranslationLanguageLabel(meProfile?.translation_locale || chatReceiveLanguage)}</div>
+                                    </div>
+                                </div>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => avatarUploadInputRef.current?.click()}
@@ -3651,6 +3964,7 @@ export const MainLayout: React.FC = () => {
                             onManualSync={() => {
                                 void notebookModule.syncItems({ force: true, showIndicator: true });
                             }}
+                            manualSyncAvailable={notebookModule.hasRemoteNotebookApi}
                             busy={notebookModule.actionBusy}
                             listRefreshing={notebookModule.listRefreshing}
                             hasMore={notebookModule.hasMore}
@@ -3775,25 +4089,8 @@ export const MainLayout: React.FC = () => {
                     )
                 ) : (
                     <>
-                        {/* Header */}
-                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="flex items-center gap-3 min-w-0">
-                                {accountAvatarUrl ? (
-                                    <img src={accountAvatarUrl} alt={accountId} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                ) : (
-                                    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
-                                )}
-                                <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                        {accountId}
-                                    </div>
-                                    <div className="text-xs text-slate-500 truncate dark:text-slate-400">{accountSubtitle}</div>
-                                </div>
-                            </div>
-                        </div>
-
                         {/* Search Bar */}
-                        <div ref={chatGlobalSearchPanelRef} className="p-3 relative">
+                        <div ref={chatGlobalSearchPanelRef} className="relative p-3">
                             <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
                                 <svg
                                     className="w-5 h-5 text-gray-400 dark:text-slate-400"
@@ -3957,30 +4254,9 @@ export const MainLayout: React.FC = () => {
                         {...taskUi.reminderProps}
                     />
                 ) : null}
-                {capabilityError && (
-                    <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                        <div>{capabilityError}</div>
-                        <div className="mt-2 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={retryNotebookCapability}
-                                className="rounded-md border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/40"
-                            >
-                                {t("layout.notebook.retry")}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onLogout}
-                                className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-700"
-                            >
-                                {t("layout.notebook.relogin")}
-                            </button>
-                        </div>
-                    </div>
-                )}
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
-                    <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
+                    <div className="flex-1 min-h-0 overflow-hidden gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
                         {activeContact ? (
                             <div className="flex-1 min-h-0 flex flex-col">
                                 <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-slate-800 sm:px-8 sm:py-6">
@@ -4301,7 +4577,7 @@ export const MainLayout: React.FC = () => {
                                         </select>
                                     </div>
                                 </div>
-                                <div className="px-6 pt-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                                <div className="hidden px-6 pt-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400 sm:block">
                                     <div className="grid grid-cols-[32px_84px_90px_90px_1fr] gap-2">
                                         <span />
                                         <span>{t("layout.fileColumnPreview")}</span>
@@ -4319,10 +4595,9 @@ export const MainLayout: React.FC = () => {
                                         pagedVisibleSelectedRoomFiles.map((item) => {
                                             const fileType = getFileTypeGroup(item);
                                             const ext = getFileExtension(item.body, item.mimeType);
-                                            const httpUrl = getHttpFileUrl(item);
                                             return (
-                                                <div key={item.eventId} className="grid grid-cols-[32px_84px_90px_90px_1fr] items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                                    <div className="flex items-center justify-center">
+                                                <div key={item.eventId} className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950 sm:grid sm:grid-cols-[32px_84px_90px_90px_1fr] sm:items-center sm:gap-2 sm:px-2 sm:py-2">
+                                                    <div className="hidden items-center justify-center sm:flex">
                                                         {fileBatchMode ? (
                                                             <input
                                                                 type="checkbox"
@@ -4332,14 +4607,14 @@ export const MainLayout: React.FC = () => {
                                                             />
                                                         ) : null}
                                                     </div>
-                                                    <div className="h-14 w-20 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-                                                        {fileType === "image" && httpUrl ? (
+                                                    <div className="h-14 w-20 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                                                        {fileType === "image" && fileThumbnailUrls[item.eventId] ? (
                                                             <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
-                                                                <img src={httpUrl} alt={item.body} className="h-full w-full object-cover" />
+                                                                <img src={fileThumbnailUrls[item.eventId]} alt={item.body} className="h-full w-full object-cover" />
                                                             </button>
-                                                        ) : fileType === "video" && httpUrl ? (
+                                                        ) : fileType === "video" && fileThumbnailUrls[item.eventId] ? (
                                                             <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
-                                                                <video src={httpUrl} className="h-full w-full object-cover" muted preload="metadata" />
+                                                                <video src={fileThumbnailUrls[item.eventId]} className="h-full w-full object-cover" muted preload="metadata" />
                                                             </button>
                                                         ) : (
                                                             <button
@@ -4352,12 +4627,17 @@ export const MainLayout: React.FC = () => {
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className="text-sm text-slate-700 dark:text-slate-200">{ext}</div>
-                                                    <div className="text-sm text-slate-700 dark:text-slate-200">
-                                                        {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
+                                                    <div className="min-w-0 flex-1 sm:contents">
+                                                        <div className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200 sm:hidden">
+                                                            {item.body || "file"}
+                                                        </div>
+                                                        <div className="text-sm text-slate-700 dark:text-slate-200 sm:block">{ext}</div>
+                                                        <div className="text-xs text-slate-500 dark:text-slate-400 sm:text-sm sm:text-slate-700 sm:dark:text-slate-200">
+                                                            {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
+                                                        </div>
                                                     </div>
-                                                    <div className="relative flex items-center justify-between gap-2">
-                                                        <div className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                                                    <div className="relative ml-auto flex items-center justify-between gap-2 sm:ml-0">
+                                                        <div className="hidden min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400 sm:block">
                                                             {new Date(item.ts).toLocaleString()}
                                                         </div>
                                                         {!fileBatchMode && (
@@ -4455,7 +4735,7 @@ export const MainLayout: React.FC = () => {
                         </div>
                     ) : (
                         <NotebookPanel
-                            enabled={notebookCapabilityState.canUseNotebookBasic}
+                            enabled={notebookWorkspaceAvailable}
                             selectedItem={notebookModule.selectedItem}
                             isCreatingDraft={notebookModule.isCreatingDraft}
                             editorTitle={notebookModule.editorTitle}
@@ -4922,7 +5202,9 @@ export const MainLayout: React.FC = () => {
             )}
             {filePreview && (
                 <div
-                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4"
+                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4 py-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
+                    onClick={closeFilePreview}
+                    onTouchEnd={closeFilePreview}
                     onMouseMove={(event) => {
                         if (!previewDraggingRef.current) return;
                         const dx = event.clientX - previewDragStartRef.current.x;
@@ -4941,14 +5223,23 @@ export const MainLayout: React.FC = () => {
                 >
                     <button
                         type="button"
-                        onClick={() => setFilePreview(null)}
-                        className="absolute top-6 right-6 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            closeFilePreview();
+                        }}
+                        onTouchEnd={(event) => {
+                            event.stopPropagation();
+                            closeFilePreview();
+                        }}
+                        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
                     >
                         {t("common.close")}
                     </button>
                     {filePreview.type === "image" ? (
                         <div
-                            className="max-h-[90vh] max-w-[90vw] cursor-grab"
+                            className="max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)] overflow-hidden rounded-xl bg-black/30 cursor-grab"
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={(event) => event.stopPropagation()}
                             onMouseDown={(event) => {
                                 previewDraggingRef.current = true;
                                 previewDragStartRef.current = { x: event.clientX, y: event.clientY };
@@ -4963,7 +5254,7 @@ export const MainLayout: React.FC = () => {
                             <img
                                 src={filePreview.url}
                                 alt={filePreview.name}
-                                className="max-h-[90vh] max-w-[90vw] select-none"
+                                className="max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)] select-none"
                                 style={{
                                     transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewZoom})`,
                                     transition: previewDraggingRef.current ? "none" : "transform 120ms ease",
@@ -4972,14 +5263,27 @@ export const MainLayout: React.FC = () => {
                             />
                         </div>
                     ) : filePreview.type === "pdf" ? (
-                        <iframe src={filePreview.url} title={filePreview.name} className="h-[90vh] w-[90vw] rounded-lg bg-white" />
+                        <div
+                            className="h-[min(82vh,calc(100svh-5rem))] w-[min(92vw,42rem)] overflow-hidden rounded-xl bg-white"
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={(event) => event.stopPropagation()}
+                        >
+                            <iframe src={filePreview.url} title={filePreview.name} className="h-full w-full bg-white" />
+                        </div>
                     ) : filePreview.type === "audio" ? (
-                        <div className="w-full max-w-xl rounded-xl bg-slate-900 p-6">
+                        <div className="w-full max-w-xl rounded-xl bg-slate-900 p-6" onClick={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()}>
                             <div className="mb-3 text-sm text-slate-200">{filePreview.name}</div>
                             <audio src={filePreview.url} controls autoPlay className="w-full" />
                         </div>
                     ) : (
-                        <video src={filePreview.url} controls autoPlay className="max-h-[90vh] max-w-[90vw] rounded-lg" />
+                        <video
+                            src={filePreview.url}
+                            controls
+                            autoPlay
+                            className="max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)] rounded-xl bg-black"
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={(event) => event.stopPropagation()}
+                        />
                     )}
                 </div>
             )}

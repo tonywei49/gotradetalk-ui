@@ -99,6 +99,33 @@ function describeNotebookError(error: unknown): string {
     return "Failed to load notebook items";
 }
 
+function describeNotebookSyncUiMessage(error: unknown, hasLocalWorkspace: boolean): string {
+    if (error instanceof NotebookApiError) {
+        if (error.status === 401 || error.status === 403) {
+            return "Notebook 登录状态已失效，请重新登录后再试。";
+        }
+        if (error.status >= 500) {
+            return hasLocalWorkspace
+                ? "云端同步暂时不可用，本地笔记仍可继续使用。"
+                : "云端同步暂时不可用，请稍后重试。";
+        }
+    }
+
+    if (shouldFallbackToOffline(error)) {
+        return hasLocalWorkspace
+            ? "目前网络或 Notebook 服务不可达，本地笔记仍可继续使用。"
+            : "目前网络或 Notebook 服务不可达，请稍后重试。";
+    }
+
+    const rawMessage = describeNotebookError(error);
+    if (/internal server error/i.test(rawMessage)) {
+        return hasLocalWorkspace
+            ? "云端同步暂时不可用，本地笔记仍可继续使用。"
+            : "云端同步暂时不可用，请稍后重试。";
+    }
+    return rawMessage;
+}
+
 function isOfflineEnvironment(): boolean {
     return typeof navigator !== "undefined" && navigator.onLine === false;
 }
@@ -187,6 +214,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
     const authSignatureRef = useRef<string | null>(null);
     const coldStartSyncRef = useRef<string | null>(null);
     const [chunkSettings, setChunkSettings] = useState<ChunkSettings>({ ...defaultChunkSettings });
+    const hasRemoteNotebookApi = Boolean(auth?.apiBaseUrl?.trim());
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -369,7 +397,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
     }, [applySelection, auth, debouncedSearch, enabled, sourceScope, viewFilter]);
 
     const fetchSnapshotItems = useCallback(async () => {
-        if (!auth) {
+        if (!auth || !hasRemoteNotebookApi) {
             return { items: [] as NotebookItem[], nextCursor: null as string | null };
         }
 
@@ -408,7 +436,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             seenCursors.add(page.nextCursor);
             cursor = page.nextCursor;
         }
-    }, [adapter, auth]);
+    }, [adapter, auth, hasRemoteNotebookApi]);
 
     const syncPendingMutations = useCallback(async () => {
         if (!auth) return [] as NotebookPendingItemMutation[];
@@ -569,6 +597,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         } catch (error) {
             if (seq !== loadSeqRef.current) return;
             const errorMessage = describeNotebookError(error);
+            const uiMessage = describeNotebookSyncUiMessage(error, Boolean(auth?.matrixUserId));
             console.error("Notebook list sync failed", {
                 error,
                 errorMessage,
@@ -583,9 +612,9 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 setCounts({ all: 0, knowledge: 0, note: 0 });
                 setListState("error");
             }
-            setListError(errorMessage);
+            setListError(uiMessage);
             if (options?.showIndicator) {
-                setActionError(`同步云端失败：${errorMessage}`);
+                setActionError(uiMessage);
             }
         } finally {
             if (options?.showIndicator) {
@@ -616,7 +645,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
     }, [auth, enabled, runSyncItems]);
 
     useEffect(() => {
-        if (!enabled || !auth || isOfflineEnvironment()) return;
+        if (!enabled || !auth || !hasRemoteNotebookApi || isOfflineEnvironment()) return;
         const authSignature = auth.apiBaseUrl && auth.matrixUserId
             ? `${auth.apiBaseUrl}::${auth.matrixUserId}`
             : null;
@@ -631,7 +660,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
 
         coldStartSyncRef.current = authSignature;
         void syncItems({ force: true });
-    }, [auth, enabled, syncItems]);
+    }, [auth, enabled, hasRemoteNotebookApi, syncItems]);
 
     useEffect(() => {
         void applyCachedItems();
@@ -814,7 +843,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 if (sourceScope === "company") {
                     throw new Error("MANAGED_BY_PLATFORM");
                 }
-                if (isOfflineEnvironment()) {
+                if (isOfflineEnvironment() || !hasRemoteNotebookApi) {
                     await saveOfflineItem({
                         title: editorTitle.trim() || "Untitled note",
                         contentMarkdown: editorContent,
@@ -858,7 +887,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 void syncItems({ force: true });
                 return;
             }
-            if (isOfflineEnvironment()) {
+            if (isOfflineEnvironment() || !hasRemoteNotebookApi) {
                 await saveOfflineItem({
                     itemId: selectedItemId,
                     title: editorTitle,
@@ -924,7 +953,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, invalidateListCache, isCreatingDraft, isEditing, items, saveOfflineItem, selectedItem, selectedItemId, sourceScope, syncItems]);
+    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, hasRemoteNotebookApi, invalidateListCache, isCreatingDraft, isEditing, items, saveOfflineItem, selectedItem, selectedItemId, sourceScope, syncItems]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -932,7 +961,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setActionBusy(true);
         setActionError(null);
         try {
-            if (isOfflineEnvironment()) {
+            if (isOfflineEnvironment() || !hasRemoteNotebookApi) {
                 await deleteOfflineItem(selectedItemId);
                 return;
             }
@@ -962,7 +991,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, deleteOfflineItem, invalidateListCache, items, selectedItem, selectedItemId, syncItems]);
+    }, [adapter, applySelection, auth, deleteOfflineItem, hasRemoteNotebookApi, invalidateListCache, items, selectedItem, selectedItemId, syncItems]);
 
     const switchItemMode = useCallback(async (isIndexable: boolean) => {
         if (!auth || !selectedItem) return;
@@ -970,7 +999,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setActionBusy(true);
         setActionError(null);
         try {
-            if (isOfflineEnvironment()) {
+            if (isOfflineEnvironment() || !hasRemoteNotebookApi) {
                 await saveOfflineItem({
                     itemId: selectedItem.id,
                     title: selectedItem.title,
@@ -1009,10 +1038,14 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, invalidateListCache, saveOfflineItem, selectedItem, syncItems]);
+    }, [adapter, auth, hasRemoteNotebookApi, invalidateListCache, saveOfflineItem, selectedItem, syncItems]);
 
     const retryIndex = useCallback(async () => {
         if (!auth || !selectedItem) return;
+        if (!hasRemoteNotebookApi) {
+            setActionError("目前为本地 Notebook 模式，待服务器恢复后才能重试索引。");
+            return;
+        }
         setActionBusy(true);
         setActionError(null);
         try {
@@ -1025,7 +1058,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, invalidateListCache, selectedItem, syncItems]);
+    }, [adapter, auth, hasRemoteNotebookApi, invalidateListCache, selectedItem, syncItems]);
 
     const { attachFile, removeFile } = useNotebookItemFiles({
         adapter,
@@ -1114,5 +1147,6 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         ...parsedView,
         chunkSettings,
         setChunkSettings,
+        hasRemoteNotebookApi,
     };
 }

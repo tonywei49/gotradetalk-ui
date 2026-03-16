@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import { fetch as tauriHttpFetch } from "@tauri-apps/plugin-http";
+import { isTauriRuntime } from "../runtime/appRuntime";
+
+export { isTauriDesktop } from "../runtime/appRuntime";
 
 let nativeFetchRef: typeof fetch | null = null;
 
@@ -16,10 +20,6 @@ function shouldBypassDesktopBridge(url: URL): boolean {
     }
 
     return false;
-}
-
-export function isTauriDesktop(): boolean {
-    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 export function setNativeFetch(fetchImpl: typeof fetch): void {
@@ -85,23 +85,28 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 export async function fetchWithDesktopSupport(input: URL | Request | string, init?: RequestInit): Promise<Response> {
-    if (isTauriDesktop() && isRemoteHttpUrl(input)) {
-        const payload = {
-            url: toRequestUrl(input),
-            method: init?.method ?? (input instanceof Request ? input.method : "GET"),
-            headers: Array.from(mergeHeaders(input, init).entries()),
-            body: await readBody(input, init),
-        };
-        const response = await invoke<{
-            status: number;
-            headers: Array<[string, string]>;
-            bodyBase64: string;
-        }>("desktop_http_request", { input: payload });
+    if (isTauriRuntime() && isRemoteHttpUrl(input)) {
+        try {
+            return await tauriHttpFetch(input, init);
+        } catch (pluginError) {
+            console.warn("Plugin HTTP fetch failed, falling back to invoke bridge:", pluginError);
+            const payload = {
+                url: toRequestUrl(input),
+                method: init?.method ?? (input instanceof Request ? input.method : "GET"),
+                headers: Array.from(mergeHeaders(input, init).entries()),
+                body: await readBody(input, init),
+            };
+            const response = await invoke<{
+                status: number;
+                headers: Array<[string, string]>;
+                bodyBase64: string;
+            }>("desktop_http_request", { input: payload });
 
-        return new Response(new Blob([toArrayBuffer(decodeBase64(response.bodyBase64))]), {
-            status: response.status,
-            headers: new Headers(response.headers),
-        });
+            return new Response(new Blob([toArrayBuffer(decodeBase64(response.bodyBase64))]), {
+                status: response.status,
+                headers: new Headers(response.headers),
+            });
+        }
     }
     const fallbackFetch = nativeFetchRef ?? fetch;
     return fallbackFetch(input, init);

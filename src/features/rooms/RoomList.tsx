@@ -582,7 +582,7 @@ export function RoomList({
 
     // 計算總未讀數並通知父組件
     const roomSource = rooms.length ? rooms : cachedRooms.length ? cachedRooms : cachedRoomSnapshot;
-    const displayedRooms: ChatRoomEntry[] = rooms.length
+    const displayedRooms: ChatRoomEntry[] = (rooms.length
         ? rooms
         : roomSource.map((room) => ({
             ...room,
@@ -590,7 +590,15 @@ export function RoomList({
             lastMessageSender: room.lastMessageSender ?? null,
             hasUnreadMention: room.hasUnreadMention ?? false,
             room: null,
-        }));
+        }))).map((room) => (
+            room.roomId === activeRoomId
+                ? {
+                    ...room,
+                    unreadCount: 0,
+                    hasUnreadMention: false,
+                }
+                : room
+        ));
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -1525,7 +1533,7 @@ export function RoomList({
     };
 
     return (
-        <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
                 <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     {view === "contacts" ? t("roomList.sections.contacts") : t("roomList.sections.chatRooms")}
@@ -1541,33 +1549,34 @@ export function RoomList({
                     </button>
                 ) : null}
             </div>
-            {view === "chat" ? (
-                visibleRooms.length === 0 ? (
-                    <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.chatRooms")}</div>
+            <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
+                {view === "chat" ? (
+                    visibleRooms.length === 0 ? (
+                        <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.chatRooms")}</div>
+                    ) : (
+                        <>
+                            {inviteRooms.map((entry) => renderRoomEntry(entry))}
+                            {inviteRooms.length > 0 && (pendingReplyRooms.length > 0 || pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
+                                <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                            )}
+                            {pendingReplyRooms.length > 0 && (
+                                <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400">
+                                    {t("roomList.sections.pendingReply")}
+                                </div>
+                            )}
+                            {pendingReplyRooms.map((entry) => renderRoomEntry(entry))}
+                            {pendingReplyRooms.length > 0 && (pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
+                                <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                            )}
+                            {pinnedRooms.map((entry) => renderRoomEntry(entry))}
+                            {pinnedRooms.length > 0 && unpinnedRooms.length > 0 && (
+                                <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                            )}
+                            {unpinnedRooms.map((entry) => renderRoomEntry(entry))}
+                        </>
+                    )
                 ) : (
-                    <>
-                        {inviteRooms.map((entry) => renderRoomEntry(entry))}
-                        {inviteRooms.length > 0 && (pendingReplyRooms.length > 0 || pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
-                            <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
-                        )}
-                        {pendingReplyRooms.length > 0 && (
-                            <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400">
-                                {t("roomList.sections.pendingReply")}
-                            </div>
-                        )}
-                        {pendingReplyRooms.map((entry) => renderRoomEntry(entry))}
-                        {pendingReplyRooms.length > 0 && (pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
-                            <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
-                        )}
-                        {pinnedRooms.map((entry) => renderRoomEntry(entry))}
-                        {pinnedRooms.length > 0 && unpinnedRooms.length > 0 && (
-                            <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
-                        )}
-                        {unpinnedRooms.map((entry) => renderRoomEntry(entry))}
-                    </>
-                )
-            ) : (
-                <div className="px-4 py-4">
+                    <div className="px-4 py-4">
                     {incomingRequests.length > 0 && (
                         <div className="mb-4">
                             <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
@@ -1643,8 +1652,9 @@ export function RoomList({
                             {contactRows}
                         </div>
                     )}
-                </div>
-            )}
+                    </div>
+                )}
+            </div>
             {showSearchModal && (
                 <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">

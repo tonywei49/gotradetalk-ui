@@ -1,7 +1,9 @@
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use std::{thread, time::Duration};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::{
   menu::{MenuBuilder, MenuItemBuilder},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -11,15 +13,19 @@ use tauri::{
 use tauri::RunEvent;
 use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
 use tauri_plugin_sql::{Migration, MigrationKind};
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri_plugin_updater::UpdaterExt;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use url::Url;
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[derive(Clone)]
 struct UpdaterRuntimeConfig {
   endpoints: Vec<Url>,
   pubkey: String,
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopUpdaterStatus {
@@ -28,6 +34,7 @@ struct DesktopUpdaterStatus {
   reason: Option<String>,
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopUpdateCheck {
@@ -37,6 +44,7 @@ struct DesktopUpdateCheck {
   notes: Option<String>,
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopInstallResult {
@@ -62,20 +70,24 @@ struct DesktopHttpResponse {
   body_base64: String,
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn current_version(app: &AppHandle) -> String {
   app.package_info().version.to_string()
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn show_main_window(window: &WebviewWindow) {
   let _ = window.unminimize();
   let _ = window.show();
   let _ = window.set_focus();
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn hide_main_window(window: &WebviewWindow) {
   let _ = window.hide();
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn reveal_primary_instance(app: &AppHandle) {
   if let Some(splash_window) = app.get_webview_window("splashscreen") {
     let _ = splash_window.close();
@@ -86,6 +98,7 @@ fn reveal_primary_instance(app: &AppHandle) {
   }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[tauri::command]
 fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
   let main_window = app
@@ -100,6 +113,7 @@ fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
   Ok(())
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn updater_runtime_config() -> Result<Option<UpdaterRuntimeConfig>, String> {
   let pubkey = option_env!("TAURI_UPDATER_PUBKEY")
     .map(str::trim)
@@ -133,6 +147,7 @@ fn updater_runtime_config() -> Result<Option<UpdaterRuntimeConfig>, String> {
   }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn build_updater(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Updater>, String> {
   let Some(config) = updater_runtime_config()? else {
     return Ok(None);
@@ -149,6 +164,7 @@ fn build_updater(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Updater
     .map_err(|error| format!("failed to initialize updater: {error}"))
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[tauri::command]
 fn desktop_updater_status(app: AppHandle) -> DesktopUpdaterStatus {
   match updater_runtime_config() {
@@ -170,6 +186,7 @@ fn desktop_updater_status(app: AppHandle) -> DesktopUpdaterStatus {
   }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[tauri::command]
 async fn desktop_check_for_updates(app: AppHandle) -> Result<DesktopUpdateCheck, String> {
   let current_version = current_version(&app);
@@ -203,6 +220,7 @@ async fn desktop_check_for_updates(app: AppHandle) -> Result<DesktopUpdateCheck,
   })
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[tauri::command]
 async fn desktop_install_update(app: AppHandle) -> Result<DesktopInstallResult, String> {
   let Some(updater) = build_updater(&app)? else {
@@ -299,66 +317,15 @@ async fn desktop_http_request(input: DesktopHttpRequest) -> Result<DesktopHttpRe
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  let _ = rustls::crypto::ring::default_provider().install_default();
+
   let log_level = if cfg!(debug_assertions) {
     log::LevelFilter::Debug
   } else {
     log::LevelFilter::Info
   };
 
-  let app = tauri::Builder::default()
-    .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-      reveal_primary_instance(app);
-    }))
-    .setup(|app| {
-      let app_handle = app.handle().clone();
-      let show_item = MenuItemBuilder::with_id("show", "Open GoTradeTalk").build(app)?;
-      let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-      let tray_menu = MenuBuilder::new(app)
-        .items(&[&show_item, &quit_item])
-        .build()?;
-
-      TrayIconBuilder::new()
-        .icon(app.default_window_icon().cloned().ok_or_else(|| tauri::Error::AssetNotFound("default window icon not found".into()))?)
-        .tooltip("GoTradeTalk")
-        .menu(&tray_menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-          "show" => {
-            if let Some(window) = app.get_webview_window("main") {
-              show_main_window(&window);
-            }
-          }
-          "quit" => {
-            app.exit(0);
-          }
-          _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-          if let TrayIconEvent::Click {
-            button: MouseButton::Left,
-            button_state: MouseButtonState::Up,
-            ..
-          } = event
-          {
-            let app = tray.app_handle();
-            if let Some(window) = app.get_webview_window("main") {
-              show_main_window(&window);
-            }
-          }
-        })
-        .build(app)?;
-
-      if let Some(window) = app.get_webview_window("main") {
-        hide_main_window(&window);
-      }
-
-      thread::spawn(move || {
-        thread::sleep(Duration::from_secs(20));
-        reveal_primary_instance(&app_handle);
-      });
-
-      Ok(())
-    })
+  let builder = tauri::Builder::default()
     .plugin(
       tauri_plugin_log::Builder::new()
         .level(log_level)
@@ -458,7 +425,63 @@ pub fn run() {
         )
         .build(),
     )
-    .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_http::init());
+
+  #[cfg(not(any(target_os = "ios", target_os = "android")))]
+  let builder = builder
+    .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+      reveal_primary_instance(app);
+    }))
+    .setup(|app| {
+      let app_handle = app.handle().clone();
+      let show_item = MenuItemBuilder::with_id("show", "Open GoTradeTalk").build(app)?;
+      let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+      let tray_menu = MenuBuilder::new(app)
+        .items(&[&show_item, &quit_item])
+        .build()?;
+
+      TrayIconBuilder::new()
+        .icon(app.default_window_icon().cloned().ok_or_else(|| tauri::Error::AssetNotFound("default window icon not found".into()))?)
+        .tooltip("GoTradeTalk")
+        .menu(&tray_menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+          "show" => {
+            if let Some(window) = app.get_webview_window("main") {
+              show_main_window(&window);
+            }
+          }
+          "quit" => {
+            app.exit(0);
+          }
+          _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+          if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+          } = event
+          {
+            let app = tray.app_handle();
+            if let Some(window) = app.get_webview_window("main") {
+              show_main_window(&window);
+            }
+          }
+        })
+        .build(app)?;
+
+      if let Some(window) = app.get_webview_window("main") {
+        hide_main_window(&window);
+      }
+
+      thread::spawn(move || {
+        thread::sleep(Duration::from_secs(20));
+        reveal_primary_instance(&app_handle);
+      });
+
+      Ok(())
+    })
     .plugin(tauri_plugin_updater::Builder::new().build())
     .on_window_event(|window, event| {
       if let WindowEvent::CloseRequested { api, .. } = event {
@@ -472,7 +495,12 @@ pub fn run() {
       desktop_updater_status,
       desktop_check_for_updates,
       desktop_install_update
-    ])
+    ]);
+
+  #[cfg(any(target_os = "ios", target_os = "android"))]
+  let builder = builder.invoke_handler(tauri::generate_handler![desktop_http_request]);
+
+  let app = builder
     .build(tauri::generate_context!())
     .expect("error while building tauri application");
 

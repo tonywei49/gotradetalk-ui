@@ -39,6 +39,7 @@ type NotebookSidebarProps = {
     onSelect: (itemId: string) => void;
     onCreate: () => void;
     onManualSync: () => void;
+    manualSyncAvailable?: boolean;
     filter: NotebookViewFilter;
     onFilterChange: (value: NotebookViewFilter) => void;
     sourceScope: NotebookSourceScope;
@@ -92,6 +93,7 @@ export function NotebookSidebar({
     onSelect,
     onCreate,
     onManualSync,
+    manualSyncAvailable = true,
     filter,
     onFilterChange,
     sourceScope,
@@ -340,11 +342,13 @@ export function NotebookSidebar({
                             />
                             <button
                                 type="button"
-                                disabled={busy || listRefreshing}
+                                disabled={!manualSyncAvailable || busy || listRefreshing}
                                 onClick={onManualSync}
                                 className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
                             >
-                                {listRefreshing
+                                {!manualSyncAvailable
+                                    ? t("layout.notebook.localMode", "本地模式")
+                                    : listRefreshing
                                     ? t("layout.notebook.syncing", "Syncing...")
                                     : t("layout.notebook.syncCloud", "同步云端")}
                             </button>
@@ -467,7 +471,7 @@ export function NotebookSidebar({
                             <select
                                 value={summaryDirection}
                                 onChange={(event) => setSummaryDirection(event.target.value)}
-                                className="h-10 w-[320px] max-w-full rounded-lg border border-gray-200 bg-white px-3 text-left text-base font-semibold leading-tight text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-left text-base font-semibold leading-tight text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                             >
                                 {summaryDirectionOptions.map((option) => (
                                     <option key={option.value} value={option.value}>
@@ -530,7 +534,7 @@ export function NotebookSidebar({
                             </button>
                         </div>
                         {summaryMobilePanel ? (
-                            <div className="pt-2 lg:hidden">
+                            <div className="min-w-0 overflow-x-hidden pt-2 lg:hidden">
                                 {summaryMobilePanel}
                             </div>
                         ) : null}

@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore, type ToastType } from "../stores/ToastStore";
+import { isTauriDesktop } from "../runtime/appRuntime";
+
+export { isTauriDesktop } from "../runtime/appRuntime";
 
 type DesktopUpdaterStatus = {
     enabled: boolean;
@@ -29,10 +32,6 @@ type DesktopUpdateCheckOptions = {
     notifyWhenCurrent: boolean;
     installWhenAvailable: boolean;
 };
-
-export function isTauriDesktop(): boolean {
-    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
 
 export async function getDesktopUpdaterStatus(): Promise<DesktopUpdaterStatus> {
     return invoke<DesktopUpdaterStatus>("desktop_updater_status");

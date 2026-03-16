@@ -1,17 +1,26 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+    --font-sans: "Avenir Next", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "Hiragino Sans CNS", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans SC", "Noto Sans TC", "Microsoft YaHei", "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    --font-mono: "SF Mono", "SF Pro Text", "Menlo", "Monaco", "Cascadia Mono", "Segoe UI Mono", "PingFang SC", "PingFang TC", "Hiragino Sans GB", "Hiragino Sans CNS", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans SC", "Noto Sans TC", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", monospace;
+}
+
 *,
 *::before,
 *::after {
     box-sizing: border-box;
 }
 
+html,
 body {
     margin: 0;
-    font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
     line-height: 1.5;
     background: #f7f6f2;
+    overflow-x: hidden;
 }
 
 .dark body {
@@ -20,12 +29,24 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
     font-family: inherit;
+}
+
+code,
+pre,
+kbd,
+samp {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
 }
 
 #root {
     min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
 }
 
 /* Force visible scrollbars for key app panels, including narrow single-pane layout. */

@@ -1,10 +1,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-
-function isTauriDesktop(): boolean {
-    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
+import { isTauriDesktop } from "../runtime/appRuntime";
 
 export function useDesktopWindowLifecycle(bootReady = false) {
     const bootNotifiedRef = useRef(false);

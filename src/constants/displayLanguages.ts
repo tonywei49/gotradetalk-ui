@@ -3,13 +3,13 @@ export const displayLanguageOptions = [
     { value: "zh-CN", label: "简体中文" },
     { value: "zh-TW", label: "繁體中文" },
     { value: "ja", label: "日本語" },
-    { value: "vi", label: "Tiếng Việt" },
+    { value: "vi", label: "Vietnamese" },
     { value: "id", label: "Bahasa Indonesia" },
     { value: "es", label: "Español" },
     { value: "pt", label: "Português" },
     { value: "fr", label: "Français" },
     { value: "it", label: "Italiano" },
-    { value: "ar", label: "العربية" },
+    { value: "ar", label: "Arabic" },
     { value: "ru", label: "Русский" },
 ] as const;
 

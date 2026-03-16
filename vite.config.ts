@@ -18,12 +18,20 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), "");
     const hubTarget = resolveProxyTarget(env.VITE_HUB_API_BASE_URL, "https://api.gotradetalk.com");
     const notebookTarget = resolveProxyTarget(env.VITE_NOTEBOOK_API_BASE_URL, hubTarget);
+    const tauriDevHost = env.TAURI_DEV_HOST;
 
     return {
         base: mode === "development" ? "/" : "./",
         plugins: [react(), tailwindcss()],
         server: {
+            host: tauriDevHost ? "0.0.0.0" : undefined,
             strictPort: true,
+            hmr: tauriDevHost
+                ? {
+                    host: tauriDevHost,
+                    protocol: "ws",
+                }
+                : undefined,
             proxy: {
                 "/api": {
                     target: hubTarget,

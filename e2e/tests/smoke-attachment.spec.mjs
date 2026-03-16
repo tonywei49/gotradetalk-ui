@@ -41,7 +41,7 @@ async function login(page) {
     const password = getRequiredEnv("E2E_STAFF_PASSWORD");
     const tld = process.env.E2E_STAFF_TLD || "com";
 
-    await page.getByRole("button", { name: /staff/i }).click();
+    await page.getByRole("button", { name: /staff|company/i }).click();
     const activePanel = page.locator(".gt_panel.active");
     await expect(activePanel).toBeVisible();
 

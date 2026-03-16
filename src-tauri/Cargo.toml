@@ -31,3 +31,4 @@ thiserror = "2.0.18"
 url = "2.5.8"
 reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls", "json"] }
 tauri-plugin-sql = { version = "2.3.2", features = ["sqlite"] }
+rustls = { version = "0.23.37", default-features = false, features = ["ring", "std"] }

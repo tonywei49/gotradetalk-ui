@@ -46,8 +46,8 @@ function normalizeNamespace(value: string): string {
 function buildNamespace(auth: NotebookAuthContext | null): string | null {
     const matrixUserId = auth?.matrixUserId?.trim();
     const apiBaseUrl = auth?.apiBaseUrl?.trim();
-    if (!matrixUserId || !apiBaseUrl) return null;
-    return normalizeNamespace(`${apiBaseUrl}::${matrixUserId}::${notebookAdapterMode}`);
+    if (!matrixUserId) return null;
+    return normalizeNamespace(`${apiBaseUrl || "local-cache"}::${matrixUserId}::${notebookAdapterMode}`);
 }
 
 function readJson<T>(key: string): T | null {

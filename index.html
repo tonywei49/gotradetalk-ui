@@ -3,11 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>gotradetalk-ui</title>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module">
+      const root = document.getElementById("root");
+      const renderBootError = (errorLike) => {
+        if (!root) return;
+        const message = errorLike instanceof Error
+          ? `${errorLike.message}\n\n${errorLike.stack || ""}`
+          : String(errorLike ?? "Unknown bootstrap error");
+        root.innerHTML = `
+          <div style="min-height:100dvh;display:grid;place-items:center;padding:24px;background:#fff7ed;color:#7c2d12;font-family:'Avenir Next','PingFang SC',sans-serif;">
+            <div style="width:min(720px,100%);border-radius:24px;border:1px solid rgba(194,65,12,0.18);background:#fff;box-shadow:0 18px 48px rgba(124,45,18,0.12);padding:20px;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#c2410c;">GoTradeTalk</div>
+              <h1 style="margin:10px 0 8px;font-size:20px;line-height:1.2;">Bootstrap error</h1>
+              <p style="margin:0;font-size:14px;color:#9a3412;">The WebView loaded, but the frontend bundle failed before React mounted.</p>
+              <pre style="margin:16px 0 0;max-height:50dvh;overflow:auto;border-radius:16px;background:#431407;color:#fed7aa;padding:14px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;">${message}</pre>
+            </div>
+          </div>
+        `;
+      };
+
+      window.addEventListener("error", (event) => {
+        if (event.error || event.message) {
+          renderBootError(event.error || event.message);
+        }
+      });
+
+      window.addEventListener("unhandledrejection", (event) => {
+        renderBootError(event.reason);
+      });
+
+      import("/src/main.tsx").catch(renderBootError);
+    </script>
   </body>
 </html>

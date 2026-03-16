@@ -1,3 +1,5 @@
+import { getAppRuntime, isMobilePlatform, resolveRuntimePlatform } from "../runtime/appRuntime";
+
 const DEVICE_FINGERPRINT_KEY = "gtt_device_fingerprint_v1";
 
 export type ClientLoginSessionMetadata = {
@@ -8,24 +10,17 @@ export type ClientLoginSessionMetadata = {
     device_fingerprint: string;
 };
 
-function isTauriDesktopRuntime(): boolean {
-    if (typeof window === "undefined") return false;
-    return "__TAURI_INTERNALS__" in window;
-}
-
-function normalizePlatform(): ClientLoginSessionMetadata["platform"] {
-    if (typeof navigator === "undefined") return "unknown";
-    const ua = navigator.userAgent.toLowerCase();
-    if (/iphone|ipad|ipod/.test(ua)) return "ios";
-    if (ua.includes("android")) return "android";
-    if (ua.includes("windows")) return "windows";
-    if (ua.includes("mac os x") || ua.includes("macintosh")) return "macos";
-    if (ua.includes("linux")) return "linux";
-    return "web";
-}
-
-function defaultDeviceName(platform: ClientLoginSessionMetadata["platform"], appVariant: ClientLoginSessionMetadata["app_variant"]): string {
+function defaultDeviceName(
+    platform: ClientLoginSessionMetadata["platform"],
+    appVariant: ClientLoginSessionMetadata["app_variant"],
+    sessionSlot: ClientLoginSessionMetadata["session_slot"],
+): string {
     if (appVariant === "tauri") {
+        if (sessionSlot === "mobile") {
+            if (platform === "ios") return "GoTradeTalk Mobile (iOS)";
+            if (platform === "android") return "GoTradeTalk Mobile (Android)";
+            return "GoTradeTalk Mobile";
+        }
         if (platform === "windows") return "GoTradeTalk Desktop (Windows)";
         if (platform === "macos") return "GoTradeTalk Desktop (macOS)";
         if (platform === "linux") return "GoTradeTalk Desktop (Linux)";
@@ -48,13 +43,15 @@ function readOrCreateFingerprint(): string {
 }
 
 export function getClientLoginSessionMetadata(): ClientLoginSessionMetadata {
-    const appVariant: ClientLoginSessionMetadata["app_variant"] = isTauriDesktopRuntime() ? "tauri" : "web";
-    const platform = normalizePlatform();
+    const runtime = getAppRuntime();
+    const appVariant: ClientLoginSessionMetadata["app_variant"] = runtime === "web" ? "web" : "tauri";
+    const platform = resolveRuntimePlatform();
+    const sessionSlot: ClientLoginSessionMetadata["session_slot"] = isMobilePlatform(platform) ? "mobile" : "computer";
     return {
-        session_slot: "computer",
+        session_slot: sessionSlot,
         platform,
         app_variant: appVariant,
-        device_name: defaultDeviceName(platform, appVariant),
+        device_name: defaultDeviceName(platform, appVariant, sessionSlot),
         device_fingerprint: readOrCreateFingerprint(),
     };
 }

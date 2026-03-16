@@ -1,9 +1,10 @@
-import { fetchWithDesktopSupport, isTauriDesktop, setNativeFetch } from "./fetchWithDesktopSupport";
+import { fetchWithDesktopSupport, setNativeFetch } from "./fetchWithDesktopSupport";
+import { isTauriRuntime } from "../runtime/appRuntime";
 
 const FETCH_BRIDGE_FLAG = "__gttDesktopHttpBridgeInstalled";
 
 export function installDesktopHttpBridge(): void {
-    if (!isTauriDesktop()) return;
+    if (!isTauriRuntime()) return;
 
     const globalScope = window as Window & typeof globalThis & {
         [FETCH_BRIDGE_FLAG]?: boolean;

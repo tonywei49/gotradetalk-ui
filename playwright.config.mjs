@@ -24,5 +24,9 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "iphone-webkit",
+      use: { ...devices["iPhone 15"], browserName: "webkit" },
+    },
   ],
 });

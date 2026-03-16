@@ -1,3 +1,5 @@
+import { forwardRef, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import type { TranslationDisplayMode } from "../hooks/useMessageTranslation";
 import { useTranslation } from "react-i18next";
 
@@ -20,9 +22,11 @@ type MessageActionsMenuProps = {
     onRecallMessage?: () => void;
     openUpward?: boolean;
     align?: "left" | "right";
+    className?: string;
+    style?: CSSProperties;
 };
 
-export function MessageActionsMenu({
+export const MessageActionsMenu = forwardRef<HTMLDivElement, MessageActionsMenuProps>(function MessageActionsMenu({
     canToggleTranslation,
     translationLoading,
     translationMode,
@@ -41,17 +45,22 @@ export function MessageActionsMenu({
     onRecallMessage,
     openUpward = false,
     align = "right",
-}: MessageActionsMenuProps) {
+    className,
+    style,
+}, ref) {
     const { t } = useTranslation();
     const showSwitchToOriginal = translationMode === "translated" || translationMode === "bilingual";
     const showSwitchToTranslated = translationMode === "original" || translationMode === "bilingual";
     const showBilingualOption = translationMode !== "bilingual";
+    const shouldPortal = typeof document !== "undefined" && (className?.includes("fixed") || Boolean(style));
 
-    return (
+    const menuNode = (
         <div
-            className={`absolute z-20 w-40 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+            ref={ref}
+            className={`${className ?? "absolute"} z-20 w-40 max-w-[min(12rem,calc(100vw-1rem))] rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
                 align === "left" ? "left-0" : "right-0"
             } ${openUpward ? "bottom-full mb-1" : "top-full mt-1"}`}
+            style={style}
         >
             {canToggleTranslation && (
                 <>
@@ -144,4 +153,7 @@ export function MessageActionsMenu({
             )}
         </div>
     );
-}
+    return shouldPortal ? createPortal(menuNode, document.body) : menuNode;
+});
+
+MessageActionsMenu.displayName = "MessageActionsMenu";
