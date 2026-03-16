@@ -92,6 +92,7 @@ import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth"
 import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
 import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from "../desktop/useDesktopUpdater";
 import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
+import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
 import { useToastStore } from "../stores/ToastStore";
 
 // Placeholder for RoomList and ChatArea to be implemented later
@@ -289,7 +290,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 async function fetchMediaBlob(url: string, accessToken?: string | null): Promise<Blob> {
-    const response = await fetch(url, {
+    const response = await fetchWithDesktopSupport(url, {
         headers: accessToken
             ? {
                 Authorization: `Bearer ${accessToken}`,
