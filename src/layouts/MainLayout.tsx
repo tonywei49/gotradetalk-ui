@@ -3394,7 +3394,11 @@ export const MainLayout: React.FC = () => {
     );
 
     return (
-        <div className="flex h-[100dvh] min-h-0 w-full min-w-0 flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
+        <div
+            className={`flex min-h-0 w-full min-w-0 flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row ${
+                isMobileApp ? "h-[100svh]" : "h-[100dvh]"
+            }`}
+        >
             <div className="border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
                 <div className="px-3 pb-2 pt-[calc(env(safe-area-inset-top,0px)+0.6rem)]">
                     <div className="flex items-center gap-2">

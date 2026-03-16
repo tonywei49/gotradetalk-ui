@@ -8,7 +8,9 @@ import {
     EllipsisVerticalIcon,
     FaceSmileIcon,
     PaperClipIcon,
+    BookOpenIcon,
     ChevronLeftIcon,
+    DocumentTextIcon,
     SparklesIcon,
     ArrowsPointingOutIcon,
     ArrowsPointingInIcon,
@@ -348,6 +350,47 @@ function isEmojiGrapheme(value: string): boolean {
     return EMOJI_GRAPHEME_PATTERN.test(value);
 }
 
+function getFlagCountryCode(value: string): string | null {
+    if (Array.from(value).length !== 2) return null;
+    const chars = Array.from(value);
+    const letters = chars.map((char) => {
+        const codepoint = char.codePointAt(0);
+        if (codepoint == null || codepoint < 0x1f1e6 || codepoint > 0x1f1ff) return null;
+        return String.fromCharCode(65 + codepoint - 0x1f1e6);
+    });
+    if (letters.some((letter) => !letter)) return null;
+    return letters.join("");
+}
+
+function renderEmojiFallback(segment: string, key: string): ReactNode | null {
+    const flagCode = getFlagCountryCode(segment);
+    if (flagCode) {
+        return (
+            <span
+                key={key}
+                className="mx-[0.08em] inline-flex min-w-[1.8em] items-center justify-center rounded-full border border-white/20 bg-white/15 px-[0.35em] py-[0.08em] align-[0.02em] text-[0.62em] font-semibold uppercase tracking-[0.08em] text-current"
+            >
+                {flagCode}
+            </span>
+        );
+    }
+
+    const iconClassName = "mx-[0.05em] inline-block h-[1em] w-[1em] align-[-0.08em]";
+    switch (segment) {
+        case "📘":
+        case "📗":
+        case "📕":
+        case "📙":
+        case "📚":
+            return <BookOpenIcon key={key} className={iconClassName} />;
+        case "📰":
+        case "🗞️":
+            return <DocumentTextIcon key={key} className={iconClassName} />;
+        default:
+            return null;
+    }
+}
+
 function renderTextWithEmoji(value: string, keyPrefix: string): ReactNode[] {
     const segments = splitGraphemes(value);
     if (segments.length === 0) return [value];
@@ -368,6 +411,11 @@ function renderTextWithEmoji(value: string, keyPrefix: string): ReactNode[] {
         }
 
         flushText(String(index));
+        const fallbackNode = renderEmojiFallback(segment, `${keyPrefix}-emoji-${index}`);
+        if (fallbackNode) {
+            nodes.push(fallbackNode);
+            return;
+        }
         nodes.push(
             <span
                 key={`${keyPrefix}-emoji-${index}`}
