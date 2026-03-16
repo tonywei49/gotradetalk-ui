@@ -67,7 +67,7 @@ import { getNotebookAdapter } from "../notebook";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
 import { TaskQuickCreate, TaskRoomBar, type TaskChatContext } from "../tasks";
-import { isMobilePlatform } from "../../runtime/appRuntime";
+import { isTauriMobile } from "../../runtime/appRuntime";
 import {
     chatSearchLocate,
     chatSearchRoom,
@@ -411,6 +411,10 @@ function renderNodesWithEmoji(children: ReactNode, keyPrefix: string): ReactNode
     });
 }
 
+function renderNodesForActiveRuntime(children: ReactNode, keyPrefix: string): ReactNode {
+    return isTauriMobile() ? renderNodesWithEmoji(children, keyPrefix) : children;
+}
+
 function EmojiInlineText({
     text,
     className,
@@ -420,7 +424,11 @@ function EmojiInlineText({
     className?: string;
     prefix: string;
 }) {
-    return <span className={className}>{renderTextWithEmoji(text, prefix)}</span>;
+    return (
+        <span className={className}>
+            {isTauriMobile() ? renderTextWithEmoji(text, prefix) : text}
+        </span>
+    );
 }
 
 type DraftMediaRegistryEntry = {
@@ -447,29 +455,29 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 components={{
-                    p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesWithEmoji(children, "p")}</p>,
+                    p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesForActiveRuntime(children, "p")}</p>,
                     br: () => <br />,
-                    ul: ({ children }) => <ul className="my-1 list-disc pl-5">{renderNodesWithEmoji(children, "ul")}</ul>,
-                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{renderNodesWithEmoji(children, "ol")}</ol>,
-                    li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesWithEmoji(children, "li")}</li>,
+                    ul: ({ children }) => <ul className="my-1 list-disc pl-5">{renderNodesForActiveRuntime(children, "ul")}</ul>,
+                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{renderNodesForActiveRuntime(children, "ol")}</ol>,
+                    li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesForActiveRuntime(children, "li")}</li>,
                     blockquote: ({ children }) => (
-                        <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] ${borderClass} ${mutedTextClass}`}>{renderNodesWithEmoji(children, "blockquote")}</blockquote>
+                        <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] ${borderClass} ${mutedTextClass}`}>{renderNodesForActiveRuntime(children, "blockquote")}</blockquote>
                     ),
-                    code: ({ children }) => <code className={codeClass}>{renderNodesWithEmoji(children, "code")}</code>,
-                    pre: ({ children }) => <pre className={preClass}>{renderNodesWithEmoji(children, "pre")}</pre>,
+                    code: ({ children }) => <code className={codeClass}>{renderNodesForActiveRuntime(children, "code")}</code>,
+                    pre: ({ children }) => <pre className={preClass}>{renderNodesForActiveRuntime(children, "pre")}</pre>,
                     table: ({ children }) => (
                         <div className="my-2 max-w-full overflow-x-auto">
-                            <table className={`min-w-max border-collapse text-left text-[12px] ${textClass}`}>{renderNodesWithEmoji(children, "table")}</table>
+                            <table className={`min-w-max border-collapse text-left text-[12px] ${textClass}`}>{renderNodesForActiveRuntime(children, "table")}</table>
                         </div>
                     ),
-                    thead: ({ children }) => <thead className={tableHeaderClass}>{renderNodesWithEmoji(children, "thead")}</thead>,
-                    tbody: ({ children }) => <tbody>{renderNodesWithEmoji(children, "tbody")}</tbody>,
-                    tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{renderNodesWithEmoji(children, "tr")}</tr>,
-                    th: ({ children }) => <th className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 font-semibold [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesWithEmoji(children, "th")}</th>,
-                    td: ({ children }) => <td className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 align-top [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesWithEmoji(children, "td")}</td>,
+                    thead: ({ children }) => <thead className={tableHeaderClass}>{renderNodesForActiveRuntime(children, "thead")}</thead>,
+                    tbody: ({ children }) => <tbody>{renderNodesForActiveRuntime(children, "tbody")}</tbody>,
+                    tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{renderNodesForActiveRuntime(children, "tr")}</tr>,
+                    th: ({ children }) => <th className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 font-semibold [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesForActiveRuntime(children, "th")}</th>,
+                    td: ({ children }) => <td className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 align-top [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesForActiveRuntime(children, "td")}</td>,
                     a: ({ href, children }) => (
                         <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
-                            {renderNodesWithEmoji(children, "a")}
+                            {renderNodesForActiveRuntime(children, "a")}
                         </a>
                     )
                 }}
@@ -743,7 +751,7 @@ const MessageBubble = ({
                 {/* Sender Name (Incoming only) */}
                 {!isMe && (
                     <div className="mb-1 ml-1 flex max-w-full min-w-0 items-center gap-2 text-[11px] text-gray-500 dark:text-slate-400">
-                        <span className="truncate">{renderNodesWithEmoji(senderLabel, `sender-${eventId}`)}</span>
+                        <span className="truncate">{renderNodesForActiveRuntime(senderLabel, `sender-${eventId}`)}</span>
                         <span className="flex-shrink-0 text-[10px] text-gray-400 dark:text-slate-500">{timeLabel}</span>
                     </div>
                 )}
@@ -2461,7 +2469,7 @@ export const ChatRoom: React.FC = () => {
         setQuotedMessage(null);
         setActiveMention(null);
         setUploadError(null);
-        if (isMobilePlatform()) {
+        if (isTauriMobile()) {
             composerRef.current?.blur();
         }
         let sentEventId: string | undefined;

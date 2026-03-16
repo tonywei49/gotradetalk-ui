@@ -94,6 +94,7 @@ import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from
 import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
 import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
 import { useToastStore } from "../stores/ToastStore";
+import { isTauriMobile } from "../runtime/appRuntime";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -652,6 +653,7 @@ function DeferredModulePanel({ title, description }: { title: string; descriptio
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
     const { runtimeContext, platformState, tools } = usePluginHost();
+    const isMobileApp = isTauriMobile();
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
@@ -5203,9 +5205,13 @@ export const MainLayout: React.FC = () => {
             )}
             {filePreview && (
                 <div
-                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4 py-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
+                    className={`fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4 ${
+                        isMobileApp
+                            ? "py-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
+                            : "py-6"
+                    }`}
                     onClick={closeFilePreview}
-                    onTouchEnd={closeFilePreview}
+                    onTouchEnd={isMobileApp ? closeFilePreview : undefined}
                     onMouseMove={(event) => {
                         if (!previewDraggingRef.current) return;
                         const dx = event.clientX - previewDragStartRef.current.x;
@@ -5228,19 +5234,29 @@ export const MainLayout: React.FC = () => {
                             event.stopPropagation();
                             closeFilePreview();
                         }}
-                        onTouchEnd={(event) => {
-                            event.stopPropagation();
-                            closeFilePreview();
-                        }}
-                        className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
+                        onTouchEnd={isMobileApp
+                            ? (event) => {
+                                event.stopPropagation();
+                                closeFilePreview();
+                            }
+                            : undefined}
+                        className={`absolute rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20 ${
+                            isMobileApp
+                                ? "right-4 top-[max(1rem,env(safe-area-inset-top))]"
+                                : "right-6 top-6"
+                        }`}
                     >
                         {t("common.close")}
                     </button>
                     {filePreview.type === "image" ? (
                         <div
-                            className="max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)] overflow-hidden rounded-xl bg-black/30 cursor-grab"
+                            className={`overflow-hidden rounded-xl bg-black/30 cursor-grab ${
+                                isMobileApp
+                                    ? "max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)]"
+                                    : "max-h-[90vh] max-w-[90vw]"
+                            }`}
                             onClick={(event) => event.stopPropagation()}
-                            onTouchEnd={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
                             onMouseDown={(event) => {
                                 previewDraggingRef.current = true;
                                 previewDragStartRef.current = { x: event.clientX, y: event.clientY };
@@ -5255,7 +5271,11 @@ export const MainLayout: React.FC = () => {
                             <img
                                 src={filePreview.url}
                                 alt={filePreview.name}
-                                className="max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)] select-none"
+                                className={`select-none ${
+                                    isMobileApp
+                                        ? "max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)]"
+                                        : "max-h-[90vh] max-w-[90vw]"
+                                }`}
                                 style={{
                                     transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewZoom})`,
                                     transition: previewDraggingRef.current ? "none" : "transform 120ms ease",
@@ -5265,14 +5285,22 @@ export const MainLayout: React.FC = () => {
                         </div>
                     ) : filePreview.type === "pdf" ? (
                         <div
-                            className="h-[min(82vh,calc(100svh-5rem))] w-[min(92vw,42rem)] overflow-hidden rounded-xl bg-white"
+                            className={`overflow-hidden rounded-xl bg-white ${
+                                isMobileApp
+                                    ? "h-[min(82vh,calc(100svh-5rem))] w-[min(92vw,42rem)]"
+                                    : "h-[90vh] w-[90vw]"
+                            }`}
                             onClick={(event) => event.stopPropagation()}
-                            onTouchEnd={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
                         >
                             <iframe src={filePreview.url} title={filePreview.name} className="h-full w-full bg-white" />
                         </div>
                     ) : filePreview.type === "audio" ? (
-                        <div className="w-full max-w-xl rounded-xl bg-slate-900 p-6" onClick={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()}>
+                        <div
+                            className="w-full max-w-xl rounded-xl bg-slate-900 p-6"
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
+                        >
                             <div className="mb-3 text-sm text-slate-200">{filePreview.name}</div>
                             <audio src={filePreview.url} controls autoPlay className="w-full" />
                         </div>
@@ -5281,9 +5309,13 @@ export const MainLayout: React.FC = () => {
                             src={filePreview.url}
                             controls
                             autoPlay
-                            className="max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)] rounded-xl bg-black"
+                            className={`rounded-xl bg-black ${
+                                isMobileApp
+                                    ? "max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)]"
+                                    : "max-h-[90vh] max-w-[90vw]"
+                            }`}
                             onClick={(event) => event.stopPropagation()}
-                            onTouchEnd={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
                         />
                     )}
                 </div>
