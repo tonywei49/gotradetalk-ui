@@ -12,6 +12,8 @@ import {
 
 const TRANSLATION_CACHE_STORAGE_KEY = "gtt_translation_cache_v2";
 const TRANSLATION_CACHE_MAX_ITEMS = 1500;
+const AUTO_TRANSLATION_MAX_CONCURRENCY = 2;
+const AUTO_TRANSLATION_WINDOW_SIZE = 8;
 
 function looksLikeUntranslatedEnglishResult(sourceText: string, translatedText: string, targetLanguage: string): boolean {
     const target = (targetLanguage || "").toLowerCase();
@@ -83,10 +85,22 @@ export function useMessageTranslation(params: Params) {
     const [translationBlocked, setTranslationBlocked] = useState(false);
     const translationErrorToastRef = useRef<{ key: string; ts: number } | null>(null);
     const inflightRef = useRef<Set<string>>(new Set());
+    const inflightCountRef = useRef(0);
+    const queuedRef = useRef<Set<string>>(new Set());
+    const pendingQueueRef = useRef<Array<() => void>>([]);
     const translationCacheStore = useMemo(
         () => createTranslationCacheStore(TRANSLATION_CACHE_STORAGE_KEY, TRANSLATION_CACHE_MAX_ITEMS),
         [],
     );
+    const pumpQueue = useCallback((): void => {
+        while (
+            inflightCountRef.current < AUTO_TRANSLATION_MAX_CONCURRENCY &&
+            pendingQueueRef.current.length > 0
+        ) {
+            const next = pendingQueueRef.current.shift();
+            next?.();
+        }
+    }, []);
 
     const shouldTranslateEvent = useCallback(
         (event: MatrixEvent, isMeMessage: boolean): boolean => {
@@ -183,61 +197,77 @@ export function useMessageTranslation(params: Params) {
                 return { ...prev, [key]: { text: previousText, loading: true, error: false, suspect: false } };
             });
             if (!shouldRequest) return;
-            inflightRef.current.add(requestKey);
 
-            try {
-                const normalizedTargetLang = normalizeHubLanguage(targetLanguage) ?? targetLanguage;
-                const normalizedSourceLangHint = resolveSourceLangHint(senderLangHint, normalizedTargetLang);
-                const basePayload = {
-                    accessToken: translateAccessToken,
-                    text: messageText,
-                    targetLang: normalizedTargetLang,
-                    sourceLangHint: normalizedSourceLangHint,
-                    roomId: activeRoomId ?? undefined,
-                    sourceMatrixUserId: event.getSender() ?? undefined,
-                    hsUrl: translateHsUrl,
-                    matrixUserId: translateMatrixUserId,
-                } as const;
-                const result = await hubTranslate({ ...basePayload, messageId });
-                const finalTranslation = result.translation;
-                const suspect = looksLikeUntranslatedEnglishResult(messageText, finalTranslation, normalizedTargetLang);
-                if (roomId && targetLanguage) {
-                    if (!suspect) {
-                        translationCacheStore.write(roomId, messageId, targetLanguage, messageText, finalTranslation);
+            const executeRequest = (): void => {
+                queuedRef.current.delete(requestKey);
+                inflightRef.current.add(requestKey);
+                inflightCountRef.current += 1;
+                void (async () => {
+                    try {
+                        const normalizedTargetLang = normalizeHubLanguage(targetLanguage) ?? targetLanguage;
+                        const normalizedSourceLangHint = resolveSourceLangHint(senderLangHint, normalizedTargetLang);
+                        const basePayload = {
+                            accessToken: translateAccessToken,
+                            text: messageText,
+                            targetLang: normalizedTargetLang,
+                            sourceLangHint: normalizedSourceLangHint,
+                            roomId: activeRoomId ?? undefined,
+                            sourceMatrixUserId: event.getSender() ?? undefined,
+                            hsUrl: translateHsUrl,
+                            matrixUserId: translateMatrixUserId,
+                        } as const;
+                        const result = await hubTranslate({ ...basePayload, messageId });
+                        const finalTranslation = result.translation;
+                        const suspect = looksLikeUntranslatedEnglishResult(messageText, finalTranslation, normalizedTargetLang);
+                        if (roomId && targetLanguage && !suspect) {
+                            translationCacheStore.write(roomId, messageId, targetLanguage, messageText, finalTranslation);
+                        }
+                        setTranslationMap((prev) => ({
+                            ...prev,
+                            [key]: { text: suspect ? null : finalTranslation, loading: false, error: suspect, suspect },
+                        }));
+                        setTranslationView((prev) =>
+                            prev[key] === undefined
+                                ? { ...prev, [key]: translationDefaultView ?? "translated" }
+                                : prev,
+                        );
+                    } catch (error) {
+                        const message =
+                            error instanceof Error ? error.message : typeof error === "string" ? error : "";
+                        const toastKey = `${activeRoomId ?? "global"}:${message || "unknown"}`;
+                        const now = Date.now();
+                        const prevToast = translationErrorToastRef.current;
+                        if (!prevToast || prevToast.key !== toastKey || now - prevToast.ts > 15000) {
+                            translationErrorToastRef.current = { key: toastKey, ts: now };
+                            pushToast("error", message || translationUnavailableText);
+                        }
+                        if (
+                            message.includes("NOT_SUBSCRIBED") ||
+                            message.includes("QUOTA_EXCEEDED") ||
+                            message.includes("CLIENT_TRANSLATION_DISABLED") ||
+                            message.includes("TRANSLATION_NOT_ALLOWED") ||
+                            message.includes("403")
+                        ) {
+                            setTranslationBlocked(true);
+                        }
+                        setTranslationMap((prev) => ({ ...prev, [key]: { text: null, loading: false, error: true, suspect: false } }));
+                    } finally {
+                        inflightRef.current.delete(requestKey);
+                        inflightCountRef.current = Math.max(0, inflightCountRef.current - 1);
+                        pumpQueue();
                     }
+                })();
+            };
+
+            if (!forceRetry && inflightCountRef.current >= AUTO_TRANSLATION_MAX_CONCURRENCY) {
+                if (!queuedRef.current.has(requestKey)) {
+                    queuedRef.current.add(requestKey);
+                    pendingQueueRef.current.push(executeRequest);
                 }
-                setTranslationMap((prev) => ({
-                    ...prev,
-                    [key]: { text: suspect ? null : finalTranslation, loading: false, error: suspect, suspect },
-                }));
-                setTranslationView((prev) =>
-                    prev[key] === undefined
-                        ? { ...prev, [key]: translationDefaultView ?? "translated" }
-                        : prev,
-                );
-            } catch (error) {
-                const message =
-                    error instanceof Error ? error.message : typeof error === "string" ? error : "";
-                const toastKey = `${activeRoomId ?? "global"}:${message || "unknown"}`;
-                const now = Date.now();
-                const prevToast = translationErrorToastRef.current;
-                if (!prevToast || prevToast.key !== toastKey || now - prevToast.ts > 15000) {
-                    translationErrorToastRef.current = { key: toastKey, ts: now };
-                    pushToast("error", message || translationUnavailableText);
-                }
-                if (
-                    message.includes("NOT_SUBSCRIBED") ||
-                    message.includes("QUOTA_EXCEEDED") ||
-                    message.includes("CLIENT_TRANSLATION_DISABLED") ||
-                    message.includes("TRANSLATION_NOT_ALLOWED") ||
-                    message.includes("403")
-                ) {
-                    setTranslationBlocked(true);
-                }
-                setTranslationMap((prev) => ({ ...prev, [key]: { text: null, loading: false, error: true, suspect: false } }));
-            } finally {
-                inflightRef.current.delete(requestKey);
+                return;
             }
+
+            executeRequest();
         },
         [
             shouldTranslateEvent,
@@ -252,12 +282,14 @@ export function useMessageTranslation(params: Params) {
             translateMatrixUserId,
             pushToast,
             translationUnavailableText,
+            pumpQueue,
         ],
     );
 
     useEffect(() => {
         if (!canTranslate || !room || room.isSpaceRoom()) return;
-        mergedEvents.forEach((event) => {
+        const recentEvents = mergedEvents.slice(-AUTO_TRANSLATION_WINDOW_SIZE);
+        recentEvents.forEach((event) => {
             const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
             const messageText = content?.body ?? "";
             const isMeMessage = event.getSender() === userId;
@@ -269,6 +301,10 @@ export function useMessageTranslation(params: Params) {
     }, [canTranslate, room, mergedEvents, userId, shouldTranslateEvent, translationMap, requestTranslation]);
 
     useEffect(() => {
+        pendingQueueRef.current = [];
+        queuedRef.current.clear();
+        inflightRef.current.clear();
+        inflightCountRef.current = 0;
         setTranslationMap({});
         setTranslationView({});
         setTranslationBlocked(false);

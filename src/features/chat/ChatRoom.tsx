@@ -479,6 +479,125 @@ function EmojiInlineText({
     );
 }
 
+function containsMarkdownTable(text: string): boolean {
+    const lines = text.split(/\r?\n/);
+    for (let index = 0; index < lines.length - 1; index += 1) {
+        const header = lines[index]?.trim() ?? "";
+        const divider = lines[index + 1]?.trim() ?? "";
+        if (!header.includes("|")) continue;
+        if (!/^\|?[\s:-|]+\|?$/u.test(divider)) continue;
+        return true;
+    }
+    return false;
+}
+
+function MarkdownTableScroller({ children }: { children: ReactNode }) {
+    const viewportRef = useRef<HTMLDivElement | null>(null);
+    const contentRef = useRef<HTMLDivElement | null>(null);
+    const [offsetX, setOffsetX] = useState(0);
+    const offsetRef = useRef(0);
+    const minOffsetRef = useRef(0);
+
+    useLayoutEffect(() => {
+        const viewport = viewportRef.current;
+        const content = contentRef.current;
+        if (!viewport || !content || !isTauriMobile()) return undefined;
+
+        const recalc = (): void => {
+            const viewportWidth = viewport.clientWidth;
+            const contentWidth = content.scrollWidth;
+            const minOffset = Math.min(0, viewportWidth - contentWidth);
+            minOffsetRef.current = minOffset;
+            const clamped = Math.max(minOffset, Math.min(0, offsetRef.current));
+            offsetRef.current = clamped;
+            setOffsetX(clamped);
+        };
+
+        recalc();
+        const observer = new ResizeObserver(recalc);
+        observer.observe(viewport);
+        observer.observe(content);
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (!isTauriMobile()) return undefined;
+        const viewport = viewportRef.current;
+        if (!viewport) return undefined;
+
+        let active = false;
+        let horizontal = false;
+        let startX = 0;
+        let startY = 0;
+        let startOffset = 0;
+
+        const handleTouchStart = (event: TouchEvent): void => {
+            if (event.touches.length !== 1 || minOffsetRef.current === 0) return;
+            const touch = event.touches[0];
+            active = true;
+            horizontal = false;
+            startX = touch.clientX;
+            startY = touch.clientY;
+            startOffset = offsetRef.current;
+        };
+
+        const handleTouchMove = (event: TouchEvent): void => {
+            if (!active || event.touches.length !== 1) return;
+            const touch = event.touches[0];
+            const deltaX = touch.clientX - startX;
+            const deltaY = touch.clientY - startY;
+
+            if (!horizontal) {
+                if (Math.abs(deltaX) < 6) return;
+                if (Math.abs(deltaX) <= Math.abs(deltaY)) {
+                    active = false;
+                    return;
+                }
+                horizontal = true;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            const next = Math.max(minOffsetRef.current, Math.min(0, startOffset + deltaX));
+            offsetRef.current = next;
+            setOffsetX(next);
+        };
+
+        const handleTouchEnd = (): void => {
+            active = false;
+            horizontal = false;
+        };
+
+        viewport.addEventListener("touchstart", handleTouchStart, { passive: true });
+        viewport.addEventListener("touchmove", handleTouchMove, { passive: false });
+        viewport.addEventListener("touchend", handleTouchEnd, { passive: true });
+        viewport.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+        return () => {
+            viewport.removeEventListener("touchstart", handleTouchStart);
+            viewport.removeEventListener("touchmove", handleTouchMove);
+            viewport.removeEventListener("touchend", handleTouchEnd);
+            viewport.removeEventListener("touchcancel", handleTouchEnd);
+        };
+    }, []);
+
+    if (!isTauriMobile()) {
+        return <div className="my-2 max-w-full overflow-x-auto">{children}</div>;
+    }
+
+    return (
+        <div ref={viewportRef} className="my-2 w-full max-w-full overflow-hidden [touch-action:pan-x]">
+            <div
+                ref={contentRef}
+                className="inline-block w-max min-w-max align-top will-change-transform"
+                style={{ transform: `translate3d(${offsetX}px, 0, 0)` }}
+            >
+                {children}
+            </div>
+        </div>
+    );
+}
+
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
     createdAt: number;
@@ -499,7 +618,7 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
         : "my-2 max-w-full overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
 
     return (
-        <div className="max-w-full break-words [overflow-wrap:anywhere]">
+        <div className="w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere]">
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 components={{
@@ -514,15 +633,15 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
                     code: ({ children }) => <code className={codeClass}>{renderNodesForActiveRuntime(children, "code")}</code>,
                     pre: ({ children }) => <pre className={preClass}>{renderNodesForActiveRuntime(children, "pre")}</pre>,
                     table: ({ children }) => (
-                        <div className="my-2 max-w-full overflow-x-auto">
-                            <table className={`min-w-max border-collapse text-left text-[12px] ${textClass}`}>{renderNodesForActiveRuntime(children, "table")}</table>
-                        </div>
+                        <MarkdownTableScroller>
+                            <table className={`w-max min-w-[48rem] border-collapse text-left text-[12px] ${textClass}`}>{renderNodesForActiveRuntime(children, "table")}</table>
+                        </MarkdownTableScroller>
                     ),
                     thead: ({ children }) => <thead className={tableHeaderClass}>{renderNodesForActiveRuntime(children, "thead")}</thead>,
                     tbody: ({ children }) => <tbody>{renderNodesForActiveRuntime(children, "tbody")}</tbody>,
                     tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{renderNodesForActiveRuntime(children, "tr")}</tr>,
-                    th: ({ children }) => <th className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 font-semibold [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesForActiveRuntime(children, "th")}</th>,
-                    td: ({ children }) => <td className={`min-w-[6rem] whitespace-pre-wrap break-all border px-2 py-1 align-top [overflow-wrap:anywhere] ${borderClass}`}>{renderNodesForActiveRuntime(children, "td")}</td>,
+                    th: ({ children }) => <th className={`min-w-[8rem] whitespace-nowrap border px-2 py-1 font-semibold ${borderClass}`}>{renderNodesForActiveRuntime(children, "th")}</th>,
+                    td: ({ children }) => <td className={`min-w-[8rem] whitespace-nowrap border px-2 py-1 align-top ${borderClass}`}>{renderNodesForActiveRuntime(children, "td")}</td>,
                     a: ({ href, children }) => (
                         <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
                             {renderNodesForActiveRuntime(children, "a")}
@@ -716,6 +835,7 @@ const MessageBubble = ({
                 ? t("chat.translationPending")
                 : messageText
         : messageText;
+    const containsTable = isText && containsMarkdownTable(displayText);
 
     useEffect(() => {
         if (!showQuickActionMenu && !showFileMenu) return;
@@ -795,7 +915,13 @@ const MessageBubble = ({
                 )
             )}
 
-            <div className={`flex min-w-0 flex-col max-w-[min(88vw,24rem)] sm:max-w-[70%] ${isMe ? "items-end" : "items-start"}`}>
+            <div
+                className={`flex min-w-0 flex-col ${
+                    containsTable
+                        ? "w-[calc(100vw-5.5rem)] max-w-[calc(100vw-5.5rem)] sm:w-auto sm:max-w-[70%]"
+                        : "max-w-[min(88vw,24rem)] sm:max-w-[70%]"
+                } ${isMe ? "items-end" : "items-start"}`}
+            >
                 {/* Sender Name (Incoming only) */}
                 {!isMe && (
                     <div className="mb-1 ml-1 flex max-w-full min-w-0 items-center gap-2 text-[11px] text-gray-500 dark:text-slate-400">
@@ -904,7 +1030,8 @@ const MessageBubble = ({
                     {/* Bubble */}
                     <div
                         className={`
-              relative min-w-0 overflow-visible px-3 py-2 text-[13px] leading-relaxed shadow-sm
+              relative min-w-0 px-3 py-2 text-[13px] leading-relaxed shadow-sm
+              ${containsTable ? "w-full max-w-full min-w-0 overflow-hidden" : "overflow-visible"}
               ${isMe
                                 ? "bg-[#2F5C56] text-white rounded-2xl rounded-tr-sm"
                                 : "bg-white text-slate-800 rounded-2xl rounded-tl-sm border border-gray-100 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"

@@ -57,10 +57,7 @@ export type NotebookPendingMutation = {
 };
 
 export function createNotebookLocalId(entityType: NotebookSyncEntityType): NotebookLocalId {
-    const random = typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    return `local:${entityType}:${random}`;
+    return `local:${entityType}:${safeRandomId()}`;
 }
 
 export function isNotebookLocalOnlyId(id: string | null | undefined): boolean {
@@ -84,3 +81,4 @@ export function shouldKeepLocalRowAfterDelete(
 ): boolean {
     return currentStatus !== "pending_create";
 }
+import { safeRandomId } from "../../../utils/randomId";

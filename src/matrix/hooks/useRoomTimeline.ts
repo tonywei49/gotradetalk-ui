@@ -59,18 +59,6 @@ function deserializeTimeline(payload: object[] | null | undefined): MatrixEvent[
     return payload.map((event) => new MatrixEvent(event as never));
 }
 
-function mergeTimelineEvents(existing: MatrixEvent[], incoming: MatrixEvent[]): MatrixEvent[] {
-    const seen = new Set<string>();
-    const merged = [...existing, ...incoming].filter((event) => {
-        const key = event.getId() ?? event.getTxnId() ?? String(event.getTs());
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
-    merged.sort((a, b) => a.getTs() - b.getTs());
-    return merged;
-}
-
 export function useRoomTimeline(
     client: MatrixClient | null,
     roomId: string | null,
@@ -90,6 +78,12 @@ export function useRoomTimeline(
             setShowingCachedEvents(false);
             return undefined;
         }
+
+        // Reset room-scoped state immediately when switching rooms so we never
+        // render the previous room's timeline under the new room header.
+        setEvents([]);
+        setRoom(client.getRoom(roomId) ?? null);
+        setShowingCachedEvents(false);
 
         const cachedEvents = readCachedTimeline(cacheKey);
         let disposed = false;
@@ -120,13 +114,10 @@ export function useRoomTimeline(
             const initialEvents = activeRoom.getLiveTimeline().getEvents();
             if (initialEvents.length === 0 && usedCachedEvents) return;
             const snapshot = limit ? initialEvents.slice(-limit) : [...initialEvents];
-            setEvents((prev) => {
-                const nextEvents = prev.length > 0 ? mergeTimelineEvents(prev, snapshot) : [...snapshot];
-                setShowingCachedEvents(false);
-                writeCachedTimeline(cacheKey, nextEvents, limit);
-                void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(nextEvents, limit));
-                return nextEvents;
-            });
+            setShowingCachedEvents(false);
+            setEvents(snapshot);
+            writeCachedTimeline(cacheKey, snapshot, limit);
+            void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(snapshot, limit));
         };
 
         bindRoom();
@@ -159,13 +150,10 @@ export function useRoomTimeline(
             setRoom(resetRoom);
             const resetEvents = resetRoom.getLiveTimeline().getEvents();
             const snapshot = limit ? resetEvents.slice(-limit) : [...resetEvents];
-            setEvents((prev) => {
-                const nextEvents = prev.length > 0 ? mergeTimelineEvents(prev, snapshot) : [...snapshot];
-                setShowingCachedEvents(false);
-                writeCachedTimeline(cacheKey, nextEvents, limit);
-                void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(nextEvents, limit));
-                return nextEvents;
-            });
+            setShowingCachedEvents(false);
+            setEvents(snapshot);
+            writeCachedTimeline(cacheKey, snapshot, limit);
+            void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(snapshot, limit));
         };
 
         const onRoom = (updatedRoom: Room | undefined): void => {

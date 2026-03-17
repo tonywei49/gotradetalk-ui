@@ -1,6 +1,6 @@
 name: gotradetalk-desktop
 options:
-  bundleIdPrefix: com.gotradetalk.ios
+  bundleIdPrefix: com.yuhungwei.gotradetalk.ios
   deploymentTarget:
     iOS: 14.0
 fileGroups: [../../src]
@@ -11,7 +11,9 @@ settingGroups:
   app:
     base:
       PRODUCT_NAME: GoTradeTalk
-      PRODUCT_BUNDLE_IDENTIFIER: com.gotradetalk.ios
+      PRODUCT_BUNDLE_IDENTIFIER: com.yuhungwei.gotradetalk.ios
+      DEVELOPMENT_TEAM: T8QZ366D68
+      CODE_SIGN_STYLE: Automatic
 targetTemplates:
   app:
     type: application
@@ -53,6 +55,10 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.12
         CFBundleVersion: "0.1.12"
+        NSLocalNetworkUsageDescription: GoTradeTalk needs local network access to connect to the development server on your Mac during iOS development.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoadsInWebContent: true
     entitlements:
       path: gotradetalk-desktop_iOS/gotradetalk-desktop_iOS.entitlements
     scheme:

@@ -827,6 +827,19 @@ export const MainLayout: React.FC = () => {
     const accountSubtitle = accountSubtitleParts.length
         ? accountSubtitleParts.join(" · ")
         : t("layout.accountSubtitleFallback");
+    const mainPanelRef = useRef<HTMLElement | null>(null);
+    const returnToMobileList = useCallback(() => {
+        setMobileView("list");
+        if (activeTab === "contacts") {
+            setShowContactMenu(false);
+            setShowRemoveContactConfirm(false);
+            setActiveContact(null);
+            setRestoredActiveContactId(null);
+        }
+        if (activeTab === "settings") {
+            setSettingsDetail("none");
+        }
+    }, [activeTab]);
     const openPrimaryTab = useCallback((tab: "chat" | "notebook" | "contacts" | "files" | "tasks" | "settings" | "account") => {
         setMobileView("list");
         setActiveTab(tab);
@@ -962,7 +975,10 @@ export const MainLayout: React.FC = () => {
             activeTab,
             activeRoomId,
             selectedFileRoomId,
-            activeContactId: activeContact?.id ?? restoredActiveContactId,
+            activeContactId:
+                activeTab === "contacts" && mobileView === "detail"
+                    ? (activeContact?.id ?? restoredActiveContactId)
+                    : null,
         } satisfies PersistedWorkspaceState;
 
         if (workspaceCacheKey && typeof window !== "undefined") {
@@ -974,7 +990,7 @@ export const MainLayout: React.FC = () => {
         }
 
         void writeWorkspaceStateToSqlite(matrixCredentials?.user_id ?? null, payload);
-    }, [activeContact?.id, activeRoomId, activeTab, matrixCredentials?.user_id, restoredActiveContactId, selectedFileRoomId, workspaceCacheKey]);
+    }, [activeContact?.id, activeRoomId, activeTab, matrixCredentials?.user_id, mobileView, restoredActiveContactId, selectedFileRoomId, workspaceCacheKey]);
 
     useEffect(() => {
         if (activeTab === "tasks" && !deferredModules.tasks) {
@@ -1249,6 +1265,7 @@ export const MainLayout: React.FC = () => {
         try {
             if (userType === "client" && meUpdateToken) {
                 await hubMeUpdateTranslationLocale(meUpdateToken, value, meUpdateOptions);
+                setMeProfile((prev) => (prev ? { ...prev, translation_locale: value } : prev));
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
                 await updateStaffTranslationLanguage(matrixAccessToken, matrixHsUrl, value);
             }
@@ -1616,7 +1633,7 @@ export const MainLayout: React.FC = () => {
                     error.code === "INVALID_TOKEN_TYPE" ||
                     error.status === 401
                 ) {
-                    setCapabilityError(t("layout.notebook.authFailed"));
+                    setCapabilityError(`${t("layout.notebook.authFailed")} (${error.code} / HTTP ${error.status})`);
                     return;
                 }
                 if (error.code === "CAPABILITY_DISABLED") {
@@ -1640,7 +1657,7 @@ export const MainLayout: React.FC = () => {
                         );
                         return;
                     }
-                    setCapabilityError(t("layout.notebook.systemBusy"));
+                    setCapabilityError(`${t("layout.notebook.systemBusy")} (${error.code} / HTTP ${error.status})`);
                     return;
                 }
             }
@@ -1648,6 +1665,10 @@ export const MainLayout: React.FC = () => {
                 setCapabilityError(
                     `Notebook init failed: ${error.message} @ ${notebookApiBaseUrlOverride || "no-base-url"}`,
                 );
+                return;
+            }
+            if (error instanceof Error && !isTauriDesktop()) {
+                setCapabilityError(`${t("layout.notebook.capabilityLoadFailed")} (${error.message})`);
                 return;
             }
             setCapabilityError(t("layout.notebook.capabilityLoadFailed"));
@@ -1743,6 +1764,48 @@ export const MainLayout: React.FC = () => {
         }
         setSettingsDetail("none");
     }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === "contacts" && mobileView === "list" && activeContact) {
+            setActiveContact(null);
+        }
+    }, [activeContact, activeTab, mobileView]);
+
+    useEffect(() => {
+        const panel = mainPanelRef.current;
+        if (!panel || mobileView !== "detail") return undefined;
+
+        let startX = 0;
+        let startY = 0;
+        let tracking = false;
+
+        const onTouchStart = (event: TouchEvent): void => {
+            const touch = event.touches[0];
+            if (!touch) return;
+            startX = touch.clientX;
+            startY = touch.clientY;
+            tracking = touch.clientX <= 28;
+        };
+
+        const onTouchEnd = (event: TouchEvent): void => {
+            if (!tracking) return;
+            tracking = false;
+            const touch = event.changedTouches[0];
+            if (!touch) return;
+            const deltaX = touch.clientX - startX;
+            const deltaY = Math.abs(touch.clientY - startY);
+            if (deltaX >= 72 && deltaY <= 40) {
+                returnToMobileList();
+            }
+        };
+
+        panel.addEventListener("touchstart", onTouchStart, { passive: true });
+        panel.addEventListener("touchend", onTouchEnd, { passive: true });
+        return () => {
+            panel.removeEventListener("touchstart", onTouchStart);
+            panel.removeEventListener("touchend", onTouchEnd);
+        };
+    }, [mobileView, returnToMobileList]);
 
     useEffect(() => {
         setSummaryPreviewJob(null);
@@ -4241,7 +4304,7 @@ export const MainLayout: React.FC = () => {
                                 setRestoredActiveContactId(contact?.id ?? null);
                                 setMobileView("detail");
                             }}
-                            activeContactId={activeContact?.id ?? restoredActiveContactId}
+                            activeContactId={mobileView === "detail" ? (activeContact?.id ?? restoredActiveContactId) : null}
                             contactsRefreshToken={contactsRefreshToken}
                             pinnedRoomIds={pinnedRoomIds}
                             enableContactPolling
@@ -4253,6 +4316,7 @@ export const MainLayout: React.FC = () => {
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
             <main
+                ref={mainPanelRef}
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
             >
@@ -4270,7 +4334,7 @@ export const MainLayout: React.FC = () => {
                                     <div className="flex items-center gap-3 sm:gap-4">
                                         <button
                                             type="button"
-                                            onClick={() => setMobileView("list")}
+                                            onClick={returnToMobileList}
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
                                             aria-label={t("layout.backToList")}
                                         >
@@ -4999,7 +5063,7 @@ export const MainLayout: React.FC = () => {
                                     <div className="flex items-center gap-3 mb-4">
                                         <button
                                             type="button"
-                                            onClick={() => setMobileView("list")}
+                                            onClick={returnToMobileList}
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
                                             aria-label={t("layout.backToList")}
                                         >
@@ -5017,14 +5081,9 @@ export const MainLayout: React.FC = () => {
                                                 disabled={chatReceiveLanguageSaving}
                                                 onClick={() => {
                                                     if (chatReceiveLanguageSaving || chatReceiveLanguage === option.value) {
-                                                        setSettingsDetail("none");
-                                                        setMobileView("list");
                                                         return;
                                                     }
-                                                    void handleChatReceiveLanguageChange(option.value).then(() => {
-                                                        setSettingsDetail("none");
-                                                        setMobileView("list");
-                                                    });
+                                                    void handleChatReceiveLanguageChange(option.value);
                                                 }}
                                                 className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${chatReceiveLanguage === option.value
                                                     ? "border-yellow-400 text-yellow-600 dark:text-yellow-300"

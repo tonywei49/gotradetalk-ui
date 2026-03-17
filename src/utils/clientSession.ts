@@ -1,4 +1,5 @@
 import { getAppRuntime, isMobilePlatform, resolveRuntimePlatform } from "../runtime/appRuntime";
+import { safeRandomId } from "./randomId";
 
 const DEVICE_FINGERPRINT_KEY = "gtt_device_fingerprint_v1";
 
@@ -34,11 +35,11 @@ function readOrCreateFingerprint(): string {
     try {
         const existing = window.localStorage.getItem(DEVICE_FINGERPRINT_KEY);
         if (existing) return existing;
-        const next = crypto.randomUUID();
+        const next = safeRandomId();
         window.localStorage.setItem(DEVICE_FINGERPRINT_KEY, next);
         return next;
     } catch {
-        return crypto.randomUUID();
+        return safeRandomId();
     }
 }
 
