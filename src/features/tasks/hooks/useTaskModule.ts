@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
     createTask as createHubTask,
@@ -8,7 +8,14 @@ import {
 } from "../../../api/hub";
 import type { TaskDraft, TaskItem, TaskReminderState, TaskStatus } from "../types";
 import { buildTaskStatuses, getDefaultTaskStatusId, isCompletedTaskStatus } from "../taskStatusConfig";
-import { buildTaskStorageKey, clearStoredTasks, readStoredTasks, writeStoredTasks } from "../taskStorage";
+import {
+    buildTaskStorageKey,
+    clearStoredTasks,
+    readStoredTasks,
+    readStoredTasksFromSqlite,
+    writeStoredTasks,
+    writeStoredTasksToSqlite,
+} from "../taskStorage";
 
 const EMPTY_DRAFT: TaskDraft = {
     title: "",
@@ -129,6 +136,55 @@ export function useTaskModule(params: {
     const [quickDraft, setQuickDraft] = useState<TaskDraft>(EMPTY_DRAFT);
     const [hydrated, setHydrated] = useState(false);
     const [nowTs, setNowTs] = useState(() => Date.now());
+    const [creatingTask, setCreatingTask] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+    const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+    const [syncError, setSyncError] = useState<string | null>(null);
+    const syncInFlightRef = useRef<Promise<TaskItem[] | null> | null>(null);
+
+    const loadRemoteTasks = useCallback(async (): Promise<TaskItem[]> => {
+        if (!accessToken) return [];
+        return sortTasks((await listHubTasks({
+            accessToken,
+            hsUrl,
+            matrixUserId,
+        })).items);
+    }, [accessToken, hsUrl, matrixUserId]);
+
+    const syncTasks = useCallback(async (options?: { silent?: boolean }): Promise<boolean> => {
+        if (!accessToken || !storageKey) return false;
+        if (syncInFlightRef.current) {
+            const existing = await syncInFlightRef.current;
+            return Boolean(existing);
+        }
+
+        const silent = options?.silent ?? false;
+        const task = (async (): Promise<TaskItem[] | null> => {
+            if (!silent) {
+                setSyncing(true);
+            }
+            setSyncError(null);
+            try {
+                const remoteItems = await loadRemoteTasks();
+                setTasks(remoteItems);
+                setLastSyncedAt(new Date().toISOString());
+                return remoteItems;
+            } catch (error) {
+                console.error("Failed to sync tasks", error);
+                setSyncError(error instanceof Error ? error.message : "sync_failed");
+                return null;
+            } finally {
+                if (!silent) {
+                    setSyncing(false);
+                }
+                syncInFlightRef.current = null;
+            }
+        })();
+
+        syncInFlightRef.current = task;
+        const result = await task;
+        return Boolean(result);
+    }, [accessToken, loadRemoteTasks, storageKey]);
 
     useEffect(() => {
         if (!storageKey) {
@@ -138,6 +194,9 @@ export function useTaskModule(params: {
             setDetailDraft(EMPTY_DRAFT);
             setQuickDraft(EMPTY_DRAFT);
             setHydrated(false);
+            setSyncing(false);
+            setLastSyncedAt(null);
+            setSyncError(null);
             return;
         }
 
@@ -145,25 +204,24 @@ export function useTaskModule(params: {
         const legacyTasks = sortTasks(readStoredTasks(window.localStorage, storageKey));
 
         const hydrate = async (): Promise<void> => {
+            const sqliteTasks = sortTasks((await readStoredTasksFromSqlite(storageKey)) ?? []);
+            const cachedTasks = sqliteTasks.length > 0 ? sqliteTasks : legacyTasks;
+
             if (!accessToken) {
                 if (!cancelled) {
-                    setTasks(legacyTasks);
+                    setTasks(cachedTasks);
                     setHydrated(true);
                 }
                 return;
             }
 
             try {
-                const remoteItems = sortTasks((await listHubTasks({
-                    accessToken,
-                    hsUrl,
-                    matrixUserId,
-                })).items);
+                const remoteItems = await loadRemoteTasks();
 
                 let nextTasks = remoteItems;
-                if (remoteItems.length === 0 && legacyTasks.length > 0) {
+                if (remoteItems.length === 0 && cachedTasks.length > 0) {
                     const migrated: TaskItem[] = [];
-                    for (const legacyTask of legacyTasks) {
+                    for (const legacyTask of cachedTasks) {
                         migrated.push(await createRemoteTask(legacyTask, remoteAuth));
                     }
                     clearStoredTasks(window.localStorage, storageKey);
@@ -172,12 +230,15 @@ export function useTaskModule(params: {
 
                 if (!cancelled) {
                     setTasks(nextTasks);
+                    setLastSyncedAt(new Date().toISOString());
+                    setSyncError(null);
                     setHydrated(true);
                 }
             } catch (error) {
                 console.error("Failed to load remote tasks", error);
                 if (!cancelled) {
-                    setTasks(legacyTasks);
+                    setTasks(cachedTasks);
+                    setSyncError(error instanceof Error ? error.message : "load_failed");
                     setHydrated(true);
                 }
             }
@@ -189,7 +250,7 @@ export function useTaskModule(params: {
         return () => {
             cancelled = true;
         };
-    }, [accessToken, hsUrl, matrixUserId, remoteAuth, storageKey]);
+    }, [accessToken, loadRemoteTasks, remoteAuth, storageKey]);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -199,9 +260,18 @@ export function useTaskModule(params: {
     }, []);
 
     useEffect(() => {
-        if (!storageKey || !hydrated || accessToken) return;
+        if (!storageKey || !hydrated) return;
         writeStoredTasks(window.localStorage, storageKey, tasks);
-    }, [accessToken, hydrated, storageKey, tasks]);
+        void writeStoredTasksToSqlite(storageKey, tasks);
+    }, [hydrated, storageKey, tasks]);
+
+    useEffect(() => {
+        if (!accessToken || !hydrated) return undefined;
+        const timer = window.setInterval(() => {
+            void syncTasks({ silent: true });
+        }, 60_000);
+        return () => window.clearInterval(timer);
+    }, [accessToken, hydrated, syncTasks]);
 
     const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
     const selectedTask = useMemo(
@@ -224,9 +294,12 @@ export function useTaskModule(params: {
     useEffect(() => {
         if (!selectedTask) {
             setDetailDraft(EMPTY_DRAFT);
-            setEditing(false);
+            if (!creatingTask) {
+                setEditing(false);
+            }
             return;
         }
+        setCreatingTask(false);
         setDetailDraft({
             title: selectedTask.title,
             content: selectedTask.content,
@@ -235,7 +308,7 @@ export function useTaskModule(params: {
             roomId: selectedTask.roomId,
             roomNameSnapshot: selectedTask.roomNameSnapshot,
         });
-    }, [selectedTask]);
+    }, [creatingTask, selectedTask]);
 
     useEffect(() => {
         setQuickDraft((prev) => ({
@@ -246,47 +319,59 @@ export function useTaskModule(params: {
     }, [activeRoomId, activeRoomName]);
 
     const createTask = (): void => {
-        const now = new Date().toISOString();
-        const next: TaskItem = {
-            id: `task-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            title: "",
-            content: "",
+        setCreatingTask(true);
+        setSelectedTaskId(null);
+        setDetailDraft({
+            ...EMPTY_DRAFT,
             statusId: statuses[0]?.id || getDefaultTaskStatusId(),
-            remindAt: null,
-            remindState: "pending",
-            snoozedUntil: null,
-            roomId: null,
-            roomNameSnapshot: null,
-            createdBy: userId,
-            createdAt: now,
-            updatedAt: now,
-            completedAt: null,
-        };
-
-        if (!accessToken) {
-            setTasks((prev) => sortTasks([next, ...prev]));
-            setSelectedTaskId(next.id);
-            setEditing(true);
-            return;
-        }
-
-        void (async () => {
-            try {
-                const created = await createRemoteTask(next, remoteAuth);
-                setTasks((prev) => sortTasks([created, ...prev]));
-                setSelectedTaskId(created.id);
-                setEditing(true);
-            } catch (error) {
-                console.error("Failed to create task", error);
-            }
-        })();
+            roomId: activeRoomId,
+            roomNameSnapshot: activeRoomName ?? null,
+        });
+        setEditing(true);
     };
 
-    const saveSelectedTask = (): void => {
-        if (!selectedTask) return;
+    const saveSelectedTask = async (): Promise<boolean> => {
         const now = new Date().toISOString();
         const remindAtIso = toIsoOrNull(detailDraft.remindAt);
         const completed = isCompletedTaskStatus(detailDraft.statusId);
+        const draftTaskBase: TaskItem = {
+            id: selectedTask?.id ?? `task-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            title: detailDraft.title.trim(),
+            content: detailDraft.content.trim(),
+            statusId: detailDraft.statusId,
+            remindAt: remindAtIso,
+            remindState: remindAtIso ? ("pending" as TaskReminderState) : "notified",
+            snoozedUntil: null,
+            roomId: detailDraft.roomId ?? null,
+            roomNameSnapshot: detailDraft.roomNameSnapshot ?? null,
+            createdBy: selectedTask?.createdBy ?? userId,
+            createdAt: selectedTask?.createdAt ?? now,
+            updatedAt: now,
+            completedAt: completed ? (selectedTask?.completedAt ?? now) : null,
+        };
+
+        if (creatingTask || !selectedTask) {
+            if (!accessToken) {
+                setTasks((prev) => sortTasks([draftTaskBase, ...prev]));
+                setSelectedTaskId(draftTaskBase.id);
+                setCreatingTask(false);
+                setEditing(false);
+                return true;
+            }
+
+            try {
+                const created = await createRemoteTask(draftTaskBase, remoteAuth);
+                setTasks((prev) => sortTasks([created, ...prev]));
+                setSelectedTaskId(created.id);
+                setCreatingTask(false);
+                setEditing(false);
+                return true;
+            } catch (error) {
+                console.error("Failed to create task", error);
+                return false;
+            }
+        }
+
         const nextTask: TaskItem = {
             ...selectedTask,
             title: detailDraft.title.trim(),
@@ -304,47 +389,54 @@ export function useTaskModule(params: {
         if (!accessToken) {
             setTasks((prev) => prev.map((task) => task.id === selectedTask.id ? nextTask : task));
             setEditing(false);
-            return;
+            return true;
         }
 
-        void (async () => {
-            try {
-                const saved = await updateRemoteTask(selectedTask.id, nextTask, remoteAuth);
-                if (saved) {
-                    setTasks((prev) => prev.map((task) => task.id === selectedTask.id ? saved : task));
-                }
-                setEditing(false);
-            } catch (error) {
-                console.error("Failed to save task", error);
+        try {
+            const saved = await updateRemoteTask(selectedTask.id, nextTask, remoteAuth);
+            if (saved) {
+                setTasks((prev) => prev.map((task) => task.id === selectedTask.id ? saved : task));
             }
-        })();
+            setEditing(false);
+            return true;
+        } catch (error) {
+            console.error("Failed to save task", error);
+            return false;
+        }
     };
 
-    const deleteSelectedTask = (): void => {
-        if (!selectedTask) return;
+    const deleteSelectedTask = async (): Promise<boolean> => {
+        if (creatingTask && !selectedTask) {
+            setCreatingTask(false);
+            setSelectedTaskId(null);
+            setEditing(false);
+            setDetailDraft(EMPTY_DRAFT);
+            return true;
+        }
+        if (!selectedTask) return false;
 
         if (!accessToken) {
             setTasks((prev) => prev.filter((task) => task.id !== selectedTask.id));
             setSelectedTaskId(null);
             setEditing(false);
-            return;
+            return true;
         }
 
-        void (async () => {
-            try {
-                await deleteHubTask({
-                    accessToken,
-                    id: selectedTask.id,
-                    hsUrl,
-                    matrixUserId,
-                });
-                setTasks((prev) => prev.filter((task) => task.id !== selectedTask.id));
-                setSelectedTaskId(null);
-                setEditing(false);
-            } catch (error) {
-                console.error("Failed to delete task", error);
-            }
-        })();
+        try {
+            await deleteHubTask({
+                accessToken,
+                id: selectedTask.id,
+                hsUrl,
+                matrixUserId,
+            });
+            setTasks((prev) => prev.filter((task) => task.id !== selectedTask.id));
+            setSelectedTaskId(null);
+            setEditing(false);
+            return true;
+        } catch (error) {
+            console.error("Failed to delete task", error);
+            return false;
+        }
     };
 
     const createQuickTask = (): void => {
@@ -481,6 +573,29 @@ export function useTaskModule(params: {
         return target?.roomId ?? null;
     };
 
+    const cancelEditing = (): void => {
+        if (creatingTask) {
+            setCreatingTask(false);
+            setSelectedTaskId(null);
+            setEditing(false);
+            setDetailDraft(EMPTY_DRAFT);
+            return;
+        }
+        if (!selectedTask) {
+            setEditing(false);
+            return;
+        }
+        setDetailDraft({
+            title: selectedTask.title,
+            content: selectedTask.content,
+            statusId: selectedTask.statusId,
+            remindAt: toDateInputValue(selectedTask.remindAt),
+            roomId: selectedTask.roomId,
+            roomNameSnapshot: selectedTask.roomNameSnapshot,
+        });
+        setEditing(false);
+    };
+
     return {
         hydrated,
         statuses,
@@ -496,6 +611,10 @@ export function useTaskModule(params: {
         detailDraft,
         quickDraft,
         editing,
+        creatingTask,
+        syncing,
+        lastSyncedAt,
+        syncError,
         roomTasks: roomTasks.map((task) => ({ ...task, createdAt: formatDate(task.createdAt) })),
         currentReminder: currentReminder ? { ...currentReminder, createdAt: formatDate(currentReminder.createdAt) } : null,
         setSelectedTaskId,
@@ -505,6 +624,8 @@ export function useTaskModule(params: {
         createTask,
         saveSelectedTask,
         deleteSelectedTask,
+        cancelEditing,
+        syncTasks,
         createQuickTask,
         snoozeReminder,
         dismissReminder,

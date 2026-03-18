@@ -7,10 +7,12 @@ export type TaskDetailProps = {
     statuses: TaskStatus[];
     draft: TaskDraft;
     editing: boolean;
+    creating?: boolean;
     onDraftChange: (patch: Partial<TaskDraft>) => void;
     onStartEdit: () => void;
-    onSave: () => void;
-    onDelete: () => void;
+    onSave: () => void | Promise<void>;
+    onDelete: () => void | Promise<void>;
+    onCancelEdit: () => void;
     onMobileBack?: () => void;
     onOpenLinkedRoom?: (roomId: string) => void;
 };
@@ -20,10 +22,12 @@ export function TaskDetail({
     statuses,
     draft,
     editing,
+    creating = false,
     onDraftChange,
     onStartEdit,
     onSave,
     onDelete,
+    onCancelEdit,
     onMobileBack,
     onOpenLinkedRoom,
 }: TaskDetailProps) {
@@ -51,7 +55,7 @@ export function TaskDetail({
                         </button>
                     ) : null}
                     <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                        {editing ? t("tasks.editTask") : t("tasks.detail")}
+                        {editing ? (creating ? t("tasks.newTask") : t("tasks.editTask")) : t("tasks.detail")}
                     </div>
                 </div>
             </div>
@@ -133,21 +137,32 @@ export function TaskDetail({
                         {t("common.edit")}
                     </button>
                 ) : (
+                    <>
+                        <button
+                            type="button"
+                            onClick={onCancelEdit}
+                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                        >
+                            {t("common.cancel")}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onSave}
+                            className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white"
+                        >
+                            {t("common.save")}
+                        </button>
+                    </>
+                )}
+                {!creating ? (
                     <button
                         type="button"
-                        onClick={onSave}
-                        className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white"
+                        onClick={onDelete}
+                        className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-600 dark:border-rose-700 dark:text-rose-300"
                     >
-                        {t("common.save")}
+                        {t("common.delete")}
                     </button>
-                )}
-                <button
-                    type="button"
-                    onClick={onDelete}
-                    className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-600 dark:border-rose-700 dark:text-rose-300"
-                >
-                    {t("common.delete")}
-                </button>
+                ) : null}
             </div>
         </div>
     );

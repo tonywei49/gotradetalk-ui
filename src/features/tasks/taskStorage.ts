@@ -1,6 +1,8 @@
+import { readUiStateFromSqlite, writeUiStateToSqlite } from "../../desktop/desktopCacheDb";
 import type { TaskItem } from "./types";
 
 const TASKS_STORAGE_PREFIX = "gtt_tasks_v1:";
+const TASKS_SQLITE_SCOPE = "tasks";
 
 export type TaskStorageLike = Pick<Storage, "getItem" | "setItem">;
 
@@ -29,4 +31,14 @@ export function writeStoredTasks(storage: TaskStorageLike, storageKey: string | 
 export function clearStoredTasks(storage: Storage, storageKey: string | null): void {
     if (!storageKey) return;
     storage.removeItem(storageKey);
+}
+
+export async function readStoredTasksFromSqlite(storageKey: string | null): Promise<TaskItem[] | null> {
+    const cached = await readUiStateFromSqlite<TaskItem[]>(TASKS_SQLITE_SCOPE, storageKey);
+    return Array.isArray(cached) ? cached : null;
+}
+
+export async function writeStoredTasksToSqlite(storageKey: string | null, tasks: TaskItem[]): Promise<void> {
+    if (!storageKey) return;
+    await writeUiStateToSqlite(TASKS_SQLITE_SCOPE, storageKey, tasks);
 }

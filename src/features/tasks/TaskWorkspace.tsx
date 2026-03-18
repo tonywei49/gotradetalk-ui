@@ -15,6 +15,7 @@ type TaskWorkspaceProps = {
     onStartEdit: () => void;
     onSave: () => void;
     onDelete: () => void;
+    onCancelEdit: () => void;
 };
 
 export function TaskWorkspace({
@@ -30,6 +31,7 @@ export function TaskWorkspace({
     onStartEdit,
     onSave,
     onDelete,
+    onCancelEdit,
 }: TaskWorkspaceProps) {
     return (
         <>
@@ -49,6 +51,7 @@ export function TaskWorkspace({
                 onStartEdit={onStartEdit}
                 onSave={onSave}
                 onDelete={onDelete}
+                onCancelEdit={onCancelEdit}
             />
         </>
     );

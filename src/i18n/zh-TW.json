@@ -168,6 +168,8 @@
     "tasks": {
         "title": "工作任務",
         "newTask": "新增任務",
+        "sync": "同步",
+        "syncing": "同步中...",
         "empty": "目前沒有任務。",
         "emptyFiltered": "當前篩選條件下沒有任務。",
         "untitled": "未命名任務",
