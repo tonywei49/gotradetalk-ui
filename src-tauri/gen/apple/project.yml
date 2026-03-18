@@ -14,6 +14,7 @@ settingGroups:
       PRODUCT_BUNDLE_IDENTIFIER: com.yuhungwei.gotradetalk.ios
       DEVELOPMENT_TEAM: T8QZ366D68
       CODE_SIGN_STYLE: Automatic
+      ENABLE_USER_SCRIPT_SANDBOXING: false
 targetTemplates:
   app:
     type: application

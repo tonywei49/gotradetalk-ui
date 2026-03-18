@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NotebookApiError, type NotebookAdapter } from "./adapters/types";
 import type { NotebookAuthContext, NotebookItem, NotebookItemFile, NotebookListState } from "./types";
+import { getLastNotebookRequestDebugSnapshot, type NotebookRequestDebugSnapshot } from "../../services/notebookApi";
 import { useNotebookParsedView } from "./hooks/useNotebookParsedView";
 import { useNotebookItemFiles } from "./hooks/useNotebookItemFiles";
 import { defaultChunkSettings, type ChunkSettings } from "./components/ChunkSettingsPanel";
@@ -27,7 +28,7 @@ export type NotebookSourceScope = "personal" | "company" | "both";
 const NOTEBOOK_SYNC_COOLDOWN_MS = 5_000;
 const NOTEBOOK_SYNC_PAGE_SIZE = 100;
 const NOTEBOOK_SNAPSHOT_CACHE_KEY = "__snapshot__:all:both";
-const NOTEBOOK_SYNC_TIMEOUT_MS = 20_000;
+const NOTEBOOK_SYNC_TIMEOUT_MS = 60_000;
 const NOTEBOOK_SYNC_MAX_PAGES = 100;
 
 function deriveItemsFromAllCache(
@@ -99,19 +100,34 @@ function describeNotebookError(error: unknown): string {
     return "Failed to load notebook items";
 }
 
-function describeNotebookSyncUiMessage(error: unknown, hasLocalWorkspace: boolean): string {
+function describeNotebookSyncUiMessage(
+    error: unknown,
+    hasLocalWorkspace: boolean,
+    allowLocalFallback: boolean,
+): string {
     if (error instanceof NotebookApiError) {
         if (error.status === 401 || error.status === 403) {
-            return "Notebook 登录状态已失效，请重新登录后再试。";
+            return allowLocalFallback
+                ? "Notebook 登录状态已失效，请重新登录后再试。"
+                : `Notebook 登录状态已失效 (${error.code} / HTTP ${error.status})`;
         }
         if (error.status >= 500) {
+            if (!allowLocalFallback) {
+                return `${error.message} (${error.code} / HTTP ${error.status})`;
+            }
             return hasLocalWorkspace
                 ? "云端同步暂时不可用，本地笔记仍可继续使用。"
                 : "云端同步暂时不可用，请稍后重试。";
         }
+        if (!allowLocalFallback) {
+            return `${error.message} (${error.code} / HTTP ${error.status})`;
+        }
     }
 
     if (shouldFallbackToOffline(error)) {
+        if (!allowLocalFallback) {
+            return describeNotebookError(error);
+        }
         return hasLocalWorkspace
             ? "目前网络或 Notebook 服务不可达，本地笔记仍可继续使用。"
             : "目前网络或 Notebook 服务不可达，请稍后重试。";
@@ -119,6 +135,9 @@ function describeNotebookSyncUiMessage(error: unknown, hasLocalWorkspace: boolea
 
     const rawMessage = describeNotebookError(error);
     if (/internal server error/i.test(rawMessage)) {
+        if (!allowLocalFallback) {
+            return rawMessage;
+        }
         return hasLocalWorkspace
             ? "云端同步暂时不可用，本地笔记仍可继续使用。"
             : "云端同步暂时不可用，请稍后重试。";
@@ -204,6 +223,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
     const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [loadingMore, setLoadingMore] = useState(false);
     const [listRefreshing, setListRefreshing] = useState(false);
+    const [requestDebug, setRequestDebug] = useState<NotebookRequestDebugSnapshot | null>(null);
     const loadSeqRef = useRef(0);
     const syncRunRef = useRef<Promise<void> | null>(null);
     const lastSyncAtRef = useRef(0);
@@ -215,6 +235,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
     const coldStartSyncRef = useRef<string | null>(null);
     const [chunkSettings, setChunkSettings] = useState<ChunkSettings>({ ...defaultChunkSettings });
     const hasRemoteNotebookApi = Boolean(auth?.apiBaseUrl?.trim());
+    const allowLocalFallback = !hasRemoteNotebookApi && auth?.userType !== "staff";
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -247,6 +268,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setListError(null);
         setActionError(null);
         setListRefreshing(false);
+        setRequestDebug(null);
         setSelectedItemId(null);
         setEditorTitle("");
         setEditorContent("");
@@ -354,6 +376,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setLoadingMore(false);
             setListRefreshing(false);
             setIsCreatingDraft(false);
+            setRequestDebug(null);
             setSelectedItemId(null);
             setEditorTitle("");
             setEditorContent("");
@@ -580,6 +603,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setNextCursor(null);
             if (remainingPending.length === 0) {
                 setActionError(null);
+                setRequestDebug(null);
             } else {
                 setActionError("仍有本地修改待同步，请再试一次。");
             }
@@ -597,7 +621,11 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         } catch (error) {
             if (seq !== loadSeqRef.current) return;
             const errorMessage = describeNotebookError(error);
-            const uiMessage = describeNotebookSyncUiMessage(error, Boolean(auth?.matrixUserId));
+            const uiMessage = describeNotebookSyncUiMessage(
+                error,
+                Boolean(auth?.matrixUserId),
+                allowLocalFallback,
+            );
             console.error("Notebook list sync failed", {
                 error,
                 errorMessage,
@@ -607,6 +635,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 sourceScope: currentSourceScope,
                 keyword: debouncedSearch,
             });
+            setRequestDebug(getLastNotebookRequestDebugSnapshot());
             if (!currentCached) {
                 setItems([]);
                 setCounts({ all: 0, knowledge: 0, note: 0 });
@@ -884,6 +913,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 setDraftFiles([]);
                 setIsEditing(false);
                 setListState("ready");
+                setRequestDebug(null);
                 void syncItems({ force: true });
                 return;
             }
@@ -938,9 +968,10 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setDraftFiles([]);
             setIsCreatingDraft(false);
             setIsEditing(false);
+            setRequestDebug(null);
             void syncItems({ force: true });
         } catch (error) {
-            if (shouldFallbackToOffline(error)) {
+            if (!hasRemoteNotebookApi && shouldFallbackToOffline(error)) {
                 await saveOfflineItem({
                     itemId: isCreatingDraft ? null : selectedItemId,
                     title: editorTitle.trim() || "Untitled note",
@@ -949,11 +980,12 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 });
                 return;
             }
-            setActionError(error instanceof Error ? error.message : "Failed to save note");
+            setActionError(describeNotebookSyncUiMessage(error, Boolean(auth?.matrixUserId), allowLocalFallback));
+            setRequestDebug(getLastNotebookRequestDebugSnapshot());
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, chunkSettings, draftFiles, editorContent, editorTitle, hasRemoteNotebookApi, invalidateListCache, isCreatingDraft, isEditing, items, saveOfflineItem, selectedItem, selectedItemId, sourceScope, syncItems]);
+    }, [adapter, allowLocalFallback, auth, chunkSettings, draftFiles, editorContent, editorTitle, hasRemoteNotebookApi, invalidateListCache, isCreatingDraft, isEditing, items, saveOfflineItem, selectedItem, selectedItemId, sourceScope, syncItems]);
 
     const deleteItem = useCallback(async () => {
         if (!auth || !selectedItemId) return;
@@ -961,7 +993,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setActionBusy(true);
         setActionError(null);
         try {
-            if (isOfflineEnvironment() || !hasRemoteNotebookApi) {
+            if (!hasRemoteNotebookApi) {
                 await deleteOfflineItem(selectedItemId);
                 return;
             }
@@ -980,18 +1012,20 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             if (next.length === 0) {
                 setListState("empty");
             }
+            setRequestDebug(null);
             applySelection(next);
             void syncItems({ force: true });
         } catch (error) {
-            if (shouldFallbackToOffline(error)) {
+            if (!hasRemoteNotebookApi && shouldFallbackToOffline(error)) {
                 await deleteOfflineItem(selectedItemId);
                 return;
             }
-            setActionError(error instanceof Error ? error.message : "Failed to delete note");
+            setActionError(describeNotebookSyncUiMessage(error, Boolean(auth?.matrixUserId), allowLocalFallback));
+            setRequestDebug(getLastNotebookRequestDebugSnapshot());
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, applySelection, auth, deleteOfflineItem, hasRemoteNotebookApi, invalidateListCache, items, selectedItem, selectedItemId, syncItems]);
+    }, [adapter, allowLocalFallback, applySelection, auth, deleteOfflineItem, hasRemoteNotebookApi, invalidateListCache, items, selectedItem, selectedItemId, syncItems]);
 
     const switchItemMode = useCallback(async (isIndexable: boolean) => {
         if (!auth || !selectedItem) return;
@@ -999,7 +1033,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         setActionBusy(true);
         setActionError(null);
         try {
-            if (isOfflineEnvironment() || !hasRemoteNotebookApi) {
+            if (!hasRemoteNotebookApi) {
                 await saveOfflineItem({
                     itemId: selectedItem.id,
                     title: selectedItem.title,
@@ -1023,9 +1057,10 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             setEditorTitle(updated.title);
             setEditorContent(updated.contentMarkdown);
             setIsEditing(false);
+            setRequestDebug(null);
             void syncItems({ force: true });
         } catch (error) {
-            if (shouldFallbackToOffline(error)) {
+            if (!hasRemoteNotebookApi && shouldFallbackToOffline(error)) {
                 await saveOfflineItem({
                     itemId: selectedItem.id,
                     title: selectedItem.title,
@@ -1034,11 +1069,12 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
                 });
                 return;
             }
-            setActionError(error instanceof Error ? error.message : "Failed to update notebook type");
+            setActionError(describeNotebookSyncUiMessage(error, Boolean(auth?.matrixUserId), allowLocalFallback));
+            setRequestDebug(getLastNotebookRequestDebugSnapshot());
         } finally {
             setActionBusy(false);
         }
-    }, [adapter, auth, hasRemoteNotebookApi, invalidateListCache, saveOfflineItem, selectedItem, syncItems]);
+    }, [adapter, allowLocalFallback, auth, hasRemoteNotebookApi, invalidateListCache, saveOfflineItem, selectedItem, syncItems]);
 
     const retryIndex = useCallback(async () => {
         if (!auth || !selectedItem) return;
@@ -1052,9 +1088,11 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
             const updated = await adapter.retryIndex(auth, selectedItem.id);
             await invalidateListCache();
             setItems((prev) => prev.map((item) => (item.id === selectedItem.id ? updated : item)));
+            setRequestDebug(null);
             void syncItems({ force: true });
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Failed to retry index");
+            setRequestDebug(getLastNotebookRequestDebugSnapshot());
         } finally {
             setActionBusy(false);
         }
@@ -1128,6 +1166,7 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         isCreatingDraft,
         actionBusy,
         actionError,
+        requestDebug,
         listRefreshing,
         hasMore: Boolean(nextCursor),
         loadingMore,

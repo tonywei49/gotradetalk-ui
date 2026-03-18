@@ -168,6 +168,8 @@
     "tasks": {
         "title": "Work Tasks",
         "newTask": "New Task",
+        "sync": "Sync",
+        "syncing": "Syncing...",
         "empty": "No tasks yet.",
         "emptyFiltered": "No tasks match this filter.",
         "untitled": "Untitled task",

@@ -1164,31 +1164,31 @@ export function RoomList({
             onClick={() => {
                 onSelectContact?.(contact);
             }}
-            className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${activeContactId === contact.id
+            className={`w-full text-left px-4 py-3 rounded-xl flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800 ${activeContactId === contact.id
                 ? "bg-emerald-50 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:ring-emerald-700"
                 : ""
                 }`}
         >
-            <div className="min-w-0 text-left flex items-center gap-2">
+            <div className="min-w-0 text-left flex items-center gap-3">
                 {(() => {
                     const avatarMxc = contact.matrixUserId ? client?.getUser(contact.matrixUserId)?.avatarUrl : null;
                     const avatarHttp = avatarMxc
                         ? client?.mxcUrlToHttp(avatarMxc, 56, 56, "crop") ?? client?.mxcUrlToHttp(avatarMxc) ?? null
                         : null;
                     return avatarHttp ? (
-                        <img src={avatarHttp} alt={contact.displayName || contact.userLocalId || "contact"} className="h-9 w-9 rounded-full object-cover flex-shrink-0" />
+                        <img src={avatarHttp} alt={contact.displayName || contact.userLocalId || "contact"} className="h-11 w-11 rounded-full object-cover flex-shrink-0" />
                     ) : (
-                        <div className="h-9 w-9 rounded-full bg-gray-200 dark:bg-slate-700 flex-shrink-0" />
+                        <div className="h-11 w-11 rounded-full bg-gray-200 dark:bg-slate-700 flex-shrink-0" />
                     );
                 })()}
                 <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                    <div className="text-[17px] font-semibold leading-6 text-slate-800 truncate dark:text-slate-100">
                         {getAccountIdLabel({
                             matrixUserId: contact.matrixUserId,
                             userLocalId: contact.userLocalId,
                         })}
                     </div>
-                    <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                    <div className="mt-0.5 text-[14px] leading-5 text-slate-500 truncate dark:text-slate-400">
                         {getMetaLabel({
                             companyName: contact.companyName,
                             title: null,
@@ -1212,7 +1212,7 @@ export function RoomList({
                 rows.push(
                     <div
                         key={`company-sep-${company}-${contact.id}`}
-                        className="px-3 py-1 text-xs text-slate-300 dark:text-slate-600"
+                    className="px-4 py-1.5 text-sm text-slate-300 dark:text-slate-600"
                     >
                         ---
                     </div>,
@@ -1344,11 +1344,11 @@ export function RoomList({
             ? client?.mxcUrlToHttp(avatarMxc, 64, 64, "crop") ?? client?.mxcUrlToHttp(avatarMxc) ?? null
             : null;
         if (avatarHttp) {
-            return <img src={avatarHttp} alt={entry.displayName} className="w-10 h-10 rounded-full object-cover" />;
+            return <img src={avatarHttp} alt={entry.displayName} className="w-12 h-12 rounded-full object-cover" />;
         }
         return (
-            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-bold">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                <span className="text-emerald-600 dark:text-emerald-400 text-base font-bold">
                     {entry.displayName[0]?.toUpperCase() || "R"}
                 </span>
             </div>
@@ -1361,16 +1361,16 @@ export function RoomList({
             return (
                 <div
                     key={entry.roomId}
-                    className="group w-full px-4 py-3 flex gap-3 items-center border border-emerald-100 rounded-xl bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-900/20"
+                    className="group w-full px-4 py-4 flex gap-3 items-center border border-emerald-100 rounded-xl bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-900/20"
                 >
-                    <div className="relative w-10 h-10 flex-shrink-0">
+                    <div className="relative w-12 h-12 flex-shrink-0">
                         {renderRoomAvatar(entry)}
                     </div>
                     <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                        <div className="font-semibold text-[17px] leading-6 text-slate-800 truncate dark:text-slate-100">
                             {entry.displayName}
                         </div>
-                        <div className="text-[12px] text-emerald-600 dark:text-emerald-400">
+                        <div className="text-[14px] leading-5 text-emerald-600 dark:text-emerald-400">
                             Invited you to this room
                         </div>
                     </div>
@@ -1381,7 +1381,7 @@ export function RoomList({
                                 if (!client) return;
                                 void client.joinRoom(entry.roomId);
                             }}
-                            className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500 text-white hover:bg-emerald-600"
+                            className="px-3 py-1.5 text-sm font-semibold rounded-full bg-emerald-500 text-white hover:bg-emerald-600"
                         >
                             Join
                         </button>
@@ -1391,7 +1391,7 @@ export function RoomList({
                                 if (!client) return;
                                 void client.leave(entry.roomId);
                             }}
-                            className="px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-500 text-white hover:bg-rose-600"
+                            className="px-3 py-1.5 text-sm font-semibold rounded-full bg-rose-500 text-white hover:bg-rose-600"
                         >
                             Reject
                         </button>
@@ -1405,7 +1405,7 @@ export function RoomList({
         return (
             <div
                 key={entry.roomId}
-                className={`group w-full px-4 py-2 flex gap-2 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
+                className={`group w-full px-4 py-3 flex gap-3 items-center hover:bg-gray-50 dark:hover:bg-slate-800 ${entry.roomId === activeRoomId ? "bg-[#F0F7F6] dark:bg-slate-800" : ""
                     }`}
             >
                 <button
@@ -1414,10 +1414,10 @@ export function RoomList({
                     onClick={() => onSelectRoom(entry.roomId)}
                     className="flex-1 min-w-0 flex items-center gap-3 text-left"
                 >
-                    <div className="relative w-10 h-10 flex-shrink-0">
+                    <div className="relative w-12 h-12 flex-shrink-0">
                         {renderRoomAvatar(entry)}
                         {entry.unreadCount > 0 && (
-                            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                            <span className="absolute -top-1 -right-1 min-w-6 h-6 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-semibold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
                                 {entry.unreadCount > 99 ? "99+" : entry.unreadCount}
                             </span>
                         )}
@@ -1425,27 +1425,27 @@ export function RoomList({
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                         <div className="flex justify-between items-baseline">
                             <div className="min-w-0 flex items-center gap-2">
-                                <span className="font-semibold text-[13px] text-slate-800 truncate dark:text-slate-100">
+                                <span className="font-semibold text-[17px] leading-6 text-slate-800 truncate dark:text-slate-100">
                                     {entry.displayName}
                                 </span>
                                 {entry.isDeprecated && (
-                                    <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                    <span className="flex-shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                                         {t("chat.deprecatedTag")}
                                     </span>
                                 )}
                             </div>
                             <div className="ml-2 flex items-center gap-1.5 flex-shrink-0">
                                 {entry.hasUnreadMention && (
-                                    <span className="animate-pulse text-[10px] font-semibold text-rose-500 dark:text-rose-400">
+                                    <span className="animate-pulse text-[11px] font-semibold text-rose-500 dark:text-rose-400">
                                         {t("roomList.alerts.mentionedYou")}
                                     </span>
                                 )}
-                                <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                <span className="text-[12px] text-gray-400 dark:text-slate-500">
                                     {entry.lastActive > 0 ? new Date(entry.lastActive).toLocaleTimeString() : ""}
                                 </span>
                             </div>
                         </div>
-                        <p className="text-[12px] text-gray-500 truncate dark:text-slate-400">
+                        <p className="mt-0.5 text-[14px] leading-5 text-gray-500 truncate dark:text-slate-400">
                             {entry.lastMessage || " "}
                         </p>
                     </div>
@@ -1535,7 +1535,7 @@ export function RoomList({
     return (
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <span className="text-[13px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     {view === "contacts" ? t("roomList.sections.contacts") : t("roomList.sections.chatRooms")}
                 </span>
                 {view === "contacts" ? (
@@ -1552,25 +1552,25 @@ export function RoomList({
             <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
                 {view === "chat" ? (
                     visibleRooms.length === 0 ? (
-                        <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.chatRooms")}</div>
+                        <div className="px-4 py-6 text-base text-slate-500 dark:text-slate-400">{t("roomList.empty.chatRooms")}</div>
                     ) : (
                         <>
                             {inviteRooms.map((entry) => renderRoomEntry(entry))}
                             {inviteRooms.length > 0 && (pendingReplyRooms.length > 0 || pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
-                                <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                                <div className="px-4 py-2 text-sm text-slate-300 dark:text-slate-600">---</div>
                             )}
                             {pendingReplyRooms.length > 0 && (
-                                <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400">
+                                <div className="px-4 py-2 text-[13px] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400">
                                     {t("roomList.sections.pendingReply")}
                                 </div>
                             )}
                             {pendingReplyRooms.map((entry) => renderRoomEntry(entry))}
                             {pendingReplyRooms.length > 0 && (pinnedRooms.length > 0 || unpinnedRooms.length > 0) && (
-                                <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                                <div className="px-4 py-2 text-sm text-slate-300 dark:text-slate-600">---</div>
                             )}
                             {pinnedRooms.map((entry) => renderRoomEntry(entry))}
                             {pinnedRooms.length > 0 && unpinnedRooms.length > 0 && (
-                                <div className="px-4 py-2 text-xs text-slate-300 dark:text-slate-600">---</div>
+                                <div className="px-4 py-2 text-sm text-slate-300 dark:text-slate-600">---</div>
                             )}
                             {unpinnedRooms.map((entry) => renderRoomEntry(entry))}
                         </>
@@ -1579,23 +1579,23 @@ export function RoomList({
                     <div className="px-4 py-4">
                     {incomingRequests.length > 0 && (
                         <div className="mb-4">
-                            <div className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
+                            <div className="text-[13px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 mb-2">
                                 {t("roomList.sections.requests")}
                             </div>
                             <div className="space-y-2">
                                 {incomingRequests.map((item) => (
                                     <div
                                         key={item.id}
-                                        className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-slate-800"
+                                        className="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3 dark:border-slate-800"
                                     >
                                         <div className="min-w-0">
-                                            <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
+                                            <div className="text-[17px] font-semibold leading-6 text-slate-800 truncate dark:text-slate-100">
                                                 {getAccountIdLabel({
                                                     matrixUserId: item.matrixUserId,
                                                     userLocalId: item.userLocalId,
                                                 })}
                                             </div>
-                                            <div className="text-xs text-slate-500 truncate dark:text-slate-400">
+                                            <div className="mt-0.5 text-[14px] leading-5 text-slate-500 truncate dark:text-slate-400">
                                                 {getMetaLabel({
                                                     companyName: item.companyName,
                                                     title: null,
@@ -1614,12 +1614,12 @@ export function RoomList({
                                                         item.matrixRoomId,
                                                     )
                                                 }
-                                                className="text-xs text-emerald-500 hover:text-emerald-400"
+                                                className="text-sm text-emerald-500 hover:text-emerald-400"
                                             >{t("roomList.actions.accept")}</button>
                                             <button
                                                 type="button"
                                                 onClick={() => void onRejectRequest(item.requesterId, item.matrixRoomId)}
-                                                className="text-xs text-rose-400 hover:text-rose-300"
+                                                className="text-sm text-rose-400 hover:text-rose-300"
                                             >{t("roomList.actions.reject")}</button>
                                         </div>
                                     </div>
@@ -1628,14 +1628,14 @@ export function RoomList({
                         </div>
                     )}
                     {contacts.length === 0 ? (
-                        <div className="text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.contacts")}</div>
+                        <div className="text-base text-slate-500 dark:text-slate-400">{t("roomList.empty.contacts")}</div>
                     ) : (
                         <div className="space-y-2">
                             <div className="flex items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setContactSort("company")}
-                                    className={`text-xs px-2 py-1 rounded-full border ${contactSort === "company"
+                                    className={`text-sm px-3 py-1.5 rounded-full border ${contactSort === "company"
                                         ? "border-emerald-400 text-emerald-600"
                                         : "border-gray-200 text-slate-500"
                                         }`}
@@ -1643,7 +1643,7 @@ export function RoomList({
                                 <button
                                     type="button"
                                     onClick={() => setContactSort("name")}
-                                    className={`text-xs px-2 py-1 rounded-full border ${contactSort === "name"
+                                    className={`text-sm px-3 py-1.5 rounded-full border ${contactSort === "name"
                                         ? "border-emerald-400 text-emerald-600"
                                         : "border-gray-200 text-slate-500"
                                         }`}

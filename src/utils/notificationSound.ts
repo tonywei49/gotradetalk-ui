@@ -2,11 +2,19 @@
  * 通知音效播放器
  * 用於播放新消息到達時的提示音
  */
+import { isTauriMobile, resolveRuntimePlatform } from "../runtime/appRuntime";
 
 let audioContext: AudioContext | null = null;
 export type NotificationSoundMode = "off" | "classic" | "soft" | "chime";
 
+function isNotificationSoundRuntimeSupported(): boolean {
+    if (typeof window === "undefined") return false;
+    if (isTauriMobile() && resolveRuntimePlatform() === "ios") return false;
+    return "AudioContext" in window || "webkitAudioContext" in window;
+}
+
 export function ensureNotificationSoundEnabled(): void {
+    if (!isNotificationSoundRuntimeSupported()) return;
     try {
         if (!audioContext) {
             audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
@@ -24,6 +32,7 @@ export function ensureNotificationSoundEnabled(): void {
  * 使用 Web Audio API 生成簡單的提示音，避免需要外部音頻文件
  */
 export function playNotificationSound(mode: NotificationSoundMode = "classic"): void {
+    if (!isNotificationSoundRuntimeSupported()) return;
     try {
         if (mode === "off") return;
         // 懶加載 AudioContext
@@ -73,6 +82,5 @@ export function playNotificationSound(mode: NotificationSoundMode = "classic"): 
  * 檢查是否支持播放音效
  */
 export function isNotificationSoundSupported(): boolean {
-    return typeof window !== "undefined" &&
-        ("AudioContext" in window || "webkitAudioContext" in window);
+    return isNotificationSoundRuntimeSupported();
 }

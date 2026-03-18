@@ -5,7 +5,8 @@
       {
         "label": "main",
         "title": "GoTradeTalk",
-        "visible": true
+        "visible": true,
+        "disableInputAccessoryView": true
       }
     ]
   },

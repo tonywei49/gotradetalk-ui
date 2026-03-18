@@ -492,108 +492,9 @@ function containsMarkdownTable(text: string): boolean {
 }
 
 function MarkdownTableScroller({ children }: { children: ReactNode }) {
-    const viewportRef = useRef<HTMLDivElement | null>(null);
-    const contentRef = useRef<HTMLDivElement | null>(null);
-    const [offsetX, setOffsetX] = useState(0);
-    const offsetRef = useRef(0);
-    const minOffsetRef = useRef(0);
-
-    useLayoutEffect(() => {
-        const viewport = viewportRef.current;
-        const content = contentRef.current;
-        if (!viewport || !content || !isTauriMobile()) return undefined;
-
-        const recalc = (): void => {
-            const viewportWidth = viewport.clientWidth;
-            const contentWidth = content.scrollWidth;
-            const minOffset = Math.min(0, viewportWidth - contentWidth);
-            minOffsetRef.current = minOffset;
-            const clamped = Math.max(minOffset, Math.min(0, offsetRef.current));
-            offsetRef.current = clamped;
-            setOffsetX(clamped);
-        };
-
-        recalc();
-        const observer = new ResizeObserver(recalc);
-        observer.observe(viewport);
-        observer.observe(content);
-        return () => observer.disconnect();
-    }, []);
-
-    useEffect(() => {
-        if (!isTauriMobile()) return undefined;
-        const viewport = viewportRef.current;
-        if (!viewport) return undefined;
-
-        let active = false;
-        let horizontal = false;
-        let startX = 0;
-        let startY = 0;
-        let startOffset = 0;
-
-        const handleTouchStart = (event: TouchEvent): void => {
-            if (event.touches.length !== 1 || minOffsetRef.current === 0) return;
-            const touch = event.touches[0];
-            active = true;
-            horizontal = false;
-            startX = touch.clientX;
-            startY = touch.clientY;
-            startOffset = offsetRef.current;
-        };
-
-        const handleTouchMove = (event: TouchEvent): void => {
-            if (!active || event.touches.length !== 1) return;
-            const touch = event.touches[0];
-            const deltaX = touch.clientX - startX;
-            const deltaY = touch.clientY - startY;
-
-            if (!horizontal) {
-                if (Math.abs(deltaX) < 6) return;
-                if (Math.abs(deltaX) <= Math.abs(deltaY)) {
-                    active = false;
-                    return;
-                }
-                horizontal = true;
-            }
-
-            event.preventDefault();
-            event.stopPropagation();
-            const next = Math.max(minOffsetRef.current, Math.min(0, startOffset + deltaX));
-            offsetRef.current = next;
-            setOffsetX(next);
-        };
-
-        const handleTouchEnd = (): void => {
-            active = false;
-            horizontal = false;
-        };
-
-        viewport.addEventListener("touchstart", handleTouchStart, { passive: true });
-        viewport.addEventListener("touchmove", handleTouchMove, { passive: false });
-        viewport.addEventListener("touchend", handleTouchEnd, { passive: true });
-        viewport.addEventListener("touchcancel", handleTouchEnd, { passive: true });
-
-        return () => {
-            viewport.removeEventListener("touchstart", handleTouchStart);
-            viewport.removeEventListener("touchmove", handleTouchMove);
-            viewport.removeEventListener("touchend", handleTouchEnd);
-            viewport.removeEventListener("touchcancel", handleTouchEnd);
-        };
-    }, []);
-
-    if (!isTauriMobile()) {
-        return <div className="my-2 max-w-full overflow-x-auto">{children}</div>;
-    }
-
     return (
-        <div ref={viewportRef} className="my-2 w-full max-w-full overflow-hidden [touch-action:pan-x]">
-            <div
-                ref={contentRef}
-                className="inline-block w-max min-w-max align-top will-change-transform"
-                style={{ transform: `translate3d(${offsetX}px, 0, 0)` }}
-            >
-                {children}
-            </div>
+        <div className="my-2 max-w-full overflow-x-auto overflow-y-hidden [overscroll-behavior-x:contain] [-webkit-overflow-scrolling:touch] scrollbar-thin">
+            {children}
         </div>
     );
 }
@@ -617,37 +518,39 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
         ? "my-2 max-w-full overflow-x-auto rounded-lg bg-black/20 p-2 text-[12px] text-white"
         : "my-2 max-w-full overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
 
+    const mdComponents = useMemo<React.ComponentProps<typeof ReactMarkdown>["components"]>(() => ({
+        p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesForActiveRuntime(children, "p")}</p>,
+        br: () => <br />,
+        ul: ({ children }) => <ul className="my-1 list-disc pl-5">{renderNodesForActiveRuntime(children, "ul")}</ul>,
+        ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{renderNodesForActiveRuntime(children, "ol")}</ol>,
+        li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesForActiveRuntime(children, "li")}</li>,
+        blockquote: ({ children }) => (
+            <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] ${borderClass} ${mutedTextClass}`}>{renderNodesForActiveRuntime(children, "blockquote")}</blockquote>
+        ),
+        code: ({ children }) => <code className={codeClass}>{renderNodesForActiveRuntime(children, "code")}</code>,
+        pre: ({ children }) => <pre className={preClass}>{renderNodesForActiveRuntime(children, "pre")}</pre>,
+        table: ({ children }) => (
+            <MarkdownTableScroller>
+                <table className={`w-max border-collapse text-left text-[12px] ${textClass}`}>{renderNodesForActiveRuntime(children, "table")}</table>
+            </MarkdownTableScroller>
+        ),
+        thead: ({ children }) => <thead className={tableHeaderClass}>{renderNodesForActiveRuntime(children, "thead")}</thead>,
+        tbody: ({ children }) => <tbody>{renderNodesForActiveRuntime(children, "tbody")}</tbody>,
+        tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{renderNodesForActiveRuntime(children, "tr")}</tr>,
+        th: ({ children }) => <th className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 font-semibold ${borderClass}`}>{renderNodesForActiveRuntime(children, "th")}</th>,
+        td: ({ children }) => <td className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 align-top ${borderClass}`}>{renderNodesForActiveRuntime(children, "td")}</td>,
+        a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
+                {renderNodesForActiveRuntime(children, "a")}
+            </a>
+        )
+    }), [textClass, mutedTextClass, borderClass, tableHeaderClass, codeClass, preClass]);
+
     return (
         <div className="w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere]">
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
-                components={{
-                    p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesForActiveRuntime(children, "p")}</p>,
-                    br: () => <br />,
-                    ul: ({ children }) => <ul className="my-1 list-disc pl-5">{renderNodesForActiveRuntime(children, "ul")}</ul>,
-                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{renderNodesForActiveRuntime(children, "ol")}</ol>,
-                    li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{renderNodesForActiveRuntime(children, "li")}</li>,
-                    blockquote: ({ children }) => (
-                        <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] ${borderClass} ${mutedTextClass}`}>{renderNodesForActiveRuntime(children, "blockquote")}</blockquote>
-                    ),
-                    code: ({ children }) => <code className={codeClass}>{renderNodesForActiveRuntime(children, "code")}</code>,
-                    pre: ({ children }) => <pre className={preClass}>{renderNodesForActiveRuntime(children, "pre")}</pre>,
-                    table: ({ children }) => (
-                        <MarkdownTableScroller>
-                            <table className={`w-max min-w-[48rem] border-collapse text-left text-[12px] ${textClass}`}>{renderNodesForActiveRuntime(children, "table")}</table>
-                        </MarkdownTableScroller>
-                    ),
-                    thead: ({ children }) => <thead className={tableHeaderClass}>{renderNodesForActiveRuntime(children, "thead")}</thead>,
-                    tbody: ({ children }) => <tbody>{renderNodesForActiveRuntime(children, "tbody")}</tbody>,
-                    tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{renderNodesForActiveRuntime(children, "tr")}</tr>,
-                    th: ({ children }) => <th className={`min-w-[8rem] whitespace-nowrap border px-2 py-1 font-semibold ${borderClass}`}>{renderNodesForActiveRuntime(children, "th")}</th>,
-                    td: ({ children }) => <td className={`min-w-[8rem] whitespace-nowrap border px-2 py-1 align-top ${borderClass}`}>{renderNodesForActiveRuntime(children, "td")}</td>,
-                    a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
-                            {renderNodesForActiveRuntime(children, "a")}
-                        </a>
-                    )
-                }}
+                components={mdComponents}
             >
                 {normalizedText}
             </ReactMarkdown>
@@ -836,6 +739,7 @@ const MessageBubble = ({
                 : messageText
         : messageText;
     const containsTable = isText && containsMarkdownTable(displayText);
+    const tableBubbleWidth = isTauriMobile() ? "min(88vw, 24rem)" : undefined;
 
     useEffect(() => {
         if (!showQuickActionMenu && !showFileMenu) return;
@@ -918,9 +822,10 @@ const MessageBubble = ({
             <div
                 className={`flex min-w-0 flex-col ${
                     containsTable
-                        ? "w-[calc(100vw-5.5rem)] max-w-[calc(100vw-5.5rem)] sm:w-auto sm:max-w-[70%]"
+                        ? "w-full max-w-full sm:max-w-[70%]"
                         : "max-w-[min(88vw,24rem)] sm:max-w-[70%]"
                 } ${isMe ? "items-end" : "items-start"}`}
+                style={containsTable && tableBubbleWidth ? { width: tableBubbleWidth, maxWidth: tableBubbleWidth } : undefined}
             >
                 {/* Sender Name (Incoming only) */}
                 {!isMe && (
@@ -930,7 +835,7 @@ const MessageBubble = ({
                     </div>
                 )}
 
-                    <div className="flex min-w-0 items-end gap-2">
+                    <div className={`flex min-w-0 items-end gap-2 ${containsTable ? "w-full" : ""}`}>
                     {isMe && hasQuickActions && (
                         <div className="relative self-end mb-1">
                             <button
@@ -1037,6 +942,7 @@ const MessageBubble = ({
                                 : "bg-white text-slate-800 rounded-2xl rounded-tl-sm border border-gray-100 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
                             }
             `}
+                        style={containsTable ? { width: "100%", maxWidth: "100%" } : undefined}
                     >
                         {isImage ? (
                             <button
@@ -1479,7 +1385,7 @@ export const ChatRoom: React.FC = () => {
     const userId = useAuthStore((state) => state.matrixCredentials?.user_id ?? null);
     const hubSession = useAuthStore((state) => state.hubSession);
     const userType = useAuthStore((state) => state.userType);
-    const { events, room, showingCachedEvents } = useRoomTimeline(matrixClient, activeRoomId, { limit: 20 });
+    const { events, room, showingCachedEvents } = useRoomTimeline(matrixClient, activeRoomId, { limit: 200 });
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const roomStickBottomRef = useRef<Record<string, boolean>>({});
     const historyScrollAnchorRef = useRef<{
@@ -2088,7 +1994,17 @@ export const ChatRoom: React.FC = () => {
         const eventId = event.getId() as string;
         if (lastReadReceiptEventByRoomRef.current[activeRoomId] === eventId) return;
         lastReadReceiptEventByRoomRef.current[activeRoomId] = eventId;
-        void sendReadReceiptEvent(matrixClient, event);
+        void sendReadReceiptEvent(matrixClient, event).catch((error) => {
+            if (lastReadReceiptEventByRoomRef.current[activeRoomId] === eventId) {
+                delete lastReadReceiptEventByRoomRef.current[activeRoomId];
+            }
+            console.warn("Failed to send Matrix read receipt", {
+                roomId: activeRoomId,
+                eventId,
+                error,
+                errorMessage: error instanceof Error ? error.message : String(error),
+            });
+        });
     };
 
     const isDeprecatedRoom = Boolean(isDirectRoom && room?.name?.startsWith(DEPRECATED_DM_PREFIX));

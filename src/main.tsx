@@ -91,6 +91,26 @@ if (isTauriRuntime()) {
         hubApiBaseUrl,
         notebookApiBaseUrl,
     });
+
+    const preventGesture = (event: Event): void => {
+        event.preventDefault();
+    };
+    const preventPinchZoom = (event: TouchEvent): void => {
+        if (event.touches.length > 1) {
+            event.preventDefault();
+        }
+    };
+    const preventCtrlZoom = (event: WheelEvent): void => {
+        if (event.ctrlKey) {
+            event.preventDefault();
+        }
+    };
+
+    document.addEventListener("gesturestart", preventGesture, { passive: false });
+    document.addEventListener("gesturechange", preventGesture, { passive: false });
+    document.addEventListener("gestureend", preventGesture, { passive: false });
+    document.addEventListener("touchmove", preventPinchZoom, { passive: false });
+    document.addEventListener("wheel", preventCtrlZoom, { passive: false });
 }
 
 createRoot(document.getElementById("root")!).render(

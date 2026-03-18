@@ -39,6 +39,8 @@ export function useTaskUI({
         tasks: taskModule.tasks,
         statuses: taskModule.statuses,
         selectedTaskId: taskModule.selectedTaskId,
+        syncing: taskModule.syncing,
+        syncError: taskModule.syncError,
         onSelectTask: (taskId) => {
             taskModule.setSelectedTaskId(taskId);
             onMobileDetail();
@@ -46,6 +48,9 @@ export function useTaskUI({
         onCreateTask: () => {
             taskModule.createTask();
             onMobileDetail();
+        },
+        onSyncTasks: async () => {
+            await taskModule.syncTasks();
         },
         onOpenRoom,
     }), [onMobileDetail, onOpenRoom, taskModule]);
@@ -55,10 +60,27 @@ export function useTaskUI({
         statuses: taskModule.statuses,
         draft: taskModule.detailDraft,
         editing: taskModule.editing,
+        creating: taskModule.creatingTask,
         onDraftChange: taskModule.setDetailDraft,
         onStartEdit: () => taskModule.setEditing(true),
-        onSave: taskModule.saveSelectedTask,
-        onDelete: taskModule.deleteSelectedTask,
+        onSave: async () => {
+            const saved = await taskModule.saveSelectedTask();
+            if (saved && taskModule.creatingTask) {
+                onMobileList();
+            }
+        },
+        onDelete: async () => {
+            const deleted = await taskModule.deleteSelectedTask();
+            if (deleted) {
+                onMobileList();
+            }
+        },
+        onCancelEdit: () => {
+            taskModule.cancelEditing();
+            if (taskModule.creatingTask) {
+                onMobileList();
+            }
+        },
         onMobileBack: onMobileList,
         onOpenLinkedRoom: onOpenRoom,
     }), [onMobileList, onOpenRoom, taskModule]);

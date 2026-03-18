@@ -94,7 +94,8 @@ import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from
 import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
 import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
 import { useToastStore } from "../stores/ToastStore";
-import { isTauriMobile } from "../runtime/appRuntime";
+import { isTauriMobile, resolveRuntimePlatform } from "../runtime/appRuntime";
+import { notebookApiBaseUrl as configuredNotebookApiBaseUrl } from "../config";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -961,7 +962,9 @@ export const MainLayout: React.FC = () => {
     }, [matrixCredentials?.user_id, workspaceCacheKey]);
 
     useEffect(() => {
-        const cachedNotebookApiBaseUrl = readNotebookBootCache<string>(notebookApiBaseUrlCacheKey);
+        const cachedNotebookApiBaseUrl = userType === "staff"
+            ? null
+            : readNotebookBootCache<string>(notebookApiBaseUrlCacheKey);
         const cachedCapabilities = readNotebookBootCache<string[]>(notebookCapabilitiesCacheKey);
 
         setNotebookApiBaseUrlOverride(cachedNotebookApiBaseUrl);
@@ -1042,13 +1045,51 @@ export const MainLayout: React.FC = () => {
     const notebookUserSubRef = useRef<string | null>(parseJwtSub(hubSession?.access_token));
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
     const [capabilityTokenRefreshSeq, setCapabilityTokenRefreshSeq] = useState(0);
+    const shouldWaitForNotebookMeBootstrap = userType === "staff";
+    const resolvedNotebookApiBaseUrl = userType === "staff"
+        ? (hubMeResolved ? (notebookApiBaseUrlOverride ?? null) : null)
+        : (shouldWaitForNotebookMeBootstrap && !hubMeResolved
+            ? null
+            : notebookApiBaseUrlOverride ?? configuredNotebookApiBaseUrl ?? null);
     const { notebookAuth, notebookToken } = useMemo(() => buildNotebookAuth({
         hubSession,
         matrixCredentials,
         userType,
         capabilities: capabilityValues,
-        apiBaseUrl: notebookApiBaseUrlOverride,
-    }), [hubSession, matrixCredentials, userType, capabilityValues, notebookApiBaseUrlOverride]);
+        apiBaseUrl: resolvedNotebookApiBaseUrl,
+    }), [capabilityValues, hubSession, matrixCredentials, resolvedNotebookApiBaseUrl, userType]);
+    const effectiveNotebookApiBaseUrl = resolvedNotebookApiBaseUrl;
+    const notebookWorkspaceAuth = useMemo(() => {
+        if (notebookAuth?.matrixUserId) {
+            return notebookAuth;
+        }
+        const matrixUserId = matrixCredentials?.user_id?.trim();
+        if (!matrixUserId) {
+            return null;
+        }
+        return {
+            accessToken:
+                notebookAuth?.accessToken
+                || hubSession?.access_token?.trim()
+                || matrixCredentials?.access_token?.trim()
+                || "__local_notebook__",
+            matrixAccessToken: matrixCredentials?.access_token ?? null,
+            apiBaseUrl: effectiveNotebookApiBaseUrl,
+            hsUrl: matrixCredentials?.hs_url ?? null,
+            matrixUserId,
+            userType,
+            capabilities: capabilityValues,
+        };
+    }, [
+        capabilityValues,
+        hubSession?.access_token,
+        matrixCredentials?.access_token,
+        matrixCredentials?.hs_url,
+        matrixCredentials?.user_id,
+        effectiveNotebookApiBaseUrl,
+        notebookAuth,
+        userType,
+    ]);
     const capabilityToken = notebookToken.accessToken;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
     const notebookCapabilityState = useMemo(
@@ -1060,7 +1101,7 @@ export const MainLayout: React.FC = () => {
             }),
         [capabilityLoaded, capabilityValues, userType],
     );
-    const hasNotebookLocalWorkspace = Boolean(notebookAuth?.matrixUserId);
+    const hasNotebookLocalWorkspace = Boolean(notebookWorkspaceAuth?.matrixUserId);
     const notebookWorkspaceAvailable = hasNotebookLocalWorkspace;
     useEffect(() => {
         if (!desktopUpdaterAvailable) return;
@@ -1226,10 +1267,60 @@ export const MainLayout: React.FC = () => {
     }, [hubSession?.refresh_token, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
-        auth: notebookAuth,
-        enabled: notebookReady && notebookWorkspaceAvailable,
+        auth: notebookWorkspaceAuth,
+        enabled: notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved),
         refreshToken: notebookRefreshToken,
     });
+    const notebookRuntimeDebug = useMemo(() => ({
+        userType,
+        hubMeResolved,
+        configuredNotebookApiBaseUrl: configuredNotebookApiBaseUrl ?? null,
+        notebookApiBaseUrlOverride: notebookApiBaseUrlOverride ?? null,
+        effectiveNotebookApiBaseUrl: effectiveNotebookApiBaseUrl ?? null,
+        notebookReady,
+        notebookWorkspaceAvailable,
+        hasHubAccessToken: Boolean(hubAccessToken),
+        hasMatrixAccessToken: Boolean(matrixCredentials?.access_token),
+        matrixUserId: matrixCredentials?.user_id ?? null,
+        notebookTokenReason: notebookToken.reason,
+        hasNotebookAuth: Boolean(notebookAuth?.accessToken),
+        hasNotebookWorkspaceAuth: Boolean(notebookWorkspaceAuth?.accessToken),
+        capabilityLoaded,
+        capabilityError,
+        capabilityValues,
+        listState: notebookModule.listState,
+        listError: notebookModule.listError,
+        actionError: notebookModule.actionError,
+        requestDebugPath: notebookModule.requestDebug?.path ?? null,
+        requestDebugStatus: notebookModule.requestDebug?.response?.status ?? notebookModule.requestDebug?.error?.status ?? null,
+        requestDebugMethod: notebookModule.requestDebug?.method ?? null,
+        requestDebugUrl: notebookModule.requestDebug?.url ?? null,
+        requestDebugQuery: notebookModule.requestDebug?.query ?? null,
+        requestDebugRequestBody: notebookModule.requestDebug?.requestBody ?? null,
+        requestDebugResponse: notebookModule.requestDebug?.response ?? null,
+        requestDebugError: notebookModule.requestDebug?.error ?? null,
+    }), [
+        userType,
+        hubMeResolved,
+        configuredNotebookApiBaseUrl,
+        notebookApiBaseUrlOverride,
+        effectiveNotebookApiBaseUrl,
+        notebookReady,
+        notebookWorkspaceAvailable,
+        hubAccessToken,
+        matrixCredentials?.access_token,
+        matrixCredentials?.user_id,
+        notebookToken.reason,
+        notebookAuth?.accessToken,
+        notebookWorkspaceAuth?.accessToken,
+        capabilityLoaded,
+        capabilityError,
+        capabilityValues,
+        notebookModule.listState,
+        notebookModule.listError,
+        notebookModule.actionError,
+        notebookModule.requestDebug,
+    ]);
     useEffect(() => {
         if (!notebookReady) return;
         if (userType === "client" && notebookModule.sourceScope === "company") {
@@ -1510,6 +1601,8 @@ export const MainLayout: React.FC = () => {
             } catch {
                 if (!isActive) return;
                 setMeProfile(null);
+                setNotebookApiBaseUrlOverride(null);
+                writeNotebookBootCache(notebookApiBaseUrlCacheKey, null);
                 setNotebookUploadLimitMb(20);
             } finally {
                 if (isActive) {
@@ -1527,7 +1620,7 @@ export const MainLayout: React.FC = () => {
             setNotebookUploadLimitMb(20);
             return;
         }
-        if (!notebookAuth || !notebookApiBaseUrlOverride) {
+        if (!notebookAuth || !effectiveNotebookApiBaseUrl) {
             setNotebookUploadLimitMb(20);
             return;
         }
@@ -1546,7 +1639,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [notebookApiBaseUrlOverride, notebookAuth, notebookReady]);
+    }, [effectiveNotebookApiBaseUrl, notebookAuth, notebookReady]);
 
     useEffect(() => {
         if (!notebookReady) {
@@ -1580,7 +1673,7 @@ export const MainLayout: React.FC = () => {
             setCapabilityError(null);
             return;
         }
-        if (!notebookApiBaseUrlOverride) {
+        if (!effectiveNotebookApiBaseUrl) {
             setCapabilityLoaded(true);
             setCapabilityValues([]);
             if (userType === "client") {
@@ -1595,7 +1688,7 @@ export const MainLayout: React.FC = () => {
         setCapabilityError(null);
         void getNotebookCapabilities({
             accessToken: capabilityToken,
-            apiBaseUrl: notebookApiBaseUrlOverride,
+            apiBaseUrl: effectiveNotebookApiBaseUrl,
             hsUrl: matrixHsUrl,
             matrixUserId: matrixCredentials?.user_id,
         }).then((result) => {
@@ -1614,7 +1707,7 @@ export const MainLayout: React.FC = () => {
                 status: error instanceof NotebookServiceError ? error.status : null,
                 code: error instanceof NotebookServiceError ? error.code : null,
                 message: error instanceof Error ? error.message : String(error),
-                notebookApiBaseUrlOverride,
+                notebookApiBaseUrlOverride: effectiveNotebookApiBaseUrl,
                 matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
             });
@@ -1653,7 +1746,7 @@ export const MainLayout: React.FC = () => {
                 if (error.status >= 500) {
                     if (isTauriDesktop()) {
                         setCapabilityError(
-                            `Notebook ${error.status} ${error.code}: ${error.message} @ ${notebookApiBaseUrlOverride || "no-base-url"}`,
+                            `Notebook ${error.status} ${error.code}: ${error.message} @ ${effectiveNotebookApiBaseUrl || "no-base-url"}`,
                         );
                         return;
                     }
@@ -1663,7 +1756,7 @@ export const MainLayout: React.FC = () => {
             }
             if (isTauriDesktop() && error instanceof Error) {
                 setCapabilityError(
-                    `Notebook init failed: ${error.message} @ ${notebookApiBaseUrlOverride || "no-base-url"}`,
+                    `Notebook init failed: ${error.message} @ ${effectiveNotebookApiBaseUrl || "no-base-url"}`,
                 );
                 return;
             }
@@ -1676,7 +1769,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookApiBaseUrlOverride, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, t, userType]);
+    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, t, userType]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -1707,6 +1800,11 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         setNotificationSoundHydrated(false);
+        if (isTauriMobile() && resolveRuntimePlatform() === "ios") {
+            setNotificationSoundMode("off");
+            setNotificationSoundHydrated(true);
+            return;
+        }
         const raw = localStorage.getItem(notificationSoundStorageKey);
         if (raw === "off" || raw === "classic" || raw === "soft" || raw === "chime") {
             setNotificationSoundMode(raw);
@@ -4037,6 +4135,7 @@ export const MainLayout: React.FC = () => {
                             manualSyncAvailable={notebookModule.hasRemoteNotebookApi}
                             busy={notebookModule.actionBusy}
                             listRefreshing={notebookModule.listRefreshing}
+                            runtimeDebug={notebookRuntimeDebug}
                             hasMore={notebookModule.hasMore}
                             loadingMore={notebookModule.loadingMore}
                             onLoadMore={() => {
@@ -4564,27 +4663,27 @@ export const MainLayout: React.FC = () => {
                                         &lt;
                                     </button>
                                     <div className="min-w-0">
-                                        <div className="text-base font-semibold text-slate-800 truncate dark:text-slate-100">
+                                        <div className="text-[18px] font-semibold leading-7 text-slate-800 truncate dark:text-slate-100">
                                             {selectedRoomSummary.roomName}
                                         </div>
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                                        <div className="text-[14px] leading-5 text-slate-500 dark:text-slate-400">
                                             {t("layout.filesCountLabel", { count: selectedRoomSummary.attachmentCount })}
                                         </div>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setShowFileToolbarMenu((prev) => !prev)}
-                                        className="h-8 rounded-lg border border-gray-200 px-2 text-xs text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                        className="h-10 rounded-xl border border-gray-200 px-3 text-sm text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
                                     >
                                         ...
                                     </button>
                                 </div>
                                 {showFileToolbarMenu && (
-                                    <div className="mx-6 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                    <div className="mx-6 mt-2 w-40 rounded-xl border border-gray-200 bg-white py-1.5 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                         <button
                                             type="button"
                                             disabled={fileBatchDeleting}
-                                            className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                            className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                             onClick={() => {
                                                 if (fileBatchDeleting) return;
                                                 setFileBatchMode((prev) => !prev);
@@ -4597,7 +4696,7 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 )}
                                 {fileBatchMode && (
-                                    <div className="mx-6 mt-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
+                                    <div className="mx-6 mt-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
                                         <span>
                                             {fileBatchDeleting
                                                 ? t("layout.fileBatchDeletingProgress", {
@@ -4610,7 +4709,7 @@ export const MainLayout: React.FC = () => {
                                             type="button"
                                             onClick={() => void onDeleteBatchFiles()}
                                             disabled={fileBatchDeleting || selectedFileIds.length === 0}
-                                            className="rounded-md bg-rose-500 px-2 py-1 text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                            className="rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
                                         >
                                             {fileBatchDeleting ? t("layout.fileDeletingBusy") : t("layout.fileBatchDelete")}
                                         </button>
@@ -4618,7 +4717,7 @@ export const MainLayout: React.FC = () => {
                                 )}
                                 <div className="px-6 pt-4">
                                     {fileHistoryLoadingRoomId === selectedFileRoomId && (
-                                        <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                                        <div className="mb-2 text-sm text-slate-500 dark:text-slate-400">
                                             {t("common.loading")}
                                         </div>
                                     )}
@@ -4628,7 +4727,7 @@ export const MainLayout: React.FC = () => {
                                             value={fileListSearch}
                                             onChange={(event) => setFileListSearch(event.target.value)}
                                             placeholder={t("layout.filesListSearchPlaceholder")}
-                                            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                         />
                                         <select
                                             value={fileListTypeFilter}
@@ -4637,7 +4736,7 @@ export const MainLayout: React.FC = () => {
                                                     event.target.value as "all" | "image" | "video" | "audio" | "pdf" | "other",
                                                 )
                                             }
-                                            className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            className="rounded-xl border border-gray-200 bg-white px-3 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                         >
                                             <option value="all">{t("layout.fileFilterTypeAll")}</option>
                                             <option value="image">{t("layout.fileFilterTypeImage")}</option>
@@ -4648,7 +4747,7 @@ export const MainLayout: React.FC = () => {
                                         </select>
                                     </div>
                                 </div>
-                                <div className="hidden px-6 pt-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400 sm:block">
+                                <div className="hidden px-6 pt-3 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400 sm:block">
                                     <div className="grid grid-cols-[32px_84px_90px_90px_1fr] gap-2">
                                         <span />
                                         <span>{t("layout.fileColumnPreview")}</span>
@@ -4659,7 +4758,7 @@ export const MainLayout: React.FC = () => {
                                 </div>
                                 <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar px-6 pb-6 space-y-2">
                                     {visibleSelectedRoomFiles.length === 0 ? (
-                                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-base text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                                             {t("layout.fileListEmptyInRoom")}
                                         </div>
                                     ) : (
@@ -4667,7 +4766,7 @@ export const MainLayout: React.FC = () => {
                                             const fileType = getFileTypeGroup(item);
                                             const ext = getFileExtension(item.body, item.mimeType);
                                             return (
-                                                <div key={item.eventId} className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950 sm:grid sm:grid-cols-[32px_84px_90px_90px_1fr] sm:items-center sm:gap-2 sm:px-2 sm:py-2">
+                                                <div key={item.eventId} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950 sm:grid sm:grid-cols-[32px_84px_90px_90px_1fr] sm:items-center sm:gap-3 sm:px-3 sm:py-3">
                                                     <div className="hidden items-center justify-center sm:flex">
                                                         {fileBatchMode ? (
                                                             <input
@@ -4692,23 +4791,23 @@ export const MainLayout: React.FC = () => {
                                                                 type="button"
                                                                 onClick={() => onPreviewFileItem(item)}
                                                                 disabled={fileType === "other"}
-                                                                className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500 disabled:cursor-default dark:text-slate-300"
+                                                                className="flex h-full w-full items-center justify-center text-sm font-semibold text-slate-500 disabled:cursor-default dark:text-slate-300"
                                                             >
                                                                 {ext}
                                                             </button>
                                                         )}
                                                     </div>
                                                     <div className="min-w-0 flex-1 sm:contents">
-                                                        <div className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200 sm:hidden">
+                                                        <div className="truncate text-base font-semibold text-slate-700 dark:text-slate-200 sm:hidden">
                                                             {item.body || "file"}
                                                         </div>
-                                                        <div className="text-sm text-slate-700 dark:text-slate-200 sm:block">{ext}</div>
-                                                        <div className="text-xs text-slate-500 dark:text-slate-400 sm:text-sm sm:text-slate-700 sm:dark:text-slate-200">
+                                                        <div className="text-base text-slate-700 dark:text-slate-200 sm:block">{ext}</div>
+                                                        <div className="text-sm text-slate-500 dark:text-slate-400 sm:text-base sm:text-slate-700 sm:dark:text-slate-200">
                                                             {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
                                                         </div>
                                                     </div>
                                                     <div className="relative ml-auto flex items-center justify-between gap-2 sm:ml-0">
-                                                        <div className="hidden min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400 sm:block">
+                                                        <div className="hidden min-w-0 flex-1 truncate text-sm text-slate-500 dark:text-slate-400 sm:block">
                                                             {new Date(item.ts).toLocaleString()}
                                                         </div>
                                                         {!fileBatchMode && (
@@ -4722,11 +4821,11 @@ export const MainLayout: React.FC = () => {
                                                             </button>
                                                         )}
                                                         {!fileBatchMode && activeFileMenuEventId === item.eventId && (
-                                                            <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                                            <div className="absolute right-0 top-8 z-20 w-32 rounded-xl border border-gray-200 bg-white py-1.5 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                                                 {getFilePreviewType(item) && (
                                                                     <button
                                                                         type="button"
-                                                                        className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                        className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                                                         onClick={() => {
                                                                             setActiveFileMenuEventId(null);
                                                                             onPreviewFileItem(item);
@@ -4737,7 +4836,7 @@ export const MainLayout: React.FC = () => {
                                                                 )}
                                                                 <button
                                                                     type="button"
-                                                                    className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                    className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                                                     onClick={() => {
                                                                         setActiveFileMenuEventId(null);
                                                                         onOpenFileItem(item);
@@ -4747,7 +4846,7 @@ export const MainLayout: React.FC = () => {
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                    className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                                                     onClick={() => {
                                                                         setActiveFileMenuEventId(null);
                                                                         onJumpToFileMessage(item);
@@ -4758,7 +4857,7 @@ export const MainLayout: React.FC = () => {
                                                                 <button
                                                                     type="button"
                                                                     disabled={fileDeletingEventId === item.eventId || fileBatchDeleting}
-                                                                    className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-slate-800"
+                                                                    className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-slate-800"
                                                                     onClick={() => void onDeleteFileItem(item)}
                                                                 >
                                                                     {fileDeletingEventId === item.eventId
@@ -4776,7 +4875,7 @@ export const MainLayout: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={() => setFileListPage((prev) => prev + 1)}
-                                            className="mx-auto block rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                            className="mx-auto block rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
                                         >
                                             {t("layout.fileLoadMore", {
                                                 shown: pagedVisibleSelectedRoomFiles.length,
@@ -5037,6 +5136,7 @@ export const MainLayout: React.FC = () => {
                             chunksTotal={notebookModule.chunksTotal}
                             busy={notebookModule.actionBusy}
                             actionError={notebookModule.actionError || notebookFileActionError}
+                            requestDebug={notebookModule.requestDebug}
                             uploadState={notebookUploadState}
                             onMobileBack={() => setMobileView("list")}
                             chunkSettings={notebookModule.chunkSettings}
@@ -5220,7 +5320,7 @@ export const MainLayout: React.FC = () => {
                             onRetryNotebookCapability: retryNotebookCapability,
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
-                            notebookApiBaseUrl: notebookApiBaseUrlOverride,
+                            notebookApiBaseUrl: effectiveNotebookApiBaseUrl,
                             ...taskUi.chatContext,
                         }}
                     />

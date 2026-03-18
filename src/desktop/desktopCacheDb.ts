@@ -1,13 +1,13 @@
 import Database from "@tauri-apps/plugin-sql";
 
-import { isTauriDesktop } from "./fetchWithDesktopSupport";
+import { isTauriRuntime } from "../runtime/appRuntime";
 
 const DESKTOP_CACHE_DB = "sqlite:desktop-cache.db";
 
 let dbPromise: Promise<Database> | null = null;
 
 async function getDesktopCacheDb(): Promise<Database | null> {
-    if (!isTauriDesktop()) return null;
+    if (!isTauriRuntime()) return null;
     if (!dbPromise) {
         dbPromise = Database.load(DESKTOP_CACHE_DB);
     }

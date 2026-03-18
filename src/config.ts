@@ -12,6 +12,7 @@ const isAbsoluteUrl = (value: string | undefined): boolean => Boolean(value && /
 const configuredHubBaseUrl = import.meta.env.VITE_HUB_API_BASE_URL as string | undefined;
 const configuredNotebookBaseUrl = import.meta.env.VITE_NOTEBOOK_API_BASE_URL as string | undefined;
 const defaultHubBaseUrl = "https://api.gotradetalk.com";
+const defaultNotebookBaseUrl = "https://notebook-api.gotradetalk.com";
 const useDirectBackendInDev = import.meta.env.MODE === "development" && isTauriRuntime();
 
 export const hubApiBaseUrl = ensureEnv(
@@ -24,7 +25,7 @@ export const hubApiBaseUrl = ensureEnv(
 export const notebookApiBaseUrl =
     import.meta.env.MODE === "development" && !useDirectBackendInDev && isAbsoluteUrl(configuredNotebookBaseUrl)
         ? "/notebook-api"
-        : configuredNotebookBaseUrl ?? (import.meta.env.MODE === "development" ? "/notebook-api" : hubApiBaseUrl);
+        : configuredNotebookBaseUrl ?? (import.meta.env.MODE === "development" ? "/notebook-api" : defaultNotebookBaseUrl);
 
 export const defaultPublicHs =
     (import.meta.env.VITE_DEFAULT_PUBLIC_HS as string | undefined) ?? "https://matrix.gotradetalk.com";

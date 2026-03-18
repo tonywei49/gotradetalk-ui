@@ -2,6 +2,7 @@ import type { NotebookChunk, NotebookItem, NotebookParsedPreview } from "../type
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useRef, useState } from "react";
+import type { NotebookRequestDebugSnapshot } from "../../../services/notebookApi";
 import { NotebookParsedSection } from "./NotebookParsedSection";
 import { ChunkSettingsPanel, type ChunkSettings } from "./ChunkSettingsPanel";
 
@@ -40,6 +41,7 @@ type NotebookPanelProps = {
     chunksTotal: number;
     busy: boolean;
     actionError: string | null;
+    requestDebug?: NotebookRequestDebugSnapshot | null;
     onMobileBack?: () => void;
     chunkSettings?: ChunkSettings;
     onChunkSettingsChange?: (settings: ChunkSettings) => void;
@@ -115,6 +117,7 @@ export function NotebookPanel({
     chunksTotal,
     busy,
     actionError,
+    requestDebug,
     onMobileBack,
     chunkSettings,
     onChunkSettingsChange,
@@ -123,6 +126,7 @@ export function NotebookPanel({
     const { t } = useTranslation();
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
     const [showChunkConfirm, setShowChunkConfirm] = useState(false);
+    void requestDebug;
     if (!enabled) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -150,7 +154,7 @@ export function NotebookPanel({
 
     return (
         <div className="relative flex h-full flex-col bg-white dark:bg-slate-900">
-            <div className="border-b border-gray-100 px-6 py-4 dark:border-slate-800">
+            <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-800">
                 <div className="flex items-center gap-3">
                     {onMobileBack && (
                         <button
@@ -162,15 +166,15 @@ export function NotebookPanel({
                             &lt;
                         </button>
                     )}
-                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    <div className="text-[17px] font-semibold text-slate-800 dark:text-slate-100">
                         {t("layout.notebook.detailTitle", "Notebook Detail")}
                     </div>
                 </div>
-                <div className={`mt-2 rounded-lg border px-3 py-2 text-sm ${hint.tone}`}>{hint.text}</div>
+                <div className={`mt-3 rounded-xl border px-4 py-3 text-[15px] ${hint.tone}`}>{hint.text}</div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar p-6 space-y-4">
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                    <div className="mb-1.5 text-[13px] font-semibold uppercase text-slate-500">
                         {t("layout.notebook.fieldTitle", "Title")}
                     </div>
                     <input
@@ -178,11 +182,11 @@ export function NotebookPanel({
                         value={editorTitle}
                         readOnly={!isEditing || isCompanyReadOnly}
                         onChange={(event) => setEditorTitle(event.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
                     />
                 </label>
                 <label className="block">
-                    <div className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                    <div className="mb-1.5 text-[13px] font-semibold uppercase text-slate-500">
                         {t("layout.notebook.fieldContent", "Content")}
                     </div>
                     <textarea
@@ -190,10 +194,10 @@ export function NotebookPanel({
                         readOnly={!isEditing || isCompanyReadOnly}
                         onChange={(event) => setEditorContent(event.target.value)}
                         rows={12}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
                     />
                 </label>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <div className="mb-2 font-semibold">
                         {t("layout.notebook.attachedFiles", "Attached files")} ({visibleFiles.length || 0})
                     </div>
@@ -201,7 +205,7 @@ export function NotebookPanel({
                         {t("layout.notebook.singleFileLimit", "Single file limit: {{size}}MB", { size: uploadLimitMb })}
                     </div>
                     {uploadState?.busy && (
-                        <div className="mb-2 rounded border border-sky-200 bg-sky-50 px-2 py-2 text-[11px] text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
+                        <div className="mb-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
                             <div className="flex items-center justify-between gap-3">
                                 <span className="truncate">{uploadState.fileName || t("layout.notebook.uploadingFile", "Uploading file...")}</span>
                                 <span>{Math.max(0, Math.min(100, uploadState.progress))}%</span>
@@ -212,7 +216,7 @@ export function NotebookPanel({
                         </div>
                     )}
                     {uploadState?.error && (
-                        <div className="mb-2 rounded border border-rose-200 bg-rose-50 px-2 py-2 text-[11px] text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/20 dark:text-rose-200">
+                        <div className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/20 dark:text-rose-200">
                             {uploadState.error}
                         </div>
                     )}
@@ -224,7 +228,7 @@ export function NotebookPanel({
                         ) : (
                             <div className="space-y-2">
                                 {visibleFiles.map((file) => (
-                                    <div key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                    <div key={file.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                                         <div className="min-w-0 flex-1 truncate">
                                             {file.matrixMediaName || file.matrixMediaMxc}
                                         </div>
@@ -232,14 +236,14 @@ export function NotebookPanel({
                                             <button
                                                 type="button"
                                                 onClick={() => onPreviewFile(file)}
-                                                className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+                                                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
                                             >
                                                 {t("layout.notebook.previewFile", "Preview")}
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => onDownloadFile(file.matrixMediaMxc, file.matrixMediaName)}
-                                                className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+                                                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
                                             >
                                                 {t("layout.notebook.downloadFile", "Download")}
                                             </button>
@@ -248,7 +252,7 @@ export function NotebookPanel({
                                                     type="button"
                                                     onClick={() => onDeleteFile(file.id)}
                                                     disabled={busy}
-                                                    className="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
+                                                    className="rounded-lg border border-rose-300 px-3 py-1.5 text-sm font-semibold text-rose-600 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300"
                                                 >
                                                     {t("layout.notebook.removeFile", "Remove")}
                                                 </button>
