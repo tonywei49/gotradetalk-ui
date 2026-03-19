@@ -3873,6 +3873,7 @@ export const MainLayout: React.FC = () => {
                                             const next = event.target.value as NotificationSoundMode;
                                             setNotificationSoundMode(next);
                                             if (next !== "off") {
+                                                ensureNotificationSoundEnabled({ userInitiated: true });
                                                 playNotificationSound(next);
                                             }
                                         }}
@@ -3887,6 +3888,7 @@ export const MainLayout: React.FC = () => {
                                         type="button"
                                         onClick={() => {
                                             if (notificationSoundMode === "off") return;
+                                            ensureNotificationSoundEnabled({ userInitiated: true });
                                             playNotificationSound(notificationSoundMode);
                                         }}
                                         disabled={notificationSoundMode === "off"}
