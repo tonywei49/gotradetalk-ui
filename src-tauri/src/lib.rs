@@ -3,11 +3,12 @@ use std::{thread, time::Duration};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::{
   menu::{MenuBuilder, MenuItemBuilder},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  AppHandle, Manager, WebviewWindow, WindowEvent,
+  Manager, WebviewWindow, WindowEvent,
 };
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
@@ -98,9 +99,16 @@ fn reveal_primary_instance(app: &AppHandle) {
   }
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[tauri::command]
 fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
+  #[cfg(any(target_os = "ios", target_os = "android"))]
+  {
+    let _ = app;
+    return Ok(());
+  }
+
+  #[cfg(not(any(target_os = "ios", target_os = "android")))]
+  {
   let main_window = app
     .get_webview_window("main")
     .ok_or_else(|| "main window is unavailable".to_string())?;
@@ -111,6 +119,7 @@ fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
 
   show_main_window(&main_window);
   Ok(())
+  }
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -498,7 +507,10 @@ pub fn run() {
     ]);
 
   #[cfg(any(target_os = "ios", target_os = "android"))]
-  let builder = builder.invoke_handler(tauri::generate_handler![desktop_http_request]);
+  let builder = builder.invoke_handler(tauri::generate_handler![
+    desktop_boot_ready,
+    desktop_http_request
+  ]);
 
   let app = builder
     .build(tauri::generate_context!())
