@@ -3,6 +3,8 @@
  * 用於播放新消息到達時的提示音
  */
 
+import { isTauriMobile } from "../runtime/appRuntime";
+
 let audioContext: AudioContext | null = null;
 let audioUnlocked = false;
 let audioElementUnlocked = false;
@@ -16,12 +18,8 @@ const SOUND_FILE_MAP: Record<Exclude<NotificationSoundMode, "off">, string> = {
 
 const audioElementCache = new Map<Exclude<NotificationSoundMode, "off">, HTMLAudioElement>();
 
-function isTauriIosRuntime(): boolean {
-    if (typeof window === "undefined") return false;
-    const hasTauri = "__TAURI_INTERNALS__" in window;
-    if (!hasTauri) return false;
-    const ua = window.navigator.userAgent || "";
-    return /iPhone|iPad|iPod/i.test(ua);
+function requiresUserInitiatedUnlock(): boolean {
+    return isTauriMobile();
 }
 
 function getAudioContextConstructor(): typeof AudioContext | null {
@@ -67,7 +65,7 @@ export function ensureNotificationSoundEnabled(options?: { userInitiated?: boole
             audioUnlocked = true;
             audioElementUnlocked = true;
         }
-        if (isTauriIosRuntime() && !audioUnlocked) {
+        if (requiresUserInitiatedUnlock() && !audioUnlocked) {
             return;
         }
         const context = tryCreateAudioContext();
@@ -91,7 +89,7 @@ export function ensureNotificationSoundEnabled(options?: { userInitiated?: boole
 export function playNotificationSound(mode: NotificationSoundMode = "classic"): void {
     try {
         if (mode === "off") return;
-        if (isTauriIosRuntime() && !audioUnlocked) {
+        if (requiresUserInitiatedUnlock() && !audioUnlocked) {
             return;
         }
 

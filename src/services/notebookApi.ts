@@ -440,7 +440,79 @@ async function sendNotebookRequest<T>(params: {
         throw serviceError;
     }
 
-    const data = (await response.json()) as T;
+    const responseText = await response.text();
+    if (!responseText.trim()) {
+        const serviceError = new NotebookServiceError(
+            `Notebook API returned an empty response body (HTTP ${response.status})`,
+            response.status,
+            "UNKNOWN",
+            {
+                contentType: response.headers.get("content-type"),
+                body: null,
+            },
+        );
+        setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+            auth: params.auth,
+            method: params.method,
+            path: params.path,
+            url,
+            requestBody: params.body,
+            response: {
+                ok: true,
+                status: response.status,
+                statusText: response.statusText,
+                body: {
+                    contentType: response.headers.get("content-type"),
+                    body: null,
+                },
+            },
+            error: {
+                message: serviceError.message,
+                code: serviceError.code,
+                status: serviceError.status,
+            },
+        }));
+        throw serviceError;
+    }
+
+    let data: T;
+    try {
+        data = JSON.parse(responseText) as T;
+    } catch (error) {
+        const serviceError = new NotebookServiceError(
+            `Notebook API returned invalid JSON (HTTP ${response.status})`,
+            response.status,
+            "UNKNOWN",
+            {
+                contentType: response.headers.get("content-type"),
+                parseError: error instanceof Error ? error.message : String(error),
+                body: truncateString(responseText),
+            },
+        );
+        setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+            auth: params.auth,
+            method: params.method,
+            path: params.path,
+            url,
+            requestBody: params.body,
+            response: {
+                ok: true,
+                status: response.status,
+                statusText: response.statusText,
+                body: {
+                    contentType: response.headers.get("content-type"),
+                    body: truncateString(responseText),
+                },
+            },
+            error: {
+                message: serviceError.message,
+                code: serviceError.code,
+                status: serviceError.status,
+            },
+        }));
+        throw serviceError;
+    }
+
     setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
         auth: params.auth,
         method: params.method,

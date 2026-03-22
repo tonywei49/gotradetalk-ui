@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import {
     ChatBubbleLeftRightIcon,
     BookOpenIcon,
@@ -33,8 +36,8 @@ import {
     type ChatSummaryJobDetail,
     type ChatSummaryJobItem,
 } from "../api/hub";
-import { HUB_SESSION_REVOKED_EVENT, type HubSessionRevokedDetail } from "../api/session";
-import type { HubProfileSummary } from "../api/types";
+import { HUB_SESSION_REVOKED_EVENT, HubApiError, type HubSessionRevokedDetail } from "../api/session";
+import type { HubProfileSummary, HubSupabaseSession } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { prepareMatrixClient } from "../matrix/client";
@@ -275,6 +278,8 @@ function getFilePreviewType(item: { msgtype: string; mimeType?: string }): "imag
     if (type === "image" || type === "video" || type === "audio" || type === "pdf") return type;
     return null;
 }
+
+const FILE_BATCH_DELETE_CONCURRENCY = 4;
 
 function blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -542,6 +547,43 @@ function parseJwtSub(token: string | null | undefined): string | null {
     }
 }
 
+function toStoredHubSession(
+    session: {
+        access_token?: string | null;
+        refresh_token?: string | null;
+        expires_at?: number | null;
+    } | null | undefined,
+    fallbackRefreshToken?: string | null,
+): HubSupabaseSession | null {
+    const accessToken = session?.access_token?.trim();
+    if (!accessToken) return null;
+    return {
+        access_token: accessToken,
+        refresh_token: session?.refresh_token?.trim() || fallbackRefreshToken?.trim() || "",
+        expires_at: typeof session?.expires_at === "number" ? session.expires_at : undefined,
+    };
+}
+
+function isHubAuthFailure(error: unknown): boolean {
+    if (error instanceof HubApiError) {
+        return error.status === 401 || error.code === "INVALID_AUTH_TOKEN" || error.code === "NO_VALID_HUB_TOKEN";
+    }
+    if (error instanceof ChatSearchError) {
+        return error.status === 401 && error.code !== "MISSING_MATRIX_TOKEN";
+    }
+    return false;
+}
+
+function isNotebookAuthFailure(error: unknown): boolean {
+    return error instanceof NotebookServiceError
+        && (
+            error.status === 401
+            || error.code === "INVALID_AUTH_TOKEN"
+            || error.code === "INVALID_TOKEN_TYPE"
+            || error.code === "NO_VALID_HUB_TOKEN"
+        );
+}
+
 function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
     const out: MatrixEvent[] = [];
     const seen = new Set<string>();
@@ -735,6 +777,7 @@ export const MainLayout: React.FC = () => {
     const [summaryContentLoading, setSummaryContentLoading] = useState(false);
     const [summaryJobs, setSummaryJobs] = useState<ChatSummaryJobItem[]>([]);
     const [summaryJobsLoading, setSummaryJobsLoading] = useState(false);
+    const [summaryJobsRefreshing, setSummaryJobsRefreshing] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -1040,7 +1083,7 @@ export const MainLayout: React.FC = () => {
     const [refreshingNotebookToken, setRefreshingNotebookToken] = useState(false);
     const notebookRefreshBackoffUntilRef = useRef(0);
     const notebookRefreshFailureCountRef = useRef(0);
-    const notebookRefreshFlightRef = useRef<Promise<boolean> | null>(null);
+    const notebookRefreshFlightRef = useRef<Promise<string | null> | null>(null);
     const notebookRefreshFlightTimerRef = useRef<number | null>(null);
     const notebookUserSubRef = useRef<string | null>(parseJwtSub(hubSession?.access_token));
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
@@ -1060,19 +1103,12 @@ export const MainLayout: React.FC = () => {
     }), [capabilityValues, hubSession, matrixCredentials, resolvedNotebookApiBaseUrl, userType]);
     const effectiveNotebookApiBaseUrl = resolvedNotebookApiBaseUrl;
     const notebookWorkspaceAuth = useMemo(() => {
-        if (notebookAuth?.matrixUserId) {
-            return notebookAuth;
-        }
         const matrixUserId = matrixCredentials?.user_id?.trim();
-        if (!matrixUserId) {
+        if (!matrixUserId || !notebookAuth?.accessToken) {
             return null;
         }
         return {
-            accessToken:
-                notebookAuth?.accessToken
-                || hubSession?.access_token?.trim()
-                || matrixCredentials?.access_token?.trim()
-                || "__local_notebook__",
+            accessToken: notebookAuth.accessToken,
             matrixAccessToken: matrixCredentials?.access_token ?? null,
             apiBaseUrl: effectiveNotebookApiBaseUrl,
             hsUrl: matrixCredentials?.hs_url ?? null,
@@ -1082,7 +1118,6 @@ export const MainLayout: React.FC = () => {
         };
     }, [
         capabilityValues,
-        hubSession?.access_token,
         matrixCredentials?.access_token,
         matrixCredentials?.hs_url,
         matrixCredentials?.user_id,
@@ -1101,8 +1136,9 @@ export const MainLayout: React.FC = () => {
             }),
         [capabilityLoaded, capabilityValues, userType],
     );
-    const hasNotebookLocalWorkspace = Boolean(notebookWorkspaceAuth?.matrixUserId);
-    const notebookWorkspaceAvailable = hasNotebookLocalWorkspace;
+    const hasNotebookLocalWorkspace = Boolean(matrixCredentials?.user_id);
+    const notebookWorkspaceVisible = hasNotebookLocalWorkspace;
+    const notebookWorkspaceAvailable = Boolean(notebookWorkspaceAuth?.matrixUserId);
     useEffect(() => {
         if (!desktopUpdaterAvailable) return;
 
@@ -1147,12 +1183,70 @@ export const MainLayout: React.FC = () => {
         notebookUserSubRef.current = parseJwtSub(hubSession?.access_token);
     }, [hubSession?.access_token]);
 
-    const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<boolean> => {
-        if (!hubSession?.refresh_token) return false;
-        if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return false;
+    useEffect(() => {
+        if (!userType || !matrixCredentials) return;
+
+        const supabase = getSupabaseClient();
+        let active = true;
+
+        const syncStoreFromSession = (
+            nextSession: {
+                access_token?: string | null;
+                refresh_token?: string | null;
+                expires_at?: number | null;
+            } | null | undefined,
+        ): void => {
+            if (!active) return;
+            const normalized = toStoredHubSession(nextSession, hubSession?.refresh_token);
+            if (!normalized) return;
+            if (
+                normalized.access_token === hubSession?.access_token
+                && normalized.refresh_token === (hubSession?.refresh_token || "")
+                && normalized.expires_at === hubSession?.expires_at
+            ) {
+                return;
+            }
+            setHubSession(normalized);
+        };
+
+        void supabase.auth.getSession().then(({ data, error }) => {
+            if (!active || error) return;
+            if (data.session?.access_token) {
+                syncStoreFromSession(data.session);
+                return;
+            }
+            if (!hubSession?.access_token || !hubSession.refresh_token) return;
+            void supabase.auth.setSession({
+                access_token: hubSession.access_token,
+                refresh_token: hubSession.refresh_token,
+            }).catch(() => {
+                // ignore bootstrap sync failures; request-level refresh handles recovery
+            });
+        });
+
+        const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            syncStoreFromSession(nextSession);
+        });
+
+        return () => {
+            active = false;
+            data.subscription.unsubscribe();
+        };
+    }, [
+        hubSession?.access_token,
+        hubSession?.expires_at,
+        hubSession?.refresh_token,
+        matrixCredentials,
+        setHubSession,
+        userType,
+    ]);
+
+    const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<string | null> => {
+        if (!hubSession?.refresh_token) return null;
+        if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return null;
         if (notebookRefreshFlightRef.current) return notebookRefreshFlightRef.current;
 
-        const flight = (async (): Promise<boolean> => {
+        const flight = (async (): Promise<string | null> => {
             setRefreshingNotebookToken(true);
             try {
                 const supabase = getSupabaseClient();
@@ -1173,7 +1267,7 @@ export const MainLayout: React.FC = () => {
                 if (expectedSub && nextIdentity && expectedSub !== nextIdentity) {
                     clearSession();
                     setCapabilityError(t("layout.notebook.authFailed"));
-                    return false;
+                    return null;
                 }
 
                 setHubSession({
@@ -1186,7 +1280,7 @@ export const MainLayout: React.FC = () => {
                 notebookRefreshFailureCountRef.current = 0;
                 setCapabilityTokenRefreshSeq((prev) => prev + 1);
                 setCapabilityError(null);
-                return true;
+                return data.session.access_token;
             } catch (error) {
                 const status = (error as { status?: number } | null)?.status;
                 const message = error instanceof Error ? error.message : String(error ?? "");
@@ -1198,7 +1292,7 @@ export const MainLayout: React.FC = () => {
                     : Math.min(5000 * (2 ** Math.max(0, step - 1)), 60 * 1000);
                 notebookRefreshBackoffUntilRef.current = Date.now() + delayMs;
                 setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.authFailed"));
-                return false;
+                return null;
             } finally {
                 if (notebookRefreshFlightTimerRef.current) {
                     window.clearTimeout(notebookRefreshFlightTimerRef.current);
@@ -1218,6 +1312,71 @@ export const MainLayout: React.FC = () => {
         }, 20000);
         return flight;
     }, [clearSession, hubSession?.refresh_token, hubSession?.access_token, setHubSession, t]);
+
+    const buildNotebookAuthWithAccessToken = useCallback((accessToken: string) => {
+        return buildNotebookAuth({
+            hubSession: {
+                access_token: accessToken,
+                refresh_token: hubSession?.refresh_token || "",
+                expires_at: hubSession?.expires_at,
+            },
+            matrixCredentials,
+            userType,
+            capabilities: capabilityValues,
+            apiBaseUrl: resolvedNotebookApiBaseUrl,
+        }).notebookAuth;
+    }, [
+        capabilityValues,
+        hubSession?.expires_at,
+        hubSession?.refresh_token,
+        matrixCredentials,
+        resolvedNotebookApiBaseUrl,
+        userType,
+    ]);
+
+    const runHubSessionRequest = useCallback(async <T,>(
+        runner: (accessToken: string) => Promise<T>,
+    ): Promise<T> => {
+        if (!hubAccessToken) {
+            throw new Error("Missing hub access token");
+        }
+        try {
+            return await runner(hubAccessToken);
+        } catch (error) {
+            if (!isHubAuthFailure(error)) {
+                throw error;
+            }
+            const refreshedAccessToken = await refreshNotebookToken({ force: true });
+            if (!refreshedAccessToken) {
+                throw error;
+            }
+            return runner(refreshedAccessToken);
+        }
+    }, [hubAccessToken, refreshNotebookToken]);
+
+    const runNotebookAuthedRequest = useCallback(async <T,>(
+        runner: (auth: NonNullable<typeof notebookAuth>) => Promise<T>,
+    ): Promise<T> => {
+        if (!notebookAuth) {
+            throw new Error("Missing notebook auth");
+        }
+        try {
+            return await runner(notebookAuth);
+        } catch (error) {
+            if (!isNotebookAuthFailure(error)) {
+                throw error;
+            }
+            const refreshedAccessToken = await refreshNotebookToken({ force: true });
+            if (!refreshedAccessToken) {
+                throw error;
+            }
+            const refreshedAuth = buildNotebookAuthWithAccessToken(refreshedAccessToken);
+            if (!refreshedAuth) {
+                throw error;
+            }
+            return runner(refreshedAuth);
+        }
+    }, [buildNotebookAuthWithAccessToken, notebookAuth, refreshNotebookToken]);
 
     const retryNotebookCapability = useCallback(() => {
         notebookRefreshBackoffUntilRef.current = 0;
@@ -1270,6 +1429,7 @@ export const MainLayout: React.FC = () => {
         auth: notebookWorkspaceAuth,
         enabled: notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved),
         refreshToken: notebookRefreshToken,
+        onAuthFailure: async () => refreshNotebookToken({ force: true }),
     });
     const notebookRuntimeDebug = useMemo(() => ({
         userType,
@@ -1580,11 +1740,11 @@ export const MainLayout: React.FC = () => {
         setHubMeResolved(false);
         void (async () => {
             try {
-                const response = await hubGetMe({
-                    accessToken: hubAccessToken,
+                const response = await runHubSessionRequest((accessToken) => hubGetMe({
+                    accessToken,
                     hsUrl: matrixHsUrl,
                     matrixUserId: matrixCredentials?.user_id,
-                });
+                }));
                 if (!isActive) return;
                 setMeProfile(response.profile);
                 setNotebookApiBaseUrlOverride(response.notebook_api_base_url ?? null);
@@ -1613,7 +1773,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             isActive = false;
         };
-    }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id, notebookApiBaseUrlCacheKey]);
+    }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id, notebookApiBaseUrlCacheKey, runHubSessionRequest]);
 
     useEffect(() => {
         if (!notebookReady) {
@@ -1625,7 +1785,7 @@ export const MainLayout: React.FC = () => {
             return;
         }
         let alive = true;
-        void getCompanyNotebookAiSettings(notebookAuth)
+        void runNotebookAuthedRequest((auth) => getCompanyNotebookAiSettings(auth))
             .then((response) => {
                 if (!alive) return;
                 const raw = Number(response?.notebook_upload_max_mb ?? 20);
@@ -1639,7 +1799,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [effectiveNotebookApiBaseUrl, notebookAuth, notebookReady]);
+    }, [effectiveNotebookApiBaseUrl, notebookAuth, notebookReady, runNotebookAuthedRequest]);
 
     useEffect(() => {
         if (!notebookReady) {
@@ -1686,12 +1846,12 @@ export const MainLayout: React.FC = () => {
         let alive = true;
         setCapabilityLoaded(false);
         setCapabilityError(null);
-        void getNotebookCapabilities({
-            accessToken: capabilityToken,
-            apiBaseUrl: effectiveNotebookApiBaseUrl,
-            hsUrl: matrixHsUrl,
-            matrixUserId: matrixCredentials?.user_id,
-        }).then((result) => {
+        void runNotebookAuthedRequest((auth) => getNotebookCapabilities({
+            accessToken: auth.accessToken,
+            apiBaseUrl: auth.apiBaseUrl,
+            hsUrl: auth.hsUrl,
+            matrixUserId: auth.matrixUserId,
+        })).then((result) => {
             if (!alive) return;
             const values = Array.isArray(result.capabilities)
                 ? result.capabilities.filter((value): value is string => typeof value === "string")
@@ -1769,7 +1929,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, t, userType]);
+    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, runNotebookAuthedRequest, t, userType]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -1982,11 +2142,11 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (
             activeTab === "notebook" &&
-            !notebookWorkspaceAvailable
+            !notebookWorkspaceVisible
         ) {
             setActiveTab("chat");
         }
-    }, [activeTab, notebookWorkspaceAvailable]);
+    }, [activeTab, notebookWorkspaceVisible]);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -2034,7 +2194,7 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!isNotificationSoundSupported()) return;
         const unlock = (): void => {
-            ensureNotificationSoundEnabled();
+            ensureNotificationSoundEnabled({ userInitiated: true });
             window.removeEventListener("pointerdown", unlock);
             window.removeEventListener("keydown", unlock);
         };
@@ -2140,8 +2300,8 @@ export const MainLayout: React.FC = () => {
         setChatGlobalSearchLoading(true);
         setChatGlobalSearchError(null);
         try {
-            const response = await chatSearchGlobal({
-                accessToken: hubAccessToken,
+            const response = await runHubSessionRequest((accessToken) => chatSearchGlobal({
+                accessToken,
                 matrixAccessToken,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials.user_id,
@@ -2149,7 +2309,7 @@ export const MainLayout: React.FC = () => {
                 q,
                 limit: 20,
                 cursor: params?.cursor,
-            });
+            }));
             if (params?.append) {
                 setChatGlobalSearchResult((prev) => {
                     if (!prev) return response;
@@ -2179,7 +2339,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setChatGlobalSearchLoading(false);
         }
-    }, [debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl]);
+    }, [debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest]);
 
     useEffect(() => {
         if (!chatGlobalSearchOpen) return;
@@ -2207,15 +2367,15 @@ export const MainLayout: React.FC = () => {
         setSummarySearchLoading(true);
         setSummarySearchError(null);
         try {
-            const response = await chatSearchGlobal({
-                accessToken: hubAccessToken,
+            const response = await runHubSessionRequest((accessToken) => chatSearchGlobal({
+                accessToken,
                 matrixAccessToken,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials.user_id,
             }, {
                 q,
                 limit: 20,
-            });
+            }));
             const normalizedQuery = q.trim().toLowerCase();
             const normalizedQueryNoAt = normalizedQuery.startsWith("@") ? normalizedQuery.slice(1) : normalizedQuery;
             const queryLocalId = normalizedQueryNoAt.split(":")[0] || normalizedQueryNoAt;
@@ -2397,6 +2557,7 @@ export const MainLayout: React.FC = () => {
         matrixClient,
         matrixCredentials?.user_id,
         matrixHsUrl,
+        runHubSessionRequest,
         t,
     ]);
 
@@ -2426,28 +2587,39 @@ export const MainLayout: React.FC = () => {
         return candidates[0]?.roomId ?? null;
     }, [matrixClient]);
 
-    const loadSummaryJobs = useCallback(async () => {
+    const loadSummaryJobs = useCallback(async (options?: { background?: boolean }) => {
         if (!hubAccessToken) return;
-        setSummaryJobsLoading(true);
-        setSummaryJobsError(null);
+        const background = Boolean(options?.background);
+        if (background) {
+            setSummaryJobsRefreshing(true);
+        } else {
+            setSummaryJobsLoading(true);
+            setSummaryJobsError(null);
+        }
         try {
-            const response = await listChatSummaryJobs({
-                accessToken: hubAccessToken,
+            const response = await runHubSessionRequest((accessToken) => listChatSummaryJobs({
+                accessToken,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             setSummaryJobs(Array.isArray(response.items) ? response.items : []);
         } catch (error) {
             const message = error instanceof Error
                 ? mapChatSummaryErrorMessage(error.message, t)
                 : t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
             setSummaryJobsError(message);
-            setSummaryJobs([]);
+            if (!background) {
+                setSummaryJobs([]);
+            }
         } finally {
-            setSummaryJobsLoading(false);
+            if (background) {
+                setSummaryJobsRefreshing(false);
+            } else {
+                setSummaryJobsLoading(false);
+            }
         }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const hasProcessingSummaryJob = useMemo(
         () => summaryJobs.some((job) => job.status === "processing"),
@@ -2509,8 +2681,8 @@ export const MainLayout: React.FC = () => {
         setSummaryGenerationNoticeTone("info");
         try {
             const safeTargetLabel = summarySelectedTarget.label.trim() || roomId;
-            await createChatSummaryJob({
-                accessToken: hubAccessToken,
+            await runHubSessionRequest((accessToken) => createChatSummaryJob({
+                accessToken,
                 targetLabel: safeTargetLabel,
                 roomId,
                 fromDate: summaryStartDate,
@@ -2520,7 +2692,7 @@ export const MainLayout: React.FC = () => {
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             await loadSummaryJobs();
         } catch (error) {
             const message = error instanceof Error
@@ -2544,6 +2716,7 @@ export const MainLayout: React.FC = () => {
         matrixHsUrl,
         matrixCredentials?.user_id,
         loadSummaryJobs,
+        runHubSessionRequest,
         t,
     ]);
 
@@ -2551,13 +2724,13 @@ export const MainLayout: React.FC = () => {
         if (!hubAccessToken || !id) return;
         setSummaryJobActionBusy(true);
         try {
-            await deleteChatSummaryJob({
-                accessToken: hubAccessToken,
+            await runHubSessionRequest((accessToken) => deleteChatSummaryJob({
+                accessToken,
                 id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             await loadSummaryJobs();
         } catch (error) {
             const message = error instanceof Error
@@ -2567,19 +2740,19 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const onRetrySummaryJob = useCallback(async (id: string) => {
         if (!hubAccessToken || !id) return;
         setSummaryJobActionBusy(true);
         try {
-            await retryChatSummaryJob({
-                accessToken: hubAccessToken,
+            await runHubSessionRequest((accessToken) => retryChatSummaryJob({
+                accessToken,
                 id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             setSummaryGenerationNotice(t("layout.notebook.summaryRetryStarted", "Retry started."));
             setSummaryGenerationNoticeTone("info");
             await loadSummaryJobs();
@@ -2591,19 +2764,19 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const onDownloadSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken) return;
         setSummaryJobActionBusy(true);
         try {
-            const blob = await downloadChatSummaryJob({
-                accessToken: hubAccessToken,
+            const blob = await runHubSessionRequest((accessToken) => downloadChatSummaryJob({
+                accessToken,
                 id: job.id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             const compactStart = toCompactDateTime(job.from_date);
             const compactEnd = toCompactDateTime(job.to_date);
             const fileBase = `${job.target_label}聊天室总结${compactStart}${compactEnd}`.replace(/[\\/:*?"<>|]/g, "_");
@@ -2624,20 +2797,20 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const onPreviewSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken || !job?.id) return;
         setSummaryPreviewLoading(true);
         setSummaryPreviewError(null);
         try {
-            const detail = await getChatSummaryJob({
-                accessToken: hubAccessToken,
+            const detail = await runHubSessionRequest((accessToken) => getChatSummaryJob({
+                accessToken,
                 id: job.id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             setSummaryPreviewJob(detail);
         } catch (error) {
             const message = error instanceof Error ? error.message : "";
@@ -2645,13 +2818,13 @@ export const MainLayout: React.FC = () => {
                 || /404/.test(message);
             if (shouldFallbackToDownload) {
                 try {
-                    const blob = await downloadChatSummaryJob({
-                        accessToken: hubAccessToken,
+                    const blob = await runHubSessionRequest((accessToken) => downloadChatSummaryJob({
+                        accessToken,
                         id: job.id,
                         hsUrl: matrixHsUrl,
                         matrixUserId: matrixCredentials?.user_id ?? null,
                         matrixAccessToken,
-                    });
+                    }));
                     const summaryText = await blob.text();
                     setSummaryPreviewJob({
                         id: job.id,
@@ -2683,7 +2856,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryPreviewLoading(false);
         }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     useEffect(() => {
         if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
@@ -2694,7 +2867,7 @@ export const MainLayout: React.FC = () => {
         if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
         if (!hasProcessingSummaryJob) return;
         const timer = window.setInterval(() => {
-            void loadSummaryJobs();
+            void loadSummaryJobs({ background: true });
         }, 2500);
         return () => window.clearInterval(timer);
     }, [activeTab, hasProcessingSummaryJob, loadSummaryJobs, notebookSidebarMode]);
@@ -3042,7 +3215,7 @@ export const MainLayout: React.FC = () => {
             },
         ];
 
-        if (notebookWorkspaceAvailable) {
+        if (notebookWorkspaceVisible) {
             items.push({
                 key: "notebook",
                 icon: BookOpenIcon,
@@ -3085,7 +3258,7 @@ export const MainLayout: React.FC = () => {
         );
 
         return items;
-    }, [activeTab, inviteBadgeCount, notebookWorkspaceAvailable, openPrimaryTab, pluginNavItems, pluginRuntimeContextValue, t, unreadBadgeCount]);
+    }, [activeTab, inviteBadgeCount, notebookWorkspaceVisible, openPrimaryTab, pluginNavItems, pluginRuntimeContextValue, t, unreadBadgeCount]);
 
     const visibleSelectedRoomFiles = useMemo(
         () =>
@@ -3223,8 +3396,23 @@ export const MainLayout: React.FC = () => {
 
     const isFileSelected = (eventId: string): boolean => selectedFileIds.includes(eventId);
 
+    const allVisibleFilesSelected =
+        visibleSelectedRoomFiles.length > 0
+        && visibleSelectedRoomFiles.every((item) => selectedFileIds.includes(item.eventId));
+
     const toggleFileSelection = (eventId: string): void => {
         setSelectedFileIds((prev) => (prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId]));
+    };
+
+    const toggleSelectAllVisibleFiles = (): void => {
+        const visibleIds = visibleSelectedRoomFiles.map((item) => item.eventId);
+        if (visibleIds.length === 0) return;
+        setSelectedFileIds((prev) => {
+            if (visibleIds.every((id) => prev.includes(id))) {
+                return prev.filter((id) => !visibleIds.includes(id));
+            }
+            return Array.from(new Set([...prev, ...visibleIds]));
+        });
     };
 
     const onOpenFileItem = (item: FileLibraryItem): void => {
@@ -3335,8 +3523,29 @@ export const MainLayout: React.FC = () => {
         }
     };
 
+    const deleteFileRecord = async (
+        item: FileLibraryItem,
+        options?: { sendNotice?: boolean },
+    ): Promise<void> => {
+        if (!matrixClient || !matrixCredentials?.user_id) {
+            throw new Error("MATRIX_CLIENT_UNAVAILABLE");
+        }
+        await matrixClient.redactEvent(item.roomId, item.eventId);
+        if (matrixCredentials.hs_url && matrixCredentials.access_token) {
+            await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
+        }
+        if (options?.sendNotice === false) {
+            return;
+        }
+        const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
+        await matrixClient.sendEvent(item.roomId, EventType.RoomMessage, {
+            msgtype: "m.notice",
+            body: t("chat.fileRevokedNotice", { name: selfLabel }),
+        } as never);
+    };
+
     const onDeleteBatchFiles = async (): Promise<void> => {
-        if (fileBatchDeleting) return;
+        if (fileBatchDeleting || !matrixClient) return;
         if (selectedFileIds.length === 0) return;
         const targets = selectedRoomFiles.filter((item) => selectedFileIds.includes(item.eventId));
         if (targets.length === 0) return;
@@ -3348,26 +3557,47 @@ export const MainLayout: React.FC = () => {
             targetCount: targets.length,
         });
         let failed = 0;
+        let succeeded = 0;
         let mappedError: "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" | null = null;
-        for (let i = 0; i < targets.length; i += 1) {
-            const item = targets[i];
+
+        const queue = [...targets];
+        let completed = 0;
+        const workerCount = Math.min(FILE_BATCH_DELETE_CONCURRENCY, queue.length);
+
+        const runWorker = async (): Promise<void> => {
+            while (queue.length > 0) {
+                const item = queue.shift();
+                if (!item) return;
+                try {
+                    await deleteFileRecord(item, { sendNotice: false });
+                    succeeded += 1;
+                } catch (error) {
+                    failed += 1;
+                    if (!mappedError) {
+                        mappedError = mapMediaActionError(error);
+                    }
+                } finally {
+                    completed += 1;
+                    setFileBatchDeleteProgress({ done: completed, total: targets.length });
+                }
+            }
+        };
+
+        await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+        if (succeeded > 0 && selectedFileRoomId) {
+            const selfLabel = getLocalPart(matrixCredentials?.user_id) || matrixCredentials?.user_id || "user";
             try {
-                await matrixClient?.redactEvent(item.roomId, item.eventId);
-                if (matrixCredentials?.hs_url && matrixCredentials.access_token) {
-                    await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
-                }
-                const selfLabel = getLocalPart(matrixCredentials?.user_id) || matrixCredentials?.user_id || "user";
-                await matrixClient?.sendEvent(item.roomId, EventType.RoomMessage, {
+                await matrixClient.sendEvent(selectedFileRoomId, EventType.RoomMessage, {
                     msgtype: "m.notice",
-                    body: t("chat.fileRevokedNotice", { name: selfLabel }),
+                    body: t("layout.fileBatchRevokedNotice", {
+                        name: selfLabel,
+                        count: succeeded,
+                        defaultValue: `${selfLabel} revoked ${succeeded} files`,
+                    }),
                 } as never);
-            } catch (error) {
-                failed += 1;
-                if (!mappedError) {
-                    mappedError = mapMediaActionError(error);
-                }
-            } finally {
-                setFileBatchDeleteProgress({ done: i + 1, total: targets.length });
+            } catch {
+                // Keep batch delete fast; file redactions already succeeded.
             }
         }
         setSelectedFileIds([]);
@@ -3399,6 +3629,11 @@ export const MainLayout: React.FC = () => {
         <div className="mx-auto w-full min-w-0 max-w-none">
             <div className="mb-4 text-base font-semibold text-slate-800 dark:text-slate-100">
                 {t("layout.notebook.summaryWorkspaceTitle", "AI Chat Summary")}
+                {summaryJobsRefreshing ? (
+                    <span className="ml-2 text-xs font-medium text-slate-400 dark:text-slate-500">
+                        {t("layout.notebook.summaryRefreshing", "Refreshing...")}
+                    </span>
+                ) : null}
             </div>
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-6 dark:border-slate-700 dark:bg-slate-950">
                 {summaryGenerationNotice ? (
@@ -3431,12 +3666,27 @@ export const MainLayout: React.FC = () => {
                             <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                                 {`${formatSummaryDisplayDateTime(summaryPreviewJob.from_date)} ~ ${formatSummaryDisplayDateTime(summaryPreviewJob.to_date)}`}
                             </div>
-                            <pre className="max-h-[56vh] max-w-full overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                                {summaryPreviewJob.summary_text || ""}
-                            </pre>
+                            <div className="max-h-[56vh] max-w-full overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                                <div className="prose prose-sm max-w-none whitespace-pre-wrap break-words text-slate-700 prose-a:text-emerald-600 prose-a:underline dark:prose-invert dark:text-slate-200 dark:prose-a:text-emerald-300">
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm, remarkBreaks]}
+                                        components={{
+                                            a: ({ ...props }) => (
+                                                <a
+                                                    {...props}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                />
+                                            ),
+                                        }}
+                                    >
+                                        {summaryPreviewJob.summary_text || ""}
+                                    </ReactMarkdown>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                ) : summaryJobsLoading ? (
+                ) : summaryJobsLoading && summaryJobs.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
                         {t("layout.notebook.summaryJobsLoading", "Loading summary list...")}
                     </div>
@@ -3561,12 +3811,12 @@ export const MainLayout: React.FC = () => {
             }`}
         >
             <div className="border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
-                <div className="px-3 pb-2 pt-[calc(env(safe-area-inset-top,0px)+0.6rem)]">
+                <div className="px-3 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1.95rem)]">
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
                             onClick={() => openPrimaryTab("account")}
-                            className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#2F5C56] text-sm font-bold text-white shadow-sm"
+                            className="mt-[0.2rem] inline-flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#2F5C56] text-sm font-bold text-white shadow-sm"
                             aria-label={t("layout.accountSettings")}
                         >
                             {accountAvatarUrl ? (
@@ -3575,7 +3825,7 @@ export const MainLayout: React.FC = () => {
                                 accountInitial
                             )}
                         </button>
-                        <div className="min-w-0 flex-1 overflow-x-auto pb-1">
+                        <div className="min-w-0 flex-1 overflow-x-auto pb-1.5 pt-[0.35rem]">
                             <div className="flex min-w-max items-center gap-2 pr-1">
                                 {mobileNavItems.map((item) => (
                                     <MobileNavChip
@@ -3657,7 +3907,7 @@ export const MainLayout: React.FC = () => {
                         }}
                         className="order-2 lg:order-none"
                     />
-                    {notebookWorkspaceAvailable && (
+                    {notebookWorkspaceVisible && (
                         <NavBarItem
                             icon={BookOpenIcon}
                             active={activeTab === "notebook"}
@@ -4648,13 +4898,13 @@ export const MainLayout: React.FC = () => {
                             description="The local file index is being restored first so room navigation stays smooth."
                         />
                     ) : (
-                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white dark:bg-slate-900">
                         {!selectedRoomSummary ? (
                             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
                                 {t("layout.fileNoRoomSelected")}
                             </div>
                         ) : (
-                            <div className="flex-1 flex flex-col">
+                            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                                 <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-100 dark:border-slate-800">
                                     <button
                                         type="button"
@@ -4707,14 +4957,26 @@ export const MainLayout: React.FC = () => {
                                                 })
                                                 : t("layout.fileBatchSelectedCount", { count: selectedFileIds.length })}
                                         </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => void onDeleteBatchFiles()}
-                                            disabled={fileBatchDeleting || selectedFileIds.length === 0}
-                                            className="rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            {fileBatchDeleting ? t("layout.fileDeletingBusy") : t("layout.fileBatchDelete")}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={toggleSelectAllVisibleFiles}
+                                                disabled={fileBatchDeleting || visibleSelectedRoomFiles.length === 0}
+                                                className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:border-emerald-400 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300 dark:hover:border-emerald-500 dark:hover:bg-emerald-900/30"
+                                            >
+                                                {allVisibleFilesSelected
+                                                    ? t("layout.fileBatchDeselectAll", "取消全选")
+                                                    : t("layout.fileBatchSelectAll", "全选")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void onDeleteBatchFiles()}
+                                                disabled={fileBatchDeleting || selectedFileIds.length === 0}
+                                                className="rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                {fileBatchDeleting ? t("layout.fileDeletingBusy") : t("layout.fileBatchDelete")}
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                                 <div className="px-6 pt-4">
@@ -4758,7 +5020,7 @@ export const MainLayout: React.FC = () => {
                                         <span>{t("layout.fileColumnActions")}</span>
                                     </div>
                                 </div>
-                                <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar px-6 pb-6 space-y-2">
+                                <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] space-y-2 touch-pan-y">
                                     {visibleSelectedRoomFiles.length === 0 ? (
                                         <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-base text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                                             {t("layout.fileListEmptyInRoom")}
@@ -4768,31 +5030,60 @@ export const MainLayout: React.FC = () => {
                                             const fileType = getFileTypeGroup(item);
                                             const ext = getFileExtension(item.body, item.mimeType);
                                             return (
-                                                <div key={item.eventId} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950 sm:grid sm:grid-cols-[32px_84px_90px_90px_1fr] sm:items-center sm:gap-3 sm:px-3 sm:py-3">
-                                                    <div className="hidden items-center justify-center sm:flex">
+                                                <div
+                                                    key={item.eventId}
+                                                    onClick={fileBatchMode ? () => toggleFileSelection(item.eventId) : undefined}
+                                                    className={`flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950 sm:grid sm:grid-cols-[32px_84px_90px_90px_1fr] sm:items-center sm:gap-3 sm:px-3 sm:py-3 ${
+                                                        fileBatchMode ? "cursor-pointer" : ""
+                                                    }`}
+                                                >
+                                                    <div className={fileBatchMode ? "flex w-6 shrink-0 items-center justify-center" : "hidden items-center justify-center sm:flex"}>
                                                         {fileBatchMode ? (
                                                             <input
                                                                 type="checkbox"
                                                                 checked={isFileSelected(item.eventId)}
                                                                 onChange={() => toggleFileSelection(item.eventId)}
+                                                                onClick={(event) => event.stopPropagation()}
                                                                 className="h-4 w-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900"
                                                             />
-                                                        ) : null}
+                                                        ) : <span />}
                                                     </div>
                                                     <div className="h-14 w-20 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                                                         {fileType === "image" && fileThumbnailUrls[item.eventId] ? (
-                                                            <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
+                                                            <button
+                                                                type="button"
+                                                                disabled={fileBatchMode}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    if (fileBatchMode) return;
+                                                                    onPreviewFileItem(item);
+                                                                }}
+                                                                className="h-full w-full disabled:cursor-default"
+                                                            >
                                                                 <img src={fileThumbnailUrls[item.eventId]} alt={item.body} className="h-full w-full object-cover" />
                                                             </button>
                                                         ) : fileType === "video" && fileThumbnailUrls[item.eventId] ? (
-                                                            <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
+                                                            <button
+                                                                type="button"
+                                                                disabled={fileBatchMode}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    if (fileBatchMode) return;
+                                                                    onPreviewFileItem(item);
+                                                                }}
+                                                                className="h-full w-full disabled:cursor-default"
+                                                            >
                                                                 <video src={fileThumbnailUrls[item.eventId]} className="h-full w-full object-cover" muted preload="metadata" />
                                                             </button>
                                                         ) : (
                                                             <button
                                                                 type="button"
-                                                                onClick={() => onPreviewFileItem(item)}
-                                                                disabled={fileType === "other"}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    if (fileBatchMode || fileType === "other") return;
+                                                                    onPreviewFileItem(item);
+                                                                }}
+                                                                disabled={fileBatchMode || fileType === "other"}
                                                                 className="flex h-full w-full items-center justify-center text-sm font-semibold text-slate-500 disabled:cursor-default dark:text-slate-300"
                                                             >
                                                                 {ext}

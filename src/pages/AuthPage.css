@@ -440,24 +440,36 @@
 
 @media (max-width: 720px) {
     .gt_app {
+        min-height: 100svh;
+        height: 100svh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
         padding:
-            max(16px, env(safe-area-inset-top))
-            12px
-            calc(24px + env(safe-area-inset-bottom));
+            max(8px, env(safe-area-inset-top))
+            10px
+            calc(10px + env(safe-area-inset-bottom));
+    }
+
+    .gt_header {
+        gap: 10px;
+        margin-bottom: 10px;
     }
 
     .gt_auth {
-        padding: 18px 14px 20px;
-        border-radius: 20px;
+        padding: 12px 12px 14px;
+        border-radius: 18px;
     }
 
     .gt_tabs {
-        flex-direction: column;
-        gap: 10px;
+        flex-direction: row;
+        gap: 8px;
+        margin-bottom: 12px;
     }
 
     .gt_actions {
-        flex-direction: column;
+        gap: 8px;
     }
 
     .gt_tab,
@@ -466,7 +478,75 @@
     .gt_secondary,
     .gt_link,
     .gt_langSelect {
+        font-size: 14px;
+    }
+
+    .gt_title {
+        font-size: 21px;
+    }
+
+    .gt_subtitle {
+        display: none;
+    }
+
+    .gt_lang {
+        width: 100%;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 10px;
+    }
+
+    .gt_langLabel {
+        font-size: 11px;
+    }
+
+    .gt_langSelect {
+        min-width: 132px;
+        padding: 5px 10px;
+    }
+
+    .gt_cardHeader h2 {
+        font-size: 17px;
+    }
+
+    .gt_cardHeader p {
+        margin-top: 3px;
+        font-size: 12px;
+        line-height: 1.3;
+    }
+
+    .gt_form {
+        margin-top: 12px;
+        gap: 10px;
+    }
+
+    .gt_field {
+        gap: 4px;
+        font-size: 12px;
+    }
+
+    .gt_field input,
+    .gt_field select {
+        padding: 9px 11px;
         font-size: 16px;
+    }
+
+    .gt_googleButton,
+    .gt_primary,
+    .gt_secondary {
+        padding: 10px 14px;
+    }
+
+    .gt_hint,
+    .gt_error,
+    .gt_success {
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    .gt_separator {
+        margin-top: 2px;
+        font-size: 11px;
     }
 
     .gt_modalBackdrop {
@@ -485,9 +565,55 @@
         padding: 18px 14px 20px;
     }
 
+}
+
+@media (max-width: 720px) and (max-height: 820px) {
+    .gt_app {
+        padding:
+            max(6px, env(safe-area-inset-top))
+            8px
+            calc(8px + env(safe-area-inset-bottom));
+    }
+
     .gt_header {
-        gap: 16px;
-        margin-bottom: 24px;
+        margin-bottom: 8px;
+    }
+
+    .gt_title {
+        font-size: 19px;
+    }
+
+    .gt_auth {
+        padding: 10px;
+        border-radius: 18px;
+    }
+
+    .gt_tabs {
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+
+    .gt_tab {
+        padding: 10px 12px;
+    }
+
+    .gt_cardHeader h2 {
+        font-size: 16px;
+    }
+
+    .gt_cardHeader p {
+        font-size: 11px;
+    }
+
+    .gt_form {
+        margin-top: 10px;
+        gap: 8px;
+    }
+
+    .gt_googleButton,
+    .gt_primary,
+    .gt_secondary {
+        padding: 9px 12px;
     }
 }
 

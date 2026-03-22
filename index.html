@@ -10,6 +10,7 @@
     <div id="root"></div>
     <script type="module">
       const root = document.getElementById("root");
+      let bootPhase = true;
       const renderBootError = (errorLike) => {
         if (!root) return;
         const message = errorLike instanceof Error
@@ -27,17 +28,28 @@
         `;
       };
 
-      window.addEventListener("error", (event) => {
+      const handleWindowError = (event) => {
+        if (!bootPhase) return;
         if (event.error || event.message) {
           renderBootError(event.error || event.message);
         }
-      });
+      };
 
-      window.addEventListener("unhandledrejection", (event) => {
+      const handleUnhandledRejection = (event) => {
+        if (!bootPhase) return;
         renderBootError(event.reason);
-      });
+      };
 
-      import("/src/main.tsx").catch(renderBootError);
+      window.addEventListener("error", handleWindowError);
+      window.addEventListener("unhandledrejection", handleUnhandledRejection);
+
+      import("/src/main.tsx")
+        .then(() => {
+          bootPhase = false;
+          window.removeEventListener("error", handleWindowError);
+          window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+        })
+        .catch(renderBootError);
     </script>
   </body>
 </html>

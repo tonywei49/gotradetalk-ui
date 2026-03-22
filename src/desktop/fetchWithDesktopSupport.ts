@@ -25,7 +25,16 @@ function shouldBypassDesktopBridge(url: URL): boolean {
 function shouldForceInvokeBridge(url: URL): boolean {
     if (!isTauriMobile()) return false;
     const hostname = url.hostname.toLowerCase();
-    return hostname === "notebook-api.gotradetalk.com" || hostname.startsWith("notebook-api.");
+    if (hostname === "notebook-api.gotradetalk.com" || hostname.startsWith("notebook-api.")) {
+        return true;
+    }
+
+    const pathname = url.pathname;
+    if (pathname === "/_matrix/client/v3/login" || pathname === "/_matrix/client/r0/login") {
+        return true;
+    }
+
+    return false;
 }
 
 export function setNativeFetch(fetchImpl: typeof fetch): void {
@@ -95,13 +104,18 @@ export async function fetchWithDesktopSupport(input: URL | Request | string, ini
         const resolvedUrl = typeof window === "undefined"
             ? new URL(toRequestUrl(input))
             : new URL(toRequestUrl(input), window.location.href);
+        const fallbackFetch = nativeFetchRef ?? fetch;
+        const forceInvokeBridge = shouldForceInvokeBridge(resolvedUrl);
         try {
-            if (shouldForceInvokeBridge(resolvedUrl)) {
+            if (forceInvokeBridge) {
                 throw new Error("force-invoke-bridge");
             }
             return await tauriHttpFetch(input, init);
         } catch (pluginError) {
             console.warn("Plugin HTTP fetch failed, falling back to invoke bridge:", pluginError);
+            if (isTauriMobile() && !forceInvokeBridge) {
+                return fallbackFetch(input, init);
+            }
             const payload = {
                 url: toRequestUrl(input),
                 method: init?.method ?? (input instanceof Request ? input.method : "GET"),

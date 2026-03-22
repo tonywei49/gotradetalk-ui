@@ -277,6 +277,8 @@
         "fileBatchDelete": "Delete selected",
         "fileBatchSelectedCount": "{{count}} selected",
         "fileBatchDeletingProgress": "Deleting {{done}} / {{total}}",
+        "fileBatchSelectAll": "Select all",
+        "fileBatchDeselectAll": "Clear all",
         "fileDeletingBusy": "Deleting...",
         "fileBatchModeTitle": "Batch mode enabled",
         "fileBatchModeHint": "Select files in the left panel, then delete them in batch.",

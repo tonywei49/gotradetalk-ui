@@ -277,6 +277,8 @@
         "fileBatchDelete": "刪除已選",
         "fileBatchSelectedCount": "已選擇 {{count}} 個",
         "fileBatchDeletingProgress": "刪除中 {{done}} / {{total}}",
+        "fileBatchSelectAll": "全選",
+        "fileBatchDeselectAll": "取消全選",
         "fileDeletingBusy": "刪除中...",
         "fileBatchModeTitle": "已開啟批量模式",
         "fileBatchModeHint": "請在左側選擇檔案，然後執行批量刪除。",
