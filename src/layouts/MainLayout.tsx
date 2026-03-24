@@ -92,6 +92,7 @@ import {
     NotebookServiceError,
 } from "../services/notebookApi";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
+import { isNotebookTerminalAuthFailure, type NotebookTerminalAuthFailureSignal } from "../features/notebook/utils/isNotebookTerminalAuthFailure";
 import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
 import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from "../desktop/useDesktopUpdater";
 import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
@@ -1175,6 +1176,32 @@ export const MainLayout: React.FC = () => {
         pushToast("warn", capabilityError, 5000);
     }, [capabilityError, capabilityLoaded, desktopUpdaterAvailable, hubMeResolved, pushToast]);
 
+    const clearLocalAuthSession = useCallback((): void => {
+        clearSession();
+        void getSupabaseClient()
+            .auth.signOut({ scope: "local" })
+            .catch(() => {
+                // ignore local sign-out failures during session cleanup
+            });
+    }, [clearSession]);
+
+    const onLogout = useCallback((): void => {
+        clearLocalAuthSession();
+        navigate("/auth", { replace: true });
+    }, [clearLocalAuthSession, navigate]);
+
+    const notebookTerminalLogoutHandledRef = useRef(false);
+    useEffect(() => {
+        notebookTerminalLogoutHandledRef.current = false;
+    }, [hubSession?.access_token, matrixCredentials?.user_id]);
+
+    const triggerNotebookTerminalLogout = useCallback((signal: NotebookTerminalAuthFailureSignal): void => {
+        if (notebookTerminalLogoutHandledRef.current) return;
+        if (!isNotebookTerminalAuthFailure(signal)) return;
+        notebookTerminalLogoutHandledRef.current = true;
+        onLogout();
+    }, [onLogout]);
+
     const resolveAvatarUrl = useCallback((mxcUrl: string | null | undefined): string | null => {
         if (!matrixClient || !mxcUrl) return null;
         return matrixClient.mxcUrlToHttp(mxcUrl, 96, 96, "crop") ?? matrixClient.mxcUrlToHttp(mxcUrl) ?? null;
@@ -1265,8 +1292,11 @@ export const MainLayout: React.FC = () => {
                 const nextSub = parseJwtSub(data.session.access_token);
                 const nextIdentity = nextUserId || nextSub;
                 if (expectedSub && nextIdentity && expectedSub !== nextIdentity) {
-                    clearSession();
-                    setCapabilityError(t("layout.notebook.authFailed"));
+                    triggerNotebookTerminalLogout({
+                        code: "INVALID_AUTH_TOKEN",
+                        status: 401,
+                        terminal: true,
+                    });
                     return null;
                 }
 
@@ -1291,7 +1321,21 @@ export const MainLayout: React.FC = () => {
                     ? Math.min(15000 * (2 ** Math.max(0, step - 1)), 5 * 60 * 1000)
                     : Math.min(5000 * (2 ** Math.max(0, step - 1)), 60 * 1000);
                 notebookRefreshBackoffUntilRef.current = Date.now() + delayMs;
-                setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.authFailed"));
+                const isAuthFailure =
+                    status === 401
+                    || message === "INVALID_AUTH_TOKEN"
+                    || message.includes("Invalid Refresh Token")
+                    || message.includes("NO_VALID_HUB_TOKEN")
+                    || message.includes("INVALID_TOKEN_TYPE");
+                if (isAuthFailure) {
+                    triggerNotebookTerminalLogout({
+                        code: "INVALID_AUTH_TOKEN",
+                        status: 401,
+                        terminal: true,
+                    });
+                    return null;
+                }
+                setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.capabilityLoadFailed"));
                 return null;
             } finally {
                 if (notebookRefreshFlightTimerRef.current) {
@@ -1311,7 +1355,7 @@ export const MainLayout: React.FC = () => {
             }
         }, 20000);
         return flight;
-    }, [clearSession, hubSession?.refresh_token, hubSession?.access_token, setHubSession, t]);
+    }, [hubSession?.refresh_token, hubSession?.access_token, setHubSession, t, triggerNotebookTerminalLogout]);
 
     const buildNotebookAuthWithAccessToken = useCallback((accessToken: string) => {
         return buildNotebookAuth({
@@ -1431,56 +1475,18 @@ export const MainLayout: React.FC = () => {
         refreshToken: notebookRefreshToken,
         onAuthFailure: async () => refreshNotebookToken({ force: true }),
     });
-    const notebookRuntimeDebug = useMemo(() => ({
-        userType,
-        hubMeResolved,
-        configuredNotebookApiBaseUrl: configuredNotebookApiBaseUrl ?? null,
-        notebookApiBaseUrlOverride: notebookApiBaseUrlOverride ?? null,
-        effectiveNotebookApiBaseUrl: effectiveNotebookApiBaseUrl ?? null,
-        notebookReady,
-        notebookWorkspaceAvailable,
-        hasHubAccessToken: Boolean(hubAccessToken),
-        hasMatrixAccessToken: Boolean(matrixCredentials?.access_token),
-        matrixUserId: matrixCredentials?.user_id ?? null,
-        notebookTokenReason: notebookToken.reason,
-        hasNotebookAuth: Boolean(notebookAuth?.accessToken),
-        hasNotebookWorkspaceAuth: Boolean(notebookWorkspaceAuth?.accessToken),
-        capabilityLoaded,
-        capabilityError,
-        capabilityValues,
-        listState: notebookModule.listState,
-        listError: notebookModule.listError,
-        actionError: notebookModule.actionError,
-        requestDebugPath: notebookModule.requestDebug?.path ?? null,
-        requestDebugStatus: notebookModule.requestDebug?.response?.status ?? notebookModule.requestDebug?.error?.status ?? null,
-        requestDebugMethod: notebookModule.requestDebug?.method ?? null,
-        requestDebugUrl: notebookModule.requestDebug?.url ?? null,
-        requestDebugQuery: notebookModule.requestDebug?.query ?? null,
-        requestDebugRequestBody: notebookModule.requestDebug?.requestBody ?? null,
-        requestDebugResponse: notebookModule.requestDebug?.response ?? null,
-        requestDebugError: notebookModule.requestDebug?.error ?? null,
-    }), [
-        userType,
-        hubMeResolved,
-        configuredNotebookApiBaseUrl,
-        notebookApiBaseUrlOverride,
-        effectiveNotebookApiBaseUrl,
-        notebookReady,
-        notebookWorkspaceAvailable,
-        hubAccessToken,
-        matrixCredentials?.access_token,
-        matrixCredentials?.user_id,
-        notebookToken.reason,
-        notebookAuth?.accessToken,
-        notebookWorkspaceAuth?.accessToken,
-        capabilityLoaded,
-        capabilityError,
-        capabilityValues,
-        notebookModule.listState,
-        notebookModule.listError,
-        notebookModule.actionError,
-        notebookModule.requestDebug,
-    ]);
+    useEffect(() => {
+        const debugError = notebookModule.requestDebug?.error;
+        if (!debugError) return;
+        if (!notebookModule.listError && !notebookModule.actionError) return;
+        const signal = {
+            code: debugError.code,
+            status: debugError.status,
+            terminal: debugError.status === 401,
+        } satisfies NotebookTerminalAuthFailureSignal;
+        if (!isNotebookTerminalAuthFailure(signal)) return;
+        triggerNotebookTerminalLogout(signal);
+    }, [notebookModule.actionError, notebookModule.listError, notebookModule.requestDebug, triggerNotebookTerminalLogout]);
     useEffect(() => {
         if (!notebookReady) return;
         if (userType === "client" && notebookModule.sourceScope === "company") {
@@ -1819,13 +1825,24 @@ export const MainLayout: React.FC = () => {
                     }
                     return;
                 }
-                setCapabilityLoaded(true);
-                setCapabilityError(t("layout.notebook.authFailed"));
+                triggerNotebookTerminalLogout({
+                    code: notebookToken.reason === "missing_hub_token"
+                        ? "NO_VALID_HUB_TOKEN"
+                        : notebookToken.reason === "invalid_hub_token_format"
+                            ? "INVALID_TOKEN_TYPE"
+                            : "INVALID_AUTH_TOKEN",
+                    status: 401,
+                    terminal: true,
+                });
                 return;
             }
             setCapabilityLoaded(true);
             setCapabilityValues([]);
-            setCapabilityError(t("layout.notebook.authFailed"));
+            triggerNotebookTerminalLogout({
+                code: "INVALID_AUTH_TOKEN",
+                status: 401,
+                terminal: true,
+            });
             return;
         }
         if (!hubMeResolved) {
@@ -1886,7 +1903,11 @@ export const MainLayout: React.FC = () => {
                     error.code === "INVALID_TOKEN_TYPE" ||
                     error.status === 401
                 ) {
-                    setCapabilityError(`${t("layout.notebook.authFailed")} (${error.code} / HTTP ${error.status})`);
+                    triggerNotebookTerminalLogout({
+                        code: error.code,
+                        status: error.status,
+                        terminal: true,
+                    });
                     return;
                 }
                 if (error.code === "CAPABILITY_DISABLED") {
@@ -1929,7 +1950,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, runNotebookAuthedRequest, t, userType]);
+    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, runNotebookAuthedRequest, t, triggerNotebookTerminalLogout, userType]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -2205,20 +2226,6 @@ export const MainLayout: React.FC = () => {
             window.removeEventListener("keydown", unlock);
         };
     }, []);
-
-    const clearLocalAuthSession = useCallback((): void => {
-        clearSession();
-        void getSupabaseClient()
-            .auth.signOut({ scope: "local" })
-            .catch(() => {
-                // ignore local sign-out failures during session cleanup
-            });
-    }, [clearSession]);
-
-    const onLogout = (): void => {
-        clearLocalAuthSession();
-        navigate("/auth", { replace: true });
-    };
 
     useEffect(() => {
         let handled = false;
@@ -4387,7 +4394,6 @@ export const MainLayout: React.FC = () => {
                             manualSyncAvailable={notebookModule.hasRemoteNotebookApi}
                             busy={notebookModule.actionBusy}
                             listRefreshing={notebookModule.listRefreshing}
-                            runtimeDebug={notebookRuntimeDebug}
                             hasMore={notebookModule.hasMore}
                             loadingMore={notebookModule.loadingMore}
                             onLoadMore={() => {

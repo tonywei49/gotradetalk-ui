@@ -32,7 +32,6 @@ export type SummaryDirectionPayload = {
 type NotebookSidebarProps = {
     listState: NotebookListState;
     listError: string | null;
-    runtimeDebug?: Record<string, unknown> | null;
     search: string;
     onSearchChange: (value: string) => void;
     items: NotebookItem[];
@@ -87,7 +86,6 @@ function typeChip(isIndexable: boolean): string {
 export function NotebookSidebar({
     listState,
     listError,
-    runtimeDebug = null,
     search,
     onSearchChange,
     items,
@@ -641,9 +639,7 @@ export function NotebookSidebar({
                 )}
                 {mode === "notebook" && listState === "error" && (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-base text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                        {(runtimeDebug?.notebookTokenReason === "expired_hub_token" || runtimeDebug?.notebookTokenReason === "invalid_hub_token")
-                            ? t("layout.notebook.authFailed", "Notebook 驗證失敗，請重新登入")
-                            : (listError || t("layout.notebook.loadItemsFailed", "Failed to load notebook."))}
+                        {listError || t("layout.notebook.loadItemsFailed", "Failed to load notebook.")}
                     </div>
                 )}
                 {mode === "notebook" && listState === "empty" && (
