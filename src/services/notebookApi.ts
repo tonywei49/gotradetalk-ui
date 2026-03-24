@@ -22,12 +22,49 @@ export class NotebookServiceError extends Error {
 
     public readonly code: NotebookApiErrorCode;
 
-    constructor(message: string, status: number, code: NotebookApiErrorCode) {
+    public readonly details: unknown;
+
+    constructor(message: string, status: number, code: NotebookApiErrorCode, details: unknown = null) {
         super(message);
         this.name = "NotebookServiceError";
         this.status = status;
         this.code = code;
+        this.details = details;
     }
+}
+
+export type NotebookRequestDebugSnapshot = {
+    timestamp: string;
+    method: string;
+    path: string;
+    url: string;
+    query: Record<string, string>;
+    requestBody: unknown;
+    auth: {
+        apiBaseUrl: string | null;
+        hsUrl: string | null;
+        matrixUserId: string | null;
+        accessTokenPresent: boolean;
+        accessTokenKind: "hub-jwt" | "non-jwt" | "missing";
+        matrixAccessTokenPresent: boolean;
+    };
+    response: {
+        ok: boolean;
+        status: number | null;
+        statusText: string | null;
+        body: unknown;
+    } | null;
+    error: {
+        message: string;
+        code: string | null;
+        status: number | null;
+    } | null;
+};
+
+let lastNotebookRequestDebugSnapshot: NotebookRequestDebugSnapshot | null = null;
+
+export function getLastNotebookRequestDebugSnapshot(): NotebookRequestDebugSnapshot | null {
+    return lastNotebookRequestDebugSnapshot;
 }
 
 export type NotebookApiAuth = {
@@ -181,6 +218,72 @@ function normalizeBaseUrl(value: string): string {
     return value.replace(/\/+$/, "");
 }
 
+function truncateString(value: string, maxLength = 600): string {
+    if (value.length <= maxLength) return value;
+    return `${value.slice(0, maxLength)}…(${value.length - maxLength} more chars)`;
+}
+
+function sanitizeDebugValue(value: unknown): unknown {
+    if (value == null) return value;
+    if (typeof value === "string") return truncateString(value);
+    if (typeof value === "number" || typeof value === "boolean") return value;
+    if (Array.isArray(value)) {
+        return value.slice(0, 20).map((entry) => sanitizeDebugValue(entry));
+    }
+    if (typeof value === "object") {
+        const entries = Object.entries(value as Record<string, unknown>).slice(0, 30);
+        return Object.fromEntries(entries.map(([key, entry]) => [key, sanitizeDebugValue(entry)]));
+    }
+    return String(value);
+}
+
+function parseQuery(url: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    const parsed = new URL(url);
+    parsed.searchParams.forEach((value, key) => {
+        result[key] = value;
+    });
+    return result;
+}
+
+function tokenKind(token: string | null | undefined): "hub-jwt" | "non-jwt" | "missing" {
+    if (!token?.trim()) return "missing";
+    return isLikelyHubJwtToken(token) ? "hub-jwt" : "non-jwt";
+}
+
+function setNotebookRequestDebugSnapshot(snapshot: NotebookRequestDebugSnapshot): void {
+    lastNotebookRequestDebugSnapshot = snapshot;
+}
+
+function createNotebookRequestDebugSnapshot(params: {
+    auth: NotebookApiAuth;
+    method: string;
+    path: string;
+    url: string;
+    requestBody?: unknown;
+    response?: NotebookRequestDebugSnapshot["response"];
+    error?: NotebookRequestDebugSnapshot["error"];
+}): NotebookRequestDebugSnapshot {
+    return {
+        timestamp: new Date().toISOString(),
+        method: params.method,
+        path: params.path,
+        url: params.url,
+        query: parseQuery(params.url),
+        requestBody: sanitizeDebugValue(params.requestBody ?? null),
+        auth: {
+            apiBaseUrl: params.auth.apiBaseUrl ?? null,
+            hsUrl: params.auth.hsUrl ?? null,
+            matrixUserId: params.auth.matrixUserId ?? null,
+            accessTokenPresent: Boolean(params.auth.accessToken?.trim()),
+            accessTokenKind: tokenKind(params.auth.accessToken),
+            matrixAccessTokenPresent: Boolean(params.auth.matrixAccessToken?.trim()),
+        },
+        response: params.response ?? null,
+        error: params.error ?? null,
+    };
+}
+
 function buildUrl(path: string, auth: NotebookApiAuth, query?: Record<string, string>): string {
     const base = normalizeBaseUrl(auth.apiBaseUrl || notebookApiBaseUrl);
     const url = new URL(`${base}${path}`);
@@ -228,12 +331,27 @@ function isLikelyHubJwtToken(token: string): boolean {
     return parts.every((part) => part.length > 0);
 }
 
-function assertHubJwtToken(auth: NotebookApiAuth): void {
+function assertHubJwtToken(auth: NotebookApiAuth, context?: { method: string; path: string; url: string; requestBody?: unknown }): void {
     if (!auth.accessToken || !isLikelyHubJwtToken(auth.accessToken)) {
+        if (context) {
+            setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+                auth,
+                method: context.method,
+                path: context.path,
+                url: context.url,
+                requestBody: context.requestBody,
+                error: {
+                    message: "Notebook 驗證失敗，缺少可驗證的 Hub/Supabase JWT",
+                    code: "NO_VALID_HUB_TOKEN",
+                    status: 401,
+                },
+            }));
+        }
         throw new NotebookServiceError(
             "Notebook 驗證失敗，缺少可驗證的 Hub/Supabase JWT",
             401,
             "NO_VALID_HUB_TOKEN",
+            null,
         );
     }
 }
@@ -247,60 +365,184 @@ async function readError(response: Response): Promise<NotebookServiceError> {
     }
     const message = payload?.message || payload?.error || response.statusText || "Request failed";
     const code = toErrorCode(payload?.code || payload?.message || payload?.error, response.status);
-    return new NotebookServiceError(message, response.status, code);
+    return new NotebookServiceError(message, response.status, code, payload);
+}
+
+async function sendNotebookRequest<T>(params: {
+    auth: NotebookApiAuth;
+    method: "GET" | "POST" | "PATCH" | "DELETE";
+    path: string;
+    query?: Record<string, string>;
+    body?: Record<string, unknown>;
+}): Promise<T> {
+    const url = buildUrl(params.path, params.auth, params.query);
+    assertHubJwtToken(params.auth, {
+        method: params.method,
+        path: params.path,
+        url,
+        requestBody: params.body,
+    });
+    setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+        auth: params.auth,
+        method: params.method,
+        path: params.path,
+        url,
+        requestBody: params.body,
+    }));
+
+    let response: Response;
+    try {
+        response = await fetchWithDesktopSupport(url, {
+            method: params.method,
+            cache: params.method === "GET" ? "no-store" : undefined,
+            headers: {
+                Authorization: `Bearer ${params.auth.accessToken}`,
+                ...(params.method !== "GET" ? { "Content-Type": "application/json" } : {}),
+            },
+            ...(params.body ? { body: JSON.stringify(params.body) } : {}),
+        });
+    } catch (error) {
+        setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+            auth: params.auth,
+            method: params.method,
+            path: params.path,
+            url,
+            requestBody: params.body,
+            error: {
+                message: error instanceof Error ? error.message : String(error),
+                code: "NETWORK_ERROR",
+                status: 0,
+            },
+        }));
+        throw error;
+    }
+
+    if (!response.ok) {
+        const serviceError = await readError(response);
+        setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+            auth: params.auth,
+            method: params.method,
+            path: params.path,
+            url,
+            requestBody: params.body,
+            response: {
+                ok: false,
+                status: response.status,
+                statusText: response.statusText,
+                body: sanitizeDebugValue(serviceError.details),
+            },
+            error: {
+                message: serviceError.message,
+                code: serviceError.code,
+                status: serviceError.status,
+            },
+        }));
+        throw serviceError;
+    }
+
+    const responseText = await response.text();
+    if (!responseText.trim()) {
+        const serviceError = new NotebookServiceError(
+            `Notebook API returned an empty response body (HTTP ${response.status})`,
+            response.status,
+            "UNKNOWN",
+            {
+                contentType: response.headers.get("content-type"),
+                body: null,
+            },
+        );
+        setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+            auth: params.auth,
+            method: params.method,
+            path: params.path,
+            url,
+            requestBody: params.body,
+            response: {
+                ok: true,
+                status: response.status,
+                statusText: response.statusText,
+                body: {
+                    contentType: response.headers.get("content-type"),
+                    body: null,
+                },
+            },
+            error: {
+                message: serviceError.message,
+                code: serviceError.code,
+                status: serviceError.status,
+            },
+        }));
+        throw serviceError;
+    }
+
+    let data: T;
+    try {
+        data = JSON.parse(responseText) as T;
+    } catch (error) {
+        const serviceError = new NotebookServiceError(
+            `Notebook API returned invalid JSON (HTTP ${response.status})`,
+            response.status,
+            "UNKNOWN",
+            {
+                contentType: response.headers.get("content-type"),
+                parseError: error instanceof Error ? error.message : String(error),
+                body: truncateString(responseText),
+            },
+        );
+        setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+            auth: params.auth,
+            method: params.method,
+            path: params.path,
+            url,
+            requestBody: params.body,
+            response: {
+                ok: true,
+                status: response.status,
+                statusText: response.statusText,
+                body: {
+                    contentType: response.headers.get("content-type"),
+                    body: truncateString(responseText),
+                },
+            },
+            error: {
+                message: serviceError.message,
+                code: serviceError.code,
+                status: serviceError.status,
+            },
+        }));
+        throw serviceError;
+    }
+
+    setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+        auth: params.auth,
+        method: params.method,
+        path: params.path,
+        url,
+        requestBody: params.body,
+        response: {
+            ok: true,
+            status: response.status,
+            statusText: response.statusText,
+            body: sanitizeDebugValue(data),
+        },
+    }));
+    return data;
 }
 
 async function getJson<T>(auth: NotebookApiAuth, path: string, query?: Record<string, string>): Promise<T> {
-    assertHubJwtToken(auth);
-    const response = await fetchWithDesktopSupport(buildUrl(path, auth, query), {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-            Authorization: `Bearer ${auth.accessToken}`,
-        },
-    });
-    if (!response.ok) throw await readError(response);
-    return (await response.json()) as T;
+    return sendNotebookRequest<T>({ auth, method: "GET", path, query });
 }
 
 async function postJson<T>(auth: NotebookApiAuth, path: string, body: Record<string, unknown>): Promise<T> {
-    assertHubJwtToken(auth);
-    const response = await fetchWithDesktopSupport(buildUrl(path, auth), {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${auth.accessToken}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-    });
-    if (!response.ok) throw await readError(response);
-    return (await response.json()) as T;
+    return sendNotebookRequest<T>({ auth, method: "POST", path, body });
 }
 
 async function patchJson<T>(auth: NotebookApiAuth, path: string, body: Record<string, unknown>): Promise<T> {
-    assertHubJwtToken(auth);
-    const response = await fetchWithDesktopSupport(buildUrl(path, auth), {
-        method: "PATCH",
-        headers: {
-            Authorization: `Bearer ${auth.accessToken}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-    });
-    if (!response.ok) throw await readError(response);
-    return (await response.json()) as T;
+    return sendNotebookRequest<T>({ auth, method: "PATCH", path, body });
 }
 
 async function deleteRequest<T>(auth: NotebookApiAuth, path: string): Promise<T> {
-    assertHubJwtToken(auth);
-    const response = await fetchWithDesktopSupport(buildUrl(path, auth), {
-        method: "DELETE",
-        headers: {
-            Authorization: `Bearer ${auth.accessToken}`,
-        },
-    });
-    if (!response.ok) throw await readError(response);
-    return (await response.json()) as T;
+    return sendNotebookRequest<T>({ auth, method: "DELETE", path });
 }
 
 export async function getNotebookItems(
@@ -480,8 +722,22 @@ export async function assistFromContext(
     auth: NotebookApiAuth,
     input: AssistFromContextRequest,
 ): Promise<NotebookAssistResponseDto> {
-    assertHubJwtToken(auth);
-    const response = await fetchWithDesktopSupport(buildUrl("/chat/assist/from-context", auth), {
+    const path = "/chat/assist/from-context";
+    const url = buildUrl(path, auth);
+    assertHubJwtToken(auth, {
+        method: "POST",
+        path,
+        url,
+        requestBody: input,
+    });
+    setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+        auth,
+        method: "POST",
+        path,
+        url,
+        requestBody: input,
+    }));
+    const response = await fetchWithDesktopSupport(url, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${auth.accessToken}`,
@@ -490,8 +746,43 @@ export async function assistFromContext(
         },
         body: JSON.stringify(input),
     });
-    if (!response.ok) throw await readError(response);
-    return (await response.json()) as NotebookAssistResponseDto;
+    if (!response.ok) {
+        const serviceError = await readError(response);
+        setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+            auth,
+            method: "POST",
+            path,
+            url,
+            requestBody: input,
+            response: {
+                ok: false,
+                status: response.status,
+                statusText: response.statusText,
+                body: sanitizeDebugValue(serviceError.details),
+            },
+            error: {
+                message: serviceError.message,
+                code: serviceError.code,
+                status: serviceError.status,
+            },
+        }));
+        throw serviceError;
+    }
+    const data = (await response.json()) as NotebookAssistResponseDto;
+    setNotebookRequestDebugSnapshot(createNotebookRequestDebugSnapshot({
+        auth,
+        method: "POST",
+        path,
+        url,
+        requestBody: input,
+        response: {
+            ok: true,
+            status: response.status,
+            statusText: response.statusText,
+            body: sanitizeDebugValue(data),
+        },
+    }));
+    return data;
 }
 
 export async function assistQuery(
