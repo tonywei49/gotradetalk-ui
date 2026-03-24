@@ -68,6 +68,7 @@ import { MessageActionsMenu } from "./components/MessageActionsMenu";
 import { getNotebookAdapter } from "../notebook";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
+import { isNotebookTerminalAuthFailure } from "../notebook/utils/isNotebookTerminalAuthFailure";
 import { TaskQuickCreate, TaskRoomBar, type TaskChatContext } from "../tasks";
 import { isTauriMobile } from "../../runtime/appRuntime";
 import {
@@ -1370,6 +1371,7 @@ export const ChatRoom: React.FC = () => {
         onJumpHandled,
         notebookAssistEnabled,
         notebookCapabilities,
+        onReloginForNotebook,
         notebookApiBaseUrl,
         taskStatuses,
         roomTasks,
@@ -1523,6 +1525,10 @@ export const ChatRoom: React.FC = () => {
         canUseNotebookAssist,
         responseLang: chatReceiveLanguage,
         knowledgeScope: "both",
+        onTerminalAuthFailure: (error) => {
+            if (!isNotebookTerminalAuthFailure(error)) return;
+            onReloginForNotebook?.();
+        },
         t,
     });
     const assistSourceMap = useMemo(() => {
@@ -2656,6 +2662,10 @@ export const ChatRoom: React.FC = () => {
             });
             pushToast("success", t("chat.notebook.sendFileToKnowledgeBaseSuccess"));
         } catch (error) {
+            if (isNotebookTerminalAuthFailure(error)) {
+                onReloginForNotebook?.();
+                return;
+            }
             const message = mapNotebookErrorToMessage(error, t);
             pushToast("error", message);
         } finally {
