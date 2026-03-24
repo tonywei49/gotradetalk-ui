@@ -1,12 +1,13 @@
 import type { TFunction } from "i18next";
-import { NotebookApiError } from "./adapters/types";
+import { NotebookApiError } from "./adapters/types.ts";
+import { isNotebookTerminalAuthFailureCode } from "./utils/isNotebookTerminalAuthFailure.ts";
 
 export function mapNotebookErrorToMessage(error: unknown, t: TFunction): string {
     if (error instanceof NotebookApiError) {
         if (error.code === "NO_VALID_HUB_TOKEN") {
             return t("chat.notebook.errors.noValidHubToken");
         }
-        if (error.code === "INVALID_AUTH_TOKEN" || error.code === "UNAUTHORIZED" || error.code === "INVALID_TOKEN_TYPE") {
+        if (isNotebookTerminalAuthFailureCode(error.code) || error.code === "UNAUTHORIZED") {
             return t("chat.notebook.errors.invalidAuth");
         }
         if (error.code === "FORBIDDEN_ROLE") {
