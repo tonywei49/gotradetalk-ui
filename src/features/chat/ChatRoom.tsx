@@ -68,7 +68,6 @@ import { MessageActionsMenu } from "./components/MessageActionsMenu";
 import { getNotebookAdapter } from "../notebook";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
-import type { NotebookAuthPhase, NotebookErrorPolicy } from "../notebook/utils/deriveNotebookAuthUiState";
 import { TaskQuickCreate, TaskRoomBar, type TaskChatContext } from "../tasks";
 import { isTauriMobile } from "../../runtime/appRuntime";
 import {
@@ -1184,8 +1183,6 @@ type ChatRoomContext = {
     onReloginForNotebook?: () => void;
     hasNotebookAuthToken?: boolean;
     notebookApiBaseUrl?: string | null;
-    notebookAuthPhase?: NotebookAuthPhase;
-    notebookErrorPolicy?: NotebookErrorPolicy;
 } & TaskChatContext;
 
 type RemoveTarget = {
@@ -1374,9 +1371,6 @@ export const ChatRoom: React.FC = () => {
         notebookAssistEnabled,
         notebookCapabilities,
         notebookApiBaseUrl,
-        notebookAuthPhase,
-        notebookErrorPolicy,
-        onReloginForNotebook,
         taskStatuses,
         roomTasks,
         taskQuickDraft,
@@ -1499,9 +1493,6 @@ export const ChatRoom: React.FC = () => {
     const translateHsUrl = useHubTokenForTranslate ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
-    const isNotebookBootstrapping = notebookAuthPhase === "bootstrapping";
-    const isNotebookReloginRequired = notebookErrorPolicy === "relogin-required";
-    const notebookAuthReady = notebookAuthPhase === "ready" && !isNotebookReloginRequired;
     const { notebookAuth } = useMemo(() => buildNotebookAuth({
         hubSession,
         matrixCredentials,
@@ -1509,14 +1500,8 @@ export const ChatRoom: React.FC = () => {
         capabilities: notebookCapabilities,
         apiBaseUrl: notebookApiBaseUrl,
     }), [hubSession, matrixCredentials, userType, notebookCapabilities, notebookApiBaseUrl]);
-    const canUseNotebookAssist = Boolean(notebookAssistEnabled && notebookAuth && notebookAuthReady);
-    const canUseNotebookBasic = Boolean(notebookAuth && notebookAuthReady && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
-    const notebookAuthStatusMessage = isNotebookBootstrapping
-        ? t("layout.notebook.syncing")
-        : isNotebookReloginRequired
-            ? t("chat.notebook.errors.invalidAuth")
-            : null;
-    const notebookAuthActionLocked = isNotebookBootstrapping || isNotebookReloginRequired;
+    const canUseNotebookAssist = Boolean(notebookAssistEnabled && notebookAuth);
+    const canUseNotebookBasic = Boolean(notebookAuth && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
     const {
         assistState,
         assistError,
@@ -1567,7 +1552,6 @@ export const ChatRoom: React.FC = () => {
     );
     const assistSummaryText = (assistDraft || assistOutput?.summaryText || assistAnswerFallback.summary || assistOutput?.answer || "").trim();
     const assistReferenceAnswer = (assistOutput?.referenceAnswer || assistAnswerFallback.reference || assistSummaryText || assistOutput?.answer || "").trim();
-    const showNotebookAssistError = Boolean(assistError && !notebookAuthActionLocked);
     const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);
     const {
         pendingAttachmentsByRoom,
@@ -2711,7 +2695,6 @@ export const ChatRoom: React.FC = () => {
     };
 
     const onRegenerateAssist = async (): Promise<void> => {
-        if (notebookAuthActionLocked) return;
         if (!lastAssistTrigger) return;
         if (lastAssistTrigger.type === "query") {
             await runAssistQuery(lastAssistTrigger.query);
@@ -2721,7 +2704,6 @@ export const ChatRoom: React.FC = () => {
     };
 
     const onDirectSendAssist = async (): Promise<void> => {
-        if (notebookAuthActionLocked) return;
         if (!matrixClient || !activeRoomId || isDeprecatedRoom) return;
         const finalText = assistReferenceAnswer || assistSummaryText || (assistOutput?.answer || "").trim();
         if (!finalText || assistLowConfidence) return;
@@ -3630,26 +3612,6 @@ export const ChatRoom: React.FC = () => {
                         </span>
                     </div>
                 )}
-                {isNotebookBootstrapping && (
-                    <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-                        <span className="truncate">{t("layout.notebook.syncing")}</span>
-                        <span className="flex-shrink-0 rounded-full border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:border-emerald-800 dark:text-emerald-200">
-                            {t("common.loading")}
-                        </span>
-                    </div>
-                )}
-                {isNotebookReloginRequired && onReloginForNotebook && (
-                    <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-                        <span className="truncate">{notebookAuthStatusMessage}</span>
-                        <button
-                            type="button"
-                            onClick={onReloginForNotebook}
-                            className="flex-shrink-0 rounded-full border border-rose-300 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-900/30"
-                        >
-                            {t("chat.notebook.relogin")}
-                        </button>
-                    </div>
-                )}
                 {/* Toolbar */}
                 <div className="flex gap-4 mb-2 px-1 text-gray-400 dark:text-slate-500">
                     <button
@@ -3679,26 +3641,7 @@ export const ChatRoom: React.FC = () => {
                             <ClockIcon className="w-6 h-6" />
                         </button>
                     )}
-                    {isNotebookBootstrapping ? (
-                        <button
-                            type="button"
-                            disabled
-                            className="cursor-not-allowed opacity-50"
-                            title={t("layout.notebook.syncing")}
-                        >
-                            <SparklesIcon className="w-6 h-6" />
-                        </button>
-                    ) : isNotebookReloginRequired ? (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onReloginForNotebook?.();
-                            }}
-                            className="rounded-full border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-900/30"
-                        >
-                            {t("chat.notebook.relogin")}
-                        </button>
-                    ) : canUseNotebookAssist ? (
+                    {canUseNotebookAssist && (
                         <button
                             type="button"
                             onClick={() => {
@@ -3709,7 +3652,7 @@ export const ChatRoom: React.FC = () => {
                         >
                             <SparklesIcon className="w-6 h-6" />
                         </button>
-                    ) : null}
+                    )}
                 </div>
 
                 {taskStatuses && taskQuickDraft && onTaskQuickDraftChange && onCreateRoomTask && (
@@ -3772,7 +3715,7 @@ export const ChatRoom: React.FC = () => {
                         {assistState === "loading" && (
                             <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("chat.notebook.generating")}</div>
                         )}
-                        {showNotebookAssistError && (
+                        {assistError && (
                             <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                                 {assistError}
                             </div>
@@ -3842,7 +3785,6 @@ export const ChatRoom: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={() => setComposerText(assistSummaryText)}
-                                        disabled={notebookAuthActionLocked}
                                         className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
                                     >
                                         {t("chat.notebook.applyToInput")}
@@ -3852,7 +3794,7 @@ export const ChatRoom: React.FC = () => {
                                         onClick={() => {
                                             void onDirectSendAssist();
                                         }}
-                                        disabled={notebookAuthActionLocked || assistLowConfidence || assistSending || assistReferenceAnswer.length === 0}
+                                        disabled={assistLowConfidence || assistSending || assistReferenceAnswer.length === 0}
                                         className="rounded-lg bg-[#2F5C56] px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         {assistSending ? t("chat.notebook.sending") : "發送參考答案"}
@@ -3862,7 +3804,7 @@ export const ChatRoom: React.FC = () => {
                                         onClick={() => {
                                             void onRegenerateAssist();
                                         }}
-                                        disabled={notebookAuthActionLocked || assistState === "loading" || !lastAssistTrigger}
+                                        disabled={assistState === "loading" || !lastAssistTrigger}
                                         className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
                                     >
                                         {t("chat.notebook.regenerate")}
