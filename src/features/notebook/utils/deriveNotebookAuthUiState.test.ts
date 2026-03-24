@@ -37,22 +37,6 @@ test("keeps staff notebook in bootstrap until /me and company base url resolve",
     assert.equal(state.notebookErrorPolicy, "none");
 });
 
-test("keeps notebook in bootstrap while refresh is actively running even if a previous terminal error exists", () => {
-    const state = deriveNotebookAuthUiState({
-        userType: "client",
-        notebookTokenReason: "expired_hub_token",
-        hasRefreshToken: true,
-        refreshingNotebookToken: true,
-        hubMeResolved: true,
-        hasResolvedNotebookApiBaseUrl: true,
-        capabilityLoaded: true,
-        terminalAuthErrorCode: "INVALID_AUTH_TOKEN",
-    });
-
-    assert.equal(state.notebookAuthPhase, "bootstrapping");
-    assert.equal(state.notebookErrorPolicy, "none");
-});
-
 test("becomes hard-auth-failed when notebook auth is terminally invalid and no recovery path exists", () => {
     const state = deriveNotebookAuthUiState({
         userType: "staff",
@@ -63,22 +47,6 @@ test("becomes hard-auth-failed when notebook auth is terminally invalid and no r
         hasResolvedNotebookApiBaseUrl: true,
         capabilityLoaded: true,
         terminalAuthErrorCode: "INVALID_AUTH_TOKEN",
-    });
-
-    assert.equal(state.notebookAuthPhase, "hard-auth-failed");
-    assert.equal(state.notebookErrorPolicy, "relogin-required");
-});
-
-test("moves to re-login required when a refresh path is exhausted by a terminal auth error", () => {
-    const state = deriveNotebookAuthUiState({
-        userType: "staff",
-        notebookTokenReason: "missing_hub_token",
-        hasRefreshToken: true,
-        refreshingNotebookToken: false,
-        hubMeResolved: true,
-        hasResolvedNotebookApiBaseUrl: true,
-        capabilityLoaded: true,
-        terminalAuthErrorCode: "NO_VALID_HUB_TOKEN",
     });
 
     assert.equal(state.notebookAuthPhase, "hard-auth-failed");

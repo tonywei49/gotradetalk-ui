@@ -50,13 +50,6 @@ function hasRecoverableTokenPath(input: NotebookAuthUiStateInput): boolean {
 }
 
 export function deriveNotebookAuthUiState(input: NotebookAuthUiStateInput): NotebookAuthUiState {
-    if (input.refreshingNotebookToken) {
-        return {
-            notebookAuthPhase: "bootstrapping",
-            notebookErrorPolicy: "none",
-        };
-    }
-
     if (input.terminalAuthErrorCode) {
         return {
             notebookAuthPhase: "hard-auth-failed",
@@ -71,7 +64,7 @@ export function deriveNotebookAuthUiState(input: NotebookAuthUiStateInput): Note
         };
     }
 
-    if (input.notebookTokenReason !== "ok" && input.hasRefreshToken) {
+    if (input.notebookTokenReason !== "ok" && (input.hasRefreshToken || input.refreshingNotebookToken)) {
         return {
             notebookAuthPhase: "bootstrapping",
             notebookErrorPolicy: "none",
