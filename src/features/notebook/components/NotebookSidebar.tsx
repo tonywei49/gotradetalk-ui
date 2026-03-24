@@ -634,7 +634,7 @@ export function NotebookSidebar({
                     </div>
                 )}
                 {mode === "notebook" && listState === "error" && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-base text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         {listError || t("layout.notebook.loadItemsFailed", "Failed to load notebook.")}
                     </div>
                 )}
