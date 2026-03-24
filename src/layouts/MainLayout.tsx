@@ -4491,6 +4491,9 @@ export const MainLayout: React.FC = () => {
                         <NotebookSidebar
                             listState={notebookModule.listState}
                             listError={notebookModule.listError}
+                            notebookAuthPhase={notebookAuthUiState.notebookAuthPhase}
+                            notebookErrorPolicy={notebookAuthUiState.notebookErrorPolicy}
+                            onReloginForNotebook={onLogout}
                             search={notebookModule.search}
                             onSearchChange={notebookModule.setSearch}
                             items={notebookModule.items}
@@ -5325,6 +5328,9 @@ export const MainLayout: React.FC = () => {
                     ) : (
                         <NotebookPanel
                             enabled={notebookWorkspaceAvailable}
+                            notebookAuthPhase={notebookAuthUiState.notebookAuthPhase}
+                            notebookErrorPolicy={notebookAuthUiState.notebookErrorPolicy}
+                            onReloginForNotebook={onLogout}
                             selectedItem={notebookModule.selectedItem}
                             isCreatingDraft={notebookModule.isCreatingDraft}
                             editorTitle={notebookModule.editorTitle}

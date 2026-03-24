@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { NotebookItem, NotebookListState } from "../types";
 import type { NotebookSourceScope, NotebookViewFilter } from "../useNotebookModule";
+import type { NotebookAuthPhase, NotebookErrorPolicy } from "../utils/deriveNotebookAuthUiState";
 import { useTranslation } from "react-i18next";
 
 type NotebookQuickFilter = "allSources" | "knowledge" | "note" | "company";
@@ -32,6 +33,9 @@ export type SummaryDirectionPayload = {
 type NotebookSidebarProps = {
     listState: NotebookListState;
     listError: string | null;
+    notebookAuthPhase: NotebookAuthPhase;
+    notebookErrorPolicy: NotebookErrorPolicy;
+    onReloginForNotebook: () => void;
     runtimeDebug?: Record<string, unknown> | null;
     search: string;
     onSearchChange: (value: string) => void;
@@ -87,6 +91,9 @@ function typeChip(isIndexable: boolean): string {
 export function NotebookSidebar({
     listState,
     listError,
+    notebookAuthPhase,
+    notebookErrorPolicy,
+    onReloginForNotebook,
     runtimeDebug = null,
     search,
     onSearchChange,
@@ -127,6 +134,10 @@ export function NotebookSidebar({
     summaryMobilePanel,
 }: NotebookSidebarProps) {
     const { t } = useTranslation();
+    void runtimeDebug;
+    const isNotebookBootstrapping = notebookAuthPhase === "bootstrapping";
+    const isNotebookReloginRequired = notebookErrorPolicy === "relogin-required";
+    const isNotebookRetryableServiceError = notebookErrorPolicy === "retryable-service-error";
     const quickFilter: NotebookQuickFilter = showCompanyFilter && sourceScope === "company"
         ? "company"
         : filter === "knowledge"
@@ -267,6 +278,17 @@ export function NotebookSidebar({
         onSourceScopeChange("company");
         onFilterChange("all");
     };
+    const notebookActionLabel = isNotebookReloginRequired
+        ? t("layout.relogin", "重新登入")
+        : isNotebookBootstrapping
+            ? t("layout.notebook.authBootstrapping", "正在同步 Notebook 授權…")
+        : listRefreshing
+            ? t("layout.notebook.syncing", "Syncing...")
+            : !manualSyncAvailable
+                ? t("layout.notebook.localMode", "本地模式")
+                : t("layout.notebook.syncCloud", "同步云端");
+    const notebookActionDisabled = busy || listRefreshing || isNotebookBootstrapping || (isNotebookReloginRequired ? false : !manualSyncAvailable);
+    const notebookActionHandler = isNotebookReloginRequired ? onReloginForNotebook : onManualSync;
 
     return (
         <>
@@ -344,19 +366,15 @@ export function NotebookSidebar({
                             />
                             <button
                                 type="button"
-                                disabled={!manualSyncAvailable || busy || listRefreshing}
-                                onClick={onManualSync}
+                                disabled={notebookActionDisabled}
+                                onClick={notebookActionHandler}
                                 className="shrink-0 rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
                             >
-                                {!manualSyncAvailable
-                                    ? t("layout.notebook.localMode", "本地模式")
-                                    : listRefreshing
-                                    ? t("layout.notebook.syncing", "Syncing...")
-                                    : t("layout.notebook.syncCloud", "同步云端")}
+                                {notebookActionLabel}
                             </button>
                             <button
                                 type="button"
-                                disabled={busy || sourceScope === "company"}
+                                disabled={busy || isNotebookBootstrapping || isNotebookReloginRequired || sourceScope === "company"}
                                 onClick={onCreate}
                                 className="shrink-0 rounded-xl bg-[#2F5C56] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                             >
@@ -629,29 +647,61 @@ export function NotebookSidebar({
                         ) : null}
                     </div>
                 )}
+                {mode === "notebook" && isNotebookBootstrapping && (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
+                        {t("layout.notebook.authBootstrapping", "正在同步 Notebook 授權…")}
+                    </div>
+                )}
                 {mode === "notebook" && listRefreshing && items.length > 0 && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-200">
                         {t("layout.notebook.syncing")}
                     </div>
                 )}
-                {mode === "notebook" && listState === "loading" && items.length === 0 && (
+                {mode === "notebook" && !isNotebookBootstrapping && listState === "loading" && items.length === 0 && (
                     <div className="rounded-xl border border-gray-100 bg-gray-50 p-5 text-base text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                         {t("layout.notebook.loadingItems", "Loading notebook...")}
                     </div>
                 )}
-                {mode === "notebook" && listState === "error" && (
+                {mode === "notebook" && isNotebookReloginRequired && (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-base text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                        {(runtimeDebug?.notebookTokenReason === "expired_hub_token" || runtimeDebug?.notebookTokenReason === "invalid_hub_token")
-                            ? t("layout.notebook.authFailed", "Notebook 驗證失敗，請重新登入")
-                            : (listError || t("layout.notebook.loadItemsFailed", "Failed to load notebook."))}
+                        <div className="font-medium">
+                            {t("layout.notebook.authFailed", "Notebook 驗證失敗，請重新登入")}
+                        </div>
+                        <div className="mt-1 text-sm text-rose-600 dark:text-rose-200/80">
+                            {t("layout.notebook.authFailedReloginHint", "Notebook auth is no longer valid. Please re-login to continue.")}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onReloginForNotebook}
+                            className="mt-3 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
+                        >
+                            {t("layout.relogin", "重新登入")}
+                        </button>
                     </div>
                 )}
-                {mode === "notebook" && listState === "empty" && (
+                {mode === "notebook" && !isNotebookBootstrapping && !isNotebookReloginRequired && listState === "error" && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-base text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+                        <div>
+                            {listError || t("layout.notebook.loadItemsFailed", "Failed to load notebook.")}
+                        </div>
+                        {isNotebookRetryableServiceError && (
+                            <button
+                                type="button"
+                                onClick={onManualSync}
+                                disabled={!manualSyncAvailable || busy || listRefreshing}
+                                className="mt-3 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-700 dark:text-rose-200"
+                            >
+                                {t("layout.notebook.retrySync", "Retry")}
+                            </button>
+                        )}
+                    </div>
+                )}
+                {mode === "notebook" && !isNotebookBootstrapping && listState === "empty" && (
                     <div className="rounded-xl border border-gray-100 bg-gray-50 p-5 text-base text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                         {t("layout.notebook.emptyItems", "No notebook items yet.")}
                     </div>
                 )}
-                {mode === "notebook" && listState === "ready" && items.length === 0 && (
+                {mode === "notebook" && !isNotebookBootstrapping && listState === "ready" && items.length === 0 && (
                     <div className="rounded-xl border border-gray-100 bg-gray-50 p-5 text-base text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                         {t("layout.notebook.filteredEmpty", "No items under the current filter.")}
                     </div>
