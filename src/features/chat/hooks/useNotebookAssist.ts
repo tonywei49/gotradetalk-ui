@@ -4,6 +4,7 @@ import type { NotebookAdapter } from "../../notebook/adapters/types";
 import type { NotebookAssistResponse, NotebookAuthContext } from "../../notebook/types";
 import { NOTEBOOK_ASSIST_CONTEXT_WINDOW_SIZE } from "../../notebook/constants";
 import { mapNotebookErrorToMessage } from "../../notebook/notebookErrorMap";
+import { isNotebookTerminalAuthFailure } from "../../notebook/utils/isNotebookTerminalAuthFailure";
 import { readUiStateFromSqlite, writeUiStateToSqlite } from "../../../desktop/desktopCacheDb";
 
 type UseNotebookAssistParams = {
@@ -13,6 +14,7 @@ type UseNotebookAssistParams = {
     canUseNotebookAssist: boolean;
     responseLang?: string | null;
     knowledgeScope?: "personal" | "company" | "both";
+    onTerminalAuthFailure?: (error: unknown) => void;
     t: TFunction;
 };
 
@@ -173,6 +175,12 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
             applyAssistOutput(result);
             setLastAssistTrigger({ type: "query", query: trimmed });
         } catch (error) {
+            if (isNotebookTerminalAuthFailure(error)) {
+                params.onTerminalAuthFailure?.(error);
+                setAssistState("idle");
+                setAssistError(null);
+                return;
+            }
             setAssistState("error");
             setAssistError(mapNotebookErrorToMessage(error, params.t));
         }
@@ -199,6 +207,12 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
             applyAssistOutput(result);
             setLastAssistTrigger({ type: "context", anchorEventId, windowSize: NOTEBOOK_ASSIST_CONTEXT_WINDOW_SIZE });
         } catch (error) {
+            if (isNotebookTerminalAuthFailure(error)) {
+                params.onTerminalAuthFailure?.(error);
+                setAssistState("idle");
+                setAssistError(null);
+                return;
+            }
             setAssistState("error");
             setAssistError(mapNotebookErrorToMessage(error, params.t));
         }
