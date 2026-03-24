@@ -5,13 +5,9 @@ import { useRef, useState } from "react";
 import type { NotebookRequestDebugSnapshot } from "../../../services/notebookApi";
 import { NotebookParsedSection } from "./NotebookParsedSection";
 import { ChunkSettingsPanel, type ChunkSettings } from "./ChunkSettingsPanel";
-import type { NotebookAuthPhase, NotebookErrorPolicy } from "../utils/deriveNotebookAuthUiState";
 
 type NotebookPanelProps = {
     enabled: boolean;
-    notebookAuthPhase: NotebookAuthPhase;
-    notebookErrorPolicy: NotebookErrorPolicy;
-    onReloginForNotebook: () => void;
     selectedItem: NotebookItem | null;
     isCreatingDraft: boolean;
     editorTitle: string;
@@ -92,9 +88,6 @@ function indexHint(item: NotebookItem, t: TFunction): { tone: string; text: stri
 
 export function NotebookPanel({
     enabled,
-    notebookAuthPhase,
-    notebookErrorPolicy,
-    onReloginForNotebook,
     selectedItem,
     isCreatingDraft,
     editorTitle,
@@ -134,49 +127,6 @@ export function NotebookPanel({
     const notebookUploadInputRef = useRef<HTMLInputElement | null>(null);
     const [showChunkConfirm, setShowChunkConfirm] = useState(false);
     void requestDebug;
-    const isNotebookBootstrapping = notebookAuthPhase === "bootstrapping";
-    const isNotebookReloginRequired = notebookErrorPolicy === "relogin-required";
-    const isNotebookRetryableServiceError = notebookErrorPolicy === "retryable-service-error";
-
-    if (isNotebookBootstrapping) {
-        return (
-            <div className="flex-1 flex items-center justify-center p-6">
-                <div className="w-full max-w-xl rounded-2xl border border-sky-200 bg-sky-50 px-5 py-6 text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-100">
-                    <div className="text-lg font-semibold">
-                        {t("layout.notebook.authBootstrapping", "正在同步 Notebook 授權…")}
-                    </div>
-                    <div className="mt-2 text-sm leading-6 text-sky-700 dark:text-sky-100/80">
-                        {t("layout.notebook.authBootstrappingHint", "We are restoring Notebook access and loading the workspace cache.")}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (isNotebookReloginRequired) {
-        return (
-            <div className="flex-1 flex items-center justify-center p-6">
-                <div className="w-full max-w-xl rounded-2xl border border-rose-200 bg-rose-50 px-5 py-6 text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/20 dark:text-rose-100">
-                    <div className="text-lg font-semibold">
-                        {t("layout.notebook.authFailed", "Notebook 驗證失敗，請重新登入")}
-                    </div>
-                    <div className="mt-2 text-sm leading-6 text-rose-700 dark:text-rose-100/80">
-                        {t("layout.notebook.authFailedReloginHint", "Notebook auth is no longer valid. Please re-login to continue.")}
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                            type="button"
-                            onClick={onReloginForNotebook}
-                            className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white"
-                        >
-                            {t("layout.relogin", "重新登入")}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     if (!enabled) {
         return (
             <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -367,7 +317,7 @@ export function NotebookPanel({
                         {actionError}
                     </div>
                 )}
-                {!isCreatingDraft && selectedItem?.indexStatus === "failed" && isNotebookRetryableServiceError && (
+                {!isCreatingDraft && selectedItem?.indexStatus === "failed" && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
                         <div>
                             {selectedItem.indexError
