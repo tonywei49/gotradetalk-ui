@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import {
     ChatBubbleLeftRightIcon,
     BookOpenIcon,
@@ -11,6 +14,8 @@ import {
     PuzzlePieceIcon,
     SparklesIcon,
     CommandLineIcon,
+    SunIcon,
+    MoonIcon,
 } from "@heroicons/react/24/outline";
 import { ClientEvent, EventTimeline, EventType, Preset, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
@@ -31,8 +36,8 @@ import {
     type ChatSummaryJobDetail,
     type ChatSummaryJobItem,
 } from "../api/hub";
-import { HUB_SESSION_REVOKED_EVENT, type HubSessionRevokedDetail } from "../api/session";
-import type { HubProfileSummary } from "../api/types";
+import { HUB_SESSION_REVOKED_EVENT, HubApiError, type HubSessionRevokedDetail } from "../api/session";
+import type { HubProfileSummary, HubSupabaseSession } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { prepareMatrixClient } from "../matrix/client";
@@ -87,10 +92,14 @@ import {
     NotebookServiceError,
 } from "../services/notebookApi";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
+import { isNotebookTerminalAuthFailure, type NotebookTerminalAuthFailureSignal } from "../features/notebook/utils/isNotebookTerminalAuthFailure";
 import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
 import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from "../desktop/useDesktopUpdater";
 import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
+import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
 import { useToastStore } from "../stores/ToastStore";
+import { isTauriMobile, resolveRuntimePlatform } from "../runtime/appRuntime";
+import { notebookApiBaseUrl as configuredNotebookApiBaseUrl } from "../config";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -101,6 +110,23 @@ type NavBarItemProps = {
     badgeCount?: number;
     className?: string;
     label?: string;
+};
+
+type MobileNavChipProps = {
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    active?: boolean;
+    onClick?: () => void;
+    badgeCount?: number;
+    label: string;
+};
+
+type AppShellNavItem = {
+    key: string;
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    active: boolean;
+    label: string;
+    badgeCount?: number;
+    onClick: () => void;
 };
 
 type SharedContactRoomEntry = {
@@ -134,6 +160,29 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "", l
             )}
         </div>
     </div>
+);
+
+const MobileNavChip = ({ icon: Icon, active, onClick, badgeCount, label }: MobileNavChipProps) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={`relative inline-flex min-w-max items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition ${
+            active
+                ? "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm dark:border-emerald-400/70 dark:bg-emerald-500/15 dark:text-emerald-100"
+                : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-500/50 dark:hover:text-slate-100"
+        }`}
+        aria-pressed={active}
+    >
+        <span className="relative inline-flex h-5 w-5 items-center justify-center">
+            <Icon className="h-5 w-5" />
+            {typeof badgeCount === "number" && badgeCount > 0 ? (
+                <span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-semibold leading-4 text-white">
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                </span>
+            ) : null}
+        </span>
+        <span>{label}</span>
+    </button>
 );
 
 function resolvePluginNavIcon(icon?: PluginIconKey): React.ComponentType<React.SVGProps<SVGSVGElement>> {
@@ -231,6 +280,8 @@ function getFilePreviewType(item: { msgtype: string; mimeType?: string }): "imag
     return null;
 }
 
+const FILE_BATCH_DELETE_CONCURRENCY = 4;
+
 function blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -247,7 +298,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 async function fetchMediaBlob(url: string, accessToken?: string | null): Promise<Blob> {
-    const response = await fetch(url, {
+    const response = await fetchWithDesktopSupport(url, {
         headers: accessToken
             ? {
                 Authorization: `Bearer ${accessToken}`,
@@ -411,6 +462,9 @@ function mapChatSummaryErrorMessage(
     if (normalized === "unauthorized" || normalized.includes("missing auth token") || normalized.includes("invalid auth token")) {
         return t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again.");
     }
+    if (normalized.includes("m_unknown_token") || normalized.includes("unknown access token")) {
+        return t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again.");
+    }
     if (normalized.includes("failed to load summary jobs")) {
         return t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
     }
@@ -492,6 +546,43 @@ function parseJwtSub(token: string | null | undefined): string | null {
     } catch {
         return null;
     }
+}
+
+function toStoredHubSession(
+    session: {
+        access_token?: string | null;
+        refresh_token?: string | null;
+        expires_at?: number | null;
+    } | null | undefined,
+    fallbackRefreshToken?: string | null,
+): HubSupabaseSession | null {
+    const accessToken = session?.access_token?.trim();
+    if (!accessToken) return null;
+    return {
+        access_token: accessToken,
+        refresh_token: session?.refresh_token?.trim() || fallbackRefreshToken?.trim() || "",
+        expires_at: typeof session?.expires_at === "number" ? session.expires_at : undefined,
+    };
+}
+
+function isHubAuthFailure(error: unknown): boolean {
+    if (error instanceof HubApiError) {
+        return error.status === 401 || error.code === "INVALID_AUTH_TOKEN" || error.code === "NO_VALID_HUB_TOKEN";
+    }
+    if (error instanceof ChatSearchError) {
+        return error.status === 401 && error.code !== "MISSING_MATRIX_TOKEN";
+    }
+    return false;
+}
+
+function isNotebookAuthFailure(error: unknown): boolean {
+    return error instanceof NotebookServiceError
+        && (
+            error.status === 401
+            || error.code === "INVALID_AUTH_TOKEN"
+            || error.code === "INVALID_TOKEN_TYPE"
+            || error.code === "NO_VALID_HUB_TOKEN"
+        );
 }
 
 function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
@@ -606,6 +697,7 @@ function DeferredModulePanel({ title, description }: { title: string; descriptio
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
     const { runtimeContext, platformState, tools } = usePluginHost();
+    const isMobileApp = isTauriMobile();
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
@@ -647,8 +739,10 @@ export const MainLayout: React.FC = () => {
         name: string;
         revokeOnClose?: boolean;
     } | null>(null);
+    const [fileThumbnailUrls, setFileThumbnailUrls] = useState<Record<string, string>>({});
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+    const fileThumbnailUrlsRef = useRef<Record<string, string>>({});
     const [notebookFileActionError, setNotebookFileActionError] = useState<string | null>(null);
     const [notebookUploadState, setNotebookUploadState] = useState<{
         busy: boolean;
@@ -684,6 +778,7 @@ export const MainLayout: React.FC = () => {
     const [summaryContentLoading, setSummaryContentLoading] = useState(false);
     const [summaryJobs, setSummaryJobs] = useState<ChatSummaryJobItem[]>([]);
     const [summaryJobsLoading, setSummaryJobsLoading] = useState(false);
+    const [summaryJobsRefreshing, setSummaryJobsRefreshing] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -692,6 +787,22 @@ export const MainLayout: React.FC = () => {
             }
         };
     }, [filePreview]);
+    useEffect(() => {
+        fileThumbnailUrlsRef.current = fileThumbnailUrls;
+    }, [fileThumbnailUrls]);
+    useEffect(() => {
+        return () => {
+            Object.values(fileThumbnailUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+        };
+    }, []);
+    const closeFilePreview = useCallback(() => {
+        setFilePreview((current) => {
+            if (current?.revokeOnClose) {
+                URL.revokeObjectURL(current.url);
+            }
+            return null;
+        });
+    }, []);
     const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
     const [summaryJobActionBusy, setSummaryJobActionBusy] = useState(false);
     const [summaryGenerationNotice, setSummaryGenerationNotice] = useState<string | null>(null);
@@ -761,6 +872,34 @@ export const MainLayout: React.FC = () => {
     const accountSubtitle = accountSubtitleParts.length
         ? accountSubtitleParts.join(" · ")
         : t("layout.accountSubtitleFallback");
+    const mainPanelRef = useRef<HTMLElement | null>(null);
+    const returnToMobileList = useCallback(() => {
+        setMobileView("list");
+        if (activeTab === "contacts") {
+            setShowContactMenu(false);
+            setShowRemoveContactConfirm(false);
+            setActiveContact(null);
+            setRestoredActiveContactId(null);
+        }
+        if (activeTab === "settings") {
+            setSettingsDetail("none");
+        }
+    }, [activeTab]);
+    const openPrimaryTab = useCallback((tab: "chat" | "notebook" | "contacts" | "files" | "tasks" | "settings" | "account") => {
+        setMobileView("list");
+        setActiveTab(tab);
+        if (tab === "settings") {
+            setSettingsDetail("none");
+        }
+    }, []);
+    const pluginRuntimeContextValue = useMemo(() => ({
+        userType,
+        matrixUserId: matrixCredentials?.user_id ?? null,
+        matrixUserLocalId: formatMatrixUserLocalId(matrixCredentials?.user_id),
+        matrixHomeServer: matrixCredentials?.hs_url ?? null,
+        hasHubSession: Boolean(hubSession?.access_token),
+        platformManaged: true,
+    }), [hubSession?.access_token, matrixCredentials?.hs_url, matrixCredentials?.user_id, userType]);
     const displayLangOptions = displayLanguageOptions;
     const localeTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const translationDefaultStorageKey = useMemo(
@@ -867,7 +1006,9 @@ export const MainLayout: React.FC = () => {
     }, [matrixCredentials?.user_id, workspaceCacheKey]);
 
     useEffect(() => {
-        const cachedNotebookApiBaseUrl = readNotebookBootCache<string>(notebookApiBaseUrlCacheKey);
+        const cachedNotebookApiBaseUrl = userType === "staff"
+            ? null
+            : readNotebookBootCache<string>(notebookApiBaseUrlCacheKey);
         const cachedCapabilities = readNotebookBootCache<string[]>(notebookCapabilitiesCacheKey);
 
         setNotebookApiBaseUrlOverride(cachedNotebookApiBaseUrl);
@@ -881,7 +1022,10 @@ export const MainLayout: React.FC = () => {
             activeTab,
             activeRoomId,
             selectedFileRoomId,
-            activeContactId: activeContact?.id ?? restoredActiveContactId,
+            activeContactId:
+                activeTab === "contacts" && mobileView === "detail"
+                    ? (activeContact?.id ?? restoredActiveContactId)
+                    : null,
         } satisfies PersistedWorkspaceState;
 
         if (workspaceCacheKey && typeof window !== "undefined") {
@@ -893,7 +1037,7 @@ export const MainLayout: React.FC = () => {
         }
 
         void writeWorkspaceStateToSqlite(matrixCredentials?.user_id ?? null, payload);
-    }, [activeContact?.id, activeRoomId, activeTab, matrixCredentials?.user_id, restoredActiveContactId, selectedFileRoomId, workspaceCacheKey]);
+    }, [activeContact?.id, activeRoomId, activeTab, matrixCredentials?.user_id, mobileView, restoredActiveContactId, selectedFileRoomId, workspaceCacheKey]);
 
     useEffect(() => {
         if (activeTab === "tasks" && !deferredModules.tasks) {
@@ -940,18 +1084,48 @@ export const MainLayout: React.FC = () => {
     const [refreshingNotebookToken, setRefreshingNotebookToken] = useState(false);
     const notebookRefreshBackoffUntilRef = useRef(0);
     const notebookRefreshFailureCountRef = useRef(0);
-    const notebookRefreshFlightRef = useRef<Promise<boolean> | null>(null);
+    const notebookRefreshFlightRef = useRef<Promise<string | null> | null>(null);
     const notebookRefreshFlightTimerRef = useRef<number | null>(null);
     const notebookUserSubRef = useRef<string | null>(parseJwtSub(hubSession?.access_token));
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
     const [capabilityTokenRefreshSeq, setCapabilityTokenRefreshSeq] = useState(0);
+    const shouldWaitForNotebookMeBootstrap = userType === "staff";
+    const resolvedNotebookApiBaseUrl = userType === "staff"
+        ? (hubMeResolved ? (notebookApiBaseUrlOverride ?? null) : null)
+        : (shouldWaitForNotebookMeBootstrap && !hubMeResolved
+            ? null
+            : notebookApiBaseUrlOverride ?? configuredNotebookApiBaseUrl ?? null);
     const { notebookAuth, notebookToken } = useMemo(() => buildNotebookAuth({
         hubSession,
         matrixCredentials,
         userType,
         capabilities: capabilityValues,
-        apiBaseUrl: notebookApiBaseUrlOverride,
-    }), [hubSession, matrixCredentials, userType, capabilityValues, notebookApiBaseUrlOverride]);
+        apiBaseUrl: resolvedNotebookApiBaseUrl,
+    }), [capabilityValues, hubSession, matrixCredentials, resolvedNotebookApiBaseUrl, userType]);
+    const effectiveNotebookApiBaseUrl = resolvedNotebookApiBaseUrl;
+    const notebookWorkspaceAuth = useMemo(() => {
+        const matrixUserId = matrixCredentials?.user_id?.trim();
+        if (!matrixUserId || !notebookAuth?.accessToken) {
+            return null;
+        }
+        return {
+            accessToken: notebookAuth.accessToken,
+            matrixAccessToken: matrixCredentials?.access_token ?? null,
+            apiBaseUrl: effectiveNotebookApiBaseUrl,
+            hsUrl: matrixCredentials?.hs_url ?? null,
+            matrixUserId,
+            userType,
+            capabilities: capabilityValues,
+        };
+    }, [
+        capabilityValues,
+        matrixCredentials?.access_token,
+        matrixCredentials?.hs_url,
+        matrixCredentials?.user_id,
+        effectiveNotebookApiBaseUrl,
+        notebookAuth,
+        userType,
+    ]);
     const capabilityToken = notebookToken.accessToken;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
     const notebookCapabilityState = useMemo(
@@ -963,6 +1137,9 @@ export const MainLayout: React.FC = () => {
             }),
         [capabilityLoaded, capabilityValues, userType],
     );
+    const hasNotebookLocalWorkspace = Boolean(matrixCredentials?.user_id);
+    const notebookWorkspaceVisible = hasNotebookLocalWorkspace;
+    const notebookWorkspaceAvailable = Boolean(notebookWorkspaceAuth?.matrixUserId);
     useEffect(() => {
         if (!desktopUpdaterAvailable) return;
 
@@ -999,6 +1176,32 @@ export const MainLayout: React.FC = () => {
         pushToast("warn", capabilityError, 5000);
     }, [capabilityError, capabilityLoaded, desktopUpdaterAvailable, hubMeResolved, pushToast]);
 
+    const clearLocalAuthSession = useCallback((): void => {
+        clearSession();
+        void getSupabaseClient()
+            .auth.signOut({ scope: "local" })
+            .catch(() => {
+                // ignore local sign-out failures during session cleanup
+            });
+    }, [clearSession]);
+
+    const onLogout = useCallback((): void => {
+        clearLocalAuthSession();
+        navigate("/auth", { replace: true });
+    }, [clearLocalAuthSession, navigate]);
+
+    const notebookTerminalLogoutHandledRef = useRef(false);
+    useEffect(() => {
+        notebookTerminalLogoutHandledRef.current = false;
+    }, [hubSession?.access_token, matrixCredentials?.user_id]);
+
+    const triggerNotebookTerminalLogout = useCallback((signal: NotebookTerminalAuthFailureSignal): void => {
+        if (notebookTerminalLogoutHandledRef.current) return;
+        if (!isNotebookTerminalAuthFailure(signal)) return;
+        notebookTerminalLogoutHandledRef.current = true;
+        onLogout();
+    }, [onLogout]);
+
     const resolveAvatarUrl = useCallback((mxcUrl: string | null | undefined): string | null => {
         if (!matrixClient || !mxcUrl) return null;
         return matrixClient.mxcUrlToHttp(mxcUrl, 96, 96, "crop") ?? matrixClient.mxcUrlToHttp(mxcUrl) ?? null;
@@ -1007,12 +1210,70 @@ export const MainLayout: React.FC = () => {
         notebookUserSubRef.current = parseJwtSub(hubSession?.access_token);
     }, [hubSession?.access_token]);
 
-    const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<boolean> => {
-        if (!hubSession?.refresh_token) return false;
-        if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return false;
+    useEffect(() => {
+        if (!userType || !matrixCredentials) return;
+
+        const supabase = getSupabaseClient();
+        let active = true;
+
+        const syncStoreFromSession = (
+            nextSession: {
+                access_token?: string | null;
+                refresh_token?: string | null;
+                expires_at?: number | null;
+            } | null | undefined,
+        ): void => {
+            if (!active) return;
+            const normalized = toStoredHubSession(nextSession, hubSession?.refresh_token);
+            if (!normalized) return;
+            if (
+                normalized.access_token === hubSession?.access_token
+                && normalized.refresh_token === (hubSession?.refresh_token || "")
+                && normalized.expires_at === hubSession?.expires_at
+            ) {
+                return;
+            }
+            setHubSession(normalized);
+        };
+
+        void supabase.auth.getSession().then(({ data, error }) => {
+            if (!active || error) return;
+            if (data.session?.access_token) {
+                syncStoreFromSession(data.session);
+                return;
+            }
+            if (!hubSession?.access_token || !hubSession.refresh_token) return;
+            void supabase.auth.setSession({
+                access_token: hubSession.access_token,
+                refresh_token: hubSession.refresh_token,
+            }).catch(() => {
+                // ignore bootstrap sync failures; request-level refresh handles recovery
+            });
+        });
+
+        const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            syncStoreFromSession(nextSession);
+        });
+
+        return () => {
+            active = false;
+            data.subscription.unsubscribe();
+        };
+    }, [
+        hubSession?.access_token,
+        hubSession?.expires_at,
+        hubSession?.refresh_token,
+        matrixCredentials,
+        setHubSession,
+        userType,
+    ]);
+
+    const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<string | null> => {
+        if (!hubSession?.refresh_token) return null;
+        if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return null;
         if (notebookRefreshFlightRef.current) return notebookRefreshFlightRef.current;
 
-        const flight = (async (): Promise<boolean> => {
+        const flight = (async (): Promise<string | null> => {
             setRefreshingNotebookToken(true);
             try {
                 const supabase = getSupabaseClient();
@@ -1031,9 +1292,12 @@ export const MainLayout: React.FC = () => {
                 const nextSub = parseJwtSub(data.session.access_token);
                 const nextIdentity = nextUserId || nextSub;
                 if (expectedSub && nextIdentity && expectedSub !== nextIdentity) {
-                    clearSession();
-                    setCapabilityError(t("layout.notebook.authFailed"));
-                    return false;
+                    triggerNotebookTerminalLogout({
+                        code: "INVALID_AUTH_TOKEN",
+                        status: 401,
+                        terminal: true,
+                    });
+                    return null;
                 }
 
                 setHubSession({
@@ -1046,7 +1310,7 @@ export const MainLayout: React.FC = () => {
                 notebookRefreshFailureCountRef.current = 0;
                 setCapabilityTokenRefreshSeq((prev) => prev + 1);
                 setCapabilityError(null);
-                return true;
+                return data.session.access_token;
             } catch (error) {
                 const status = (error as { status?: number } | null)?.status;
                 const message = error instanceof Error ? error.message : String(error ?? "");
@@ -1057,8 +1321,22 @@ export const MainLayout: React.FC = () => {
                     ? Math.min(15000 * (2 ** Math.max(0, step - 1)), 5 * 60 * 1000)
                     : Math.min(5000 * (2 ** Math.max(0, step - 1)), 60 * 1000);
                 notebookRefreshBackoffUntilRef.current = Date.now() + delayMs;
-                setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.authFailed"));
-                return false;
+                const isAuthFailure =
+                    status === 401
+                    || message === "INVALID_AUTH_TOKEN"
+                    || message.includes("Invalid Refresh Token")
+                    || message.includes("NO_VALID_HUB_TOKEN")
+                    || message.includes("INVALID_TOKEN_TYPE");
+                if (isAuthFailure) {
+                    triggerNotebookTerminalLogout({
+                        code: "INVALID_AUTH_TOKEN",
+                        status: 401,
+                        terminal: true,
+                    });
+                    return null;
+                }
+                setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.capabilityLoadFailed"));
+                return null;
             } finally {
                 if (notebookRefreshFlightTimerRef.current) {
                     window.clearTimeout(notebookRefreshFlightTimerRef.current);
@@ -1077,7 +1355,72 @@ export const MainLayout: React.FC = () => {
             }
         }, 20000);
         return flight;
-    }, [clearSession, hubSession?.refresh_token, hubSession?.access_token, setHubSession, t]);
+    }, [hubSession?.refresh_token, hubSession?.access_token, setHubSession, t, triggerNotebookTerminalLogout]);
+
+    const buildNotebookAuthWithAccessToken = useCallback((accessToken: string) => {
+        return buildNotebookAuth({
+            hubSession: {
+                access_token: accessToken,
+                refresh_token: hubSession?.refresh_token || "",
+                expires_at: hubSession?.expires_at,
+            },
+            matrixCredentials,
+            userType,
+            capabilities: capabilityValues,
+            apiBaseUrl: resolvedNotebookApiBaseUrl,
+        }).notebookAuth;
+    }, [
+        capabilityValues,
+        hubSession?.expires_at,
+        hubSession?.refresh_token,
+        matrixCredentials,
+        resolvedNotebookApiBaseUrl,
+        userType,
+    ]);
+
+    const runHubSessionRequest = useCallback(async <T,>(
+        runner: (accessToken: string) => Promise<T>,
+    ): Promise<T> => {
+        if (!hubAccessToken) {
+            throw new Error("Missing hub access token");
+        }
+        try {
+            return await runner(hubAccessToken);
+        } catch (error) {
+            if (!isHubAuthFailure(error)) {
+                throw error;
+            }
+            const refreshedAccessToken = await refreshNotebookToken({ force: true });
+            if (!refreshedAccessToken) {
+                throw error;
+            }
+            return runner(refreshedAccessToken);
+        }
+    }, [hubAccessToken, refreshNotebookToken]);
+
+    const runNotebookAuthedRequest = useCallback(async <T,>(
+        runner: (auth: NonNullable<typeof notebookAuth>) => Promise<T>,
+    ): Promise<T> => {
+        if (!notebookAuth) {
+            throw new Error("Missing notebook auth");
+        }
+        try {
+            return await runner(notebookAuth);
+        } catch (error) {
+            if (!isNotebookAuthFailure(error)) {
+                throw error;
+            }
+            const refreshedAccessToken = await refreshNotebookToken({ force: true });
+            if (!refreshedAccessToken) {
+                throw error;
+            }
+            const refreshedAuth = buildNotebookAuthWithAccessToken(refreshedAccessToken);
+            if (!refreshedAuth) {
+                throw error;
+            }
+            return runner(refreshedAuth);
+        }
+    }, [buildNotebookAuthWithAccessToken, notebookAuth, refreshNotebookToken]);
 
     const retryNotebookCapability = useCallback(() => {
         notebookRefreshBackoffUntilRef.current = 0;
@@ -1127,10 +1470,23 @@ export const MainLayout: React.FC = () => {
     }, [hubSession?.refresh_token, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
     const notebookModule = useNotebookModule({
         adapter: notebookAdapter,
-        auth: notebookAuth,
-        enabled: notebookReady && notebookCapabilityState.canUseNotebookBasic,
+        auth: notebookWorkspaceAuth,
+        enabled: notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved),
         refreshToken: notebookRefreshToken,
+        onAuthFailure: async () => refreshNotebookToken({ force: true }),
     });
+    useEffect(() => {
+        const debugError = notebookModule.requestDebug?.error;
+        if (!debugError) return;
+        if (!notebookModule.listError && !notebookModule.actionError) return;
+        const signal = {
+            code: debugError.code,
+            status: debugError.status,
+            terminal: debugError.status === 401,
+        } satisfies NotebookTerminalAuthFailureSignal;
+        if (!isNotebookTerminalAuthFailure(signal)) return;
+        triggerNotebookTerminalLogout(signal);
+    }, [notebookModule.actionError, notebookModule.listError, notebookModule.requestDebug, triggerNotebookTerminalLogout]);
     useEffect(() => {
         if (!notebookReady) return;
         if (userType === "client" && notebookModule.sourceScope === "company") {
@@ -1166,6 +1522,7 @@ export const MainLayout: React.FC = () => {
         try {
             if (userType === "client" && meUpdateToken) {
                 await hubMeUpdateTranslationLocale(meUpdateToken, value, meUpdateOptions);
+                setMeProfile((prev) => (prev ? { ...prev, translation_locale: value } : prev));
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
                 await updateStaffTranslationLanguage(matrixAccessToken, matrixHsUrl, value);
             }
@@ -1389,11 +1746,11 @@ export const MainLayout: React.FC = () => {
         setHubMeResolved(false);
         void (async () => {
             try {
-                const response = await hubGetMe({
-                    accessToken: hubAccessToken,
+                const response = await runHubSessionRequest((accessToken) => hubGetMe({
+                    accessToken,
                     hsUrl: matrixHsUrl,
                     matrixUserId: matrixCredentials?.user_id,
-                });
+                }));
                 if (!isActive) return;
                 setMeProfile(response.profile);
                 setNotebookApiBaseUrlOverride(response.notebook_api_base_url ?? null);
@@ -1410,6 +1767,8 @@ export const MainLayout: React.FC = () => {
             } catch {
                 if (!isActive) return;
                 setMeProfile(null);
+                setNotebookApiBaseUrlOverride(null);
+                writeNotebookBootCache(notebookApiBaseUrlCacheKey, null);
                 setNotebookUploadLimitMb(20);
             } finally {
                 if (isActive) {
@@ -1420,19 +1779,19 @@ export const MainLayout: React.FC = () => {
         return () => {
             isActive = false;
         };
-    }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id, notebookApiBaseUrlCacheKey]);
+    }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id, notebookApiBaseUrlCacheKey, runHubSessionRequest]);
 
     useEffect(() => {
         if (!notebookReady) {
             setNotebookUploadLimitMb(20);
             return;
         }
-        if (!notebookAuth || !notebookApiBaseUrlOverride) {
+        if (!notebookAuth || !effectiveNotebookApiBaseUrl) {
             setNotebookUploadLimitMb(20);
             return;
         }
         let alive = true;
-        void getCompanyNotebookAiSettings(notebookAuth)
+        void runNotebookAuthedRequest((auth) => getCompanyNotebookAiSettings(auth))
             .then((response) => {
                 if (!alive) return;
                 const raw = Number(response?.notebook_upload_max_mb ?? 20);
@@ -1446,7 +1805,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [notebookApiBaseUrlOverride, notebookAuth, notebookReady]);
+    }, [effectiveNotebookApiBaseUrl, notebookAuth, notebookReady, runNotebookAuthedRequest]);
 
     useEffect(() => {
         if (!notebookReady) {
@@ -1466,13 +1825,24 @@ export const MainLayout: React.FC = () => {
                     }
                     return;
                 }
-                setCapabilityLoaded(true);
-                setCapabilityError(t("layout.notebook.authFailed"));
+                triggerNotebookTerminalLogout({
+                    code: notebookToken.reason === "missing_hub_token"
+                        ? "NO_VALID_HUB_TOKEN"
+                        : notebookToken.reason === "invalid_hub_token_format"
+                            ? "INVALID_TOKEN_TYPE"
+                            : "INVALID_AUTH_TOKEN",
+                    status: 401,
+                    terminal: true,
+                });
                 return;
             }
             setCapabilityLoaded(true);
             setCapabilityValues([]);
-            setCapabilityError(t("layout.notebook.authFailed"));
+            triggerNotebookTerminalLogout({
+                code: "INVALID_AUTH_TOKEN",
+                status: 401,
+                terminal: true,
+            });
             return;
         }
         if (!hubMeResolved) {
@@ -1480,7 +1850,7 @@ export const MainLayout: React.FC = () => {
             setCapabilityError(null);
             return;
         }
-        if (!notebookApiBaseUrlOverride) {
+        if (!effectiveNotebookApiBaseUrl) {
             setCapabilityLoaded(true);
             setCapabilityValues([]);
             if (userType === "client") {
@@ -1493,12 +1863,12 @@ export const MainLayout: React.FC = () => {
         let alive = true;
         setCapabilityLoaded(false);
         setCapabilityError(null);
-        void getNotebookCapabilities({
-            accessToken: capabilityToken,
-            apiBaseUrl: notebookApiBaseUrlOverride,
-            hsUrl: matrixHsUrl,
-            matrixUserId: matrixCredentials?.user_id,
-        }).then((result) => {
+        void runNotebookAuthedRequest((auth) => getNotebookCapabilities({
+            accessToken: auth.accessToken,
+            apiBaseUrl: auth.apiBaseUrl,
+            hsUrl: auth.hsUrl,
+            matrixUserId: auth.matrixUserId,
+        })).then((result) => {
             if (!alive) return;
             const values = Array.isArray(result.capabilities)
                 ? result.capabilities.filter((value): value is string => typeof value === "string")
@@ -1514,7 +1884,7 @@ export const MainLayout: React.FC = () => {
                 status: error instanceof NotebookServiceError ? error.status : null,
                 code: error instanceof NotebookServiceError ? error.code : null,
                 message: error instanceof Error ? error.message : String(error),
-                notebookApiBaseUrlOverride,
+                notebookApiBaseUrlOverride: effectiveNotebookApiBaseUrl,
                 matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
             });
@@ -1533,7 +1903,11 @@ export const MainLayout: React.FC = () => {
                     error.code === "INVALID_TOKEN_TYPE" ||
                     error.status === 401
                 ) {
-                    setCapabilityError(t("layout.notebook.authFailed"));
+                    triggerNotebookTerminalLogout({
+                        code: error.code,
+                        status: error.status,
+                        terminal: true,
+                    });
                     return;
                 }
                 if (error.code === "CAPABILITY_DISABLED") {
@@ -1553,18 +1927,22 @@ export const MainLayout: React.FC = () => {
                 if (error.status >= 500) {
                     if (isTauriDesktop()) {
                         setCapabilityError(
-                            `Notebook ${error.status} ${error.code}: ${error.message} @ ${notebookApiBaseUrlOverride || "no-base-url"}`,
+                            `Notebook ${error.status} ${error.code}: ${error.message} @ ${effectiveNotebookApiBaseUrl || "no-base-url"}`,
                         );
                         return;
                     }
-                    setCapabilityError(t("layout.notebook.systemBusy"));
+                    setCapabilityError(`${t("layout.notebook.systemBusy")} (${error.code} / HTTP ${error.status})`);
                     return;
                 }
             }
             if (isTauriDesktop() && error instanceof Error) {
                 setCapabilityError(
-                    `Notebook init failed: ${error.message} @ ${notebookApiBaseUrlOverride || "no-base-url"}`,
+                    `Notebook init failed: ${error.message} @ ${effectiveNotebookApiBaseUrl || "no-base-url"}`,
                 );
+                return;
+            }
+            if (error instanceof Error && !isTauriDesktop()) {
+                setCapabilityError(`${t("layout.notebook.capabilityLoadFailed")} (${error.message})`);
                 return;
             }
             setCapabilityError(t("layout.notebook.capabilityLoadFailed"));
@@ -1572,7 +1950,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookApiBaseUrlOverride, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, t, userType]);
+    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, runNotebookAuthedRequest, t, triggerNotebookTerminalLogout, userType]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -1603,6 +1981,11 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         setNotificationSoundHydrated(false);
+        if (isTauriMobile() && resolveRuntimePlatform() === "ios") {
+            setNotificationSoundMode("off");
+            setNotificationSoundHydrated(true);
+            return;
+        }
         const raw = localStorage.getItem(notificationSoundStorageKey);
         if (raw === "off" || raw === "classic" || raw === "soft" || raw === "chime") {
             setNotificationSoundMode(raw);
@@ -1660,6 +2043,48 @@ export const MainLayout: React.FC = () => {
         }
         setSettingsDetail("none");
     }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === "contacts" && mobileView === "list" && activeContact) {
+            setActiveContact(null);
+        }
+    }, [activeContact, activeTab, mobileView]);
+
+    useEffect(() => {
+        const panel = mainPanelRef.current;
+        if (!panel || mobileView !== "detail") return undefined;
+
+        let startX = 0;
+        let startY = 0;
+        let tracking = false;
+
+        const onTouchStart = (event: TouchEvent): void => {
+            const touch = event.touches[0];
+            if (!touch) return;
+            startX = touch.clientX;
+            startY = touch.clientY;
+            tracking = touch.clientX <= 28;
+        };
+
+        const onTouchEnd = (event: TouchEvent): void => {
+            if (!tracking) return;
+            tracking = false;
+            const touch = event.changedTouches[0];
+            if (!touch) return;
+            const deltaX = touch.clientX - startX;
+            const deltaY = Math.abs(touch.clientY - startY);
+            if (deltaX >= 72 && deltaY <= 40) {
+                returnToMobileList();
+            }
+        };
+
+        panel.addEventListener("touchstart", onTouchStart, { passive: true });
+        panel.addEventListener("touchend", onTouchEnd, { passive: true });
+        return () => {
+            panel.removeEventListener("touchstart", onTouchStart);
+            panel.removeEventListener("touchend", onTouchEnd);
+        };
+    }, [mobileView, returnToMobileList]);
 
     useEffect(() => {
         setSummaryPreviewJob(null);
@@ -1738,12 +2163,11 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (
             activeTab === "notebook" &&
-            notebookCapabilityState.loaded &&
-            !notebookCapabilityState.canUseNotebookBasic
+            !notebookWorkspaceVisible
         ) {
             setActiveTab("chat");
         }
-    }, [activeTab, notebookCapabilityState.canUseNotebookBasic, notebookCapabilityState.loaded]);
+    }, [activeTab, notebookWorkspaceVisible]);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
@@ -1791,7 +2215,7 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!isNotificationSoundSupported()) return;
         const unlock = (): void => {
-            ensureNotificationSoundEnabled();
+            ensureNotificationSoundEnabled({ userInitiated: true });
             window.removeEventListener("pointerdown", unlock);
             window.removeEventListener("keydown", unlock);
         };
@@ -1802,20 +2226,6 @@ export const MainLayout: React.FC = () => {
             window.removeEventListener("keydown", unlock);
         };
     }, []);
-
-    const clearLocalAuthSession = useCallback((): void => {
-        clearSession();
-        void getSupabaseClient()
-            .auth.signOut({ scope: "local" })
-            .catch(() => {
-                // ignore local sign-out failures during session cleanup
-            });
-    }, [clearSession]);
-
-    const onLogout = (): void => {
-        clearLocalAuthSession();
-        navigate("/auth", { replace: true });
-    };
 
     useEffect(() => {
         let handled = false;
@@ -1897,8 +2307,8 @@ export const MainLayout: React.FC = () => {
         setChatGlobalSearchLoading(true);
         setChatGlobalSearchError(null);
         try {
-            const response = await chatSearchGlobal({
-                accessToken: hubAccessToken,
+            const response = await runHubSessionRequest((accessToken) => chatSearchGlobal({
+                accessToken,
                 matrixAccessToken,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials.user_id,
@@ -1906,7 +2316,7 @@ export const MainLayout: React.FC = () => {
                 q,
                 limit: 20,
                 cursor: params?.cursor,
-            });
+            }));
             if (params?.append) {
                 setChatGlobalSearchResult((prev) => {
                     if (!prev) return response;
@@ -1936,7 +2346,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setChatGlobalSearchLoading(false);
         }
-    }, [debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl]);
+    }, [debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest]);
 
     useEffect(() => {
         if (!chatGlobalSearchOpen) return;
@@ -1964,15 +2374,15 @@ export const MainLayout: React.FC = () => {
         setSummarySearchLoading(true);
         setSummarySearchError(null);
         try {
-            const response = await chatSearchGlobal({
-                accessToken: hubAccessToken,
+            const response = await runHubSessionRequest((accessToken) => chatSearchGlobal({
+                accessToken,
                 matrixAccessToken,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials.user_id,
             }, {
                 q,
                 limit: 20,
-            });
+            }));
             const normalizedQuery = q.trim().toLowerCase();
             const normalizedQueryNoAt = normalizedQuery.startsWith("@") ? normalizedQuery.slice(1) : normalizedQuery;
             const queryLocalId = normalizedQueryNoAt.split(":")[0] || normalizedQueryNoAt;
@@ -2154,6 +2564,7 @@ export const MainLayout: React.FC = () => {
         matrixClient,
         matrixCredentials?.user_id,
         matrixHsUrl,
+        runHubSessionRequest,
         t,
     ]);
 
@@ -2183,28 +2594,39 @@ export const MainLayout: React.FC = () => {
         return candidates[0]?.roomId ?? null;
     }, [matrixClient]);
 
-    const loadSummaryJobs = useCallback(async () => {
+    const loadSummaryJobs = useCallback(async (options?: { background?: boolean }) => {
         if (!hubAccessToken) return;
-        setSummaryJobsLoading(true);
-        setSummaryJobsError(null);
+        const background = Boolean(options?.background);
+        if (background) {
+            setSummaryJobsRefreshing(true);
+        } else {
+            setSummaryJobsLoading(true);
+            setSummaryJobsError(null);
+        }
         try {
-            const response = await listChatSummaryJobs({
-                accessToken: hubAccessToken,
+            const response = await runHubSessionRequest((accessToken) => listChatSummaryJobs({
+                accessToken,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             setSummaryJobs(Array.isArray(response.items) ? response.items : []);
         } catch (error) {
             const message = error instanceof Error
                 ? mapChatSummaryErrorMessage(error.message, t)
                 : t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
             setSummaryJobsError(message);
-            setSummaryJobs([]);
+            if (!background) {
+                setSummaryJobs([]);
+            }
         } finally {
-            setSummaryJobsLoading(false);
+            if (background) {
+                setSummaryJobsRefreshing(false);
+            } else {
+                setSummaryJobsLoading(false);
+            }
         }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const hasProcessingSummaryJob = useMemo(
         () => summaryJobs.some((job) => job.status === "processing"),
@@ -2266,8 +2688,8 @@ export const MainLayout: React.FC = () => {
         setSummaryGenerationNoticeTone("info");
         try {
             const safeTargetLabel = summarySelectedTarget.label.trim() || roomId;
-            await createChatSummaryJob({
-                accessToken: hubAccessToken,
+            await runHubSessionRequest((accessToken) => createChatSummaryJob({
+                accessToken,
                 targetLabel: safeTargetLabel,
                 roomId,
                 fromDate: summaryStartDate,
@@ -2277,7 +2699,7 @@ export const MainLayout: React.FC = () => {
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             await loadSummaryJobs();
         } catch (error) {
             const message = error instanceof Error
@@ -2301,6 +2723,7 @@ export const MainLayout: React.FC = () => {
         matrixHsUrl,
         matrixCredentials?.user_id,
         loadSummaryJobs,
+        runHubSessionRequest,
         t,
     ]);
 
@@ -2308,13 +2731,13 @@ export const MainLayout: React.FC = () => {
         if (!hubAccessToken || !id) return;
         setSummaryJobActionBusy(true);
         try {
-            await deleteChatSummaryJob({
-                accessToken: hubAccessToken,
+            await runHubSessionRequest((accessToken) => deleteChatSummaryJob({
+                accessToken,
                 id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             await loadSummaryJobs();
         } catch (error) {
             const message = error instanceof Error
@@ -2324,19 +2747,19 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const onRetrySummaryJob = useCallback(async (id: string) => {
         if (!hubAccessToken || !id) return;
         setSummaryJobActionBusy(true);
         try {
-            await retryChatSummaryJob({
-                accessToken: hubAccessToken,
+            await runHubSessionRequest((accessToken) => retryChatSummaryJob({
+                accessToken,
                 id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             setSummaryGenerationNotice(t("layout.notebook.summaryRetryStarted", "Retry started."));
             setSummaryGenerationNoticeTone("info");
             await loadSummaryJobs();
@@ -2348,19 +2771,19 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const onDownloadSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken) return;
         setSummaryJobActionBusy(true);
         try {
-            const blob = await downloadChatSummaryJob({
-                accessToken: hubAccessToken,
+            const blob = await runHubSessionRequest((accessToken) => downloadChatSummaryJob({
+                accessToken,
                 id: job.id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             const compactStart = toCompactDateTime(job.from_date);
             const compactEnd = toCompactDateTime(job.to_date);
             const fileBase = `${job.target_label}聊天室总结${compactStart}${compactEnd}`.replace(/[\\/:*?"<>|]/g, "_");
@@ -2381,20 +2804,20 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryJobActionBusy(false);
         }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     const onPreviewSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
         if (!hubAccessToken || !job?.id) return;
         setSummaryPreviewLoading(true);
         setSummaryPreviewError(null);
         try {
-            const detail = await getChatSummaryJob({
-                accessToken: hubAccessToken,
+            const detail = await runHubSessionRequest((accessToken) => getChatSummaryJob({
+                accessToken,
                 id: job.id,
                 hsUrl: matrixHsUrl,
                 matrixUserId: matrixCredentials?.user_id ?? null,
                 matrixAccessToken,
-            });
+            }));
             setSummaryPreviewJob(detail);
         } catch (error) {
             const message = error instanceof Error ? error.message : "";
@@ -2402,13 +2825,13 @@ export const MainLayout: React.FC = () => {
                 || /404/.test(message);
             if (shouldFallbackToDownload) {
                 try {
-                    const blob = await downloadChatSummaryJob({
-                        accessToken: hubAccessToken,
+                    const blob = await runHubSessionRequest((accessToken) => downloadChatSummaryJob({
+                        accessToken,
                         id: job.id,
                         hsUrl: matrixHsUrl,
                         matrixUserId: matrixCredentials?.user_id ?? null,
                         matrixAccessToken,
-                    });
+                    }));
                     const summaryText = await blob.text();
                     setSummaryPreviewJob({
                         id: job.id,
@@ -2440,7 +2863,7 @@ export const MainLayout: React.FC = () => {
         } finally {
             setSummaryPreviewLoading(false);
         }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, t]);
+    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
 
     useEffect(() => {
         if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
@@ -2451,7 +2874,7 @@ export const MainLayout: React.FC = () => {
         if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
         if (!hasProcessingSummaryJob) return;
         const timer = window.setInterval(() => {
-            void loadSummaryJobs();
+            void loadSummaryJobs({ background: true });
         }, 2500);
         return () => window.clearInterval(timer);
     }, [activeTab, hasProcessingSummaryJob, loadSummaryJobs, notebookSidebarMode]);
@@ -2570,6 +2993,18 @@ export const MainLayout: React.FC = () => {
         if (!locale) return t("common.placeholder");
         const match = translationLanguageOptions.find((option) => option.value === locale);
         return match?.label ?? locale;
+    };
+    const getDisplayLanguageLabel = (locale: string | null | undefined): string => {
+        const normalized = String(locale || "").trim();
+        if (!normalized) return t("common.placeholder");
+        const match = displayLanguageOptions.find((option) => option.value === normalized);
+        return match?.label ?? normalized;
+    };
+    const getTranslationLanguageLabel = (locale: string | null | undefined): string => {
+        const normalized = String(locale || "").trim();
+        if (!normalized) return t("common.placeholder");
+        const match = translationLanguageOptions.find((option) => option.value === normalized);
+        return match?.label ?? normalized;
     };
 
     const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 < Date.now() : false;
@@ -2767,6 +3202,70 @@ export const MainLayout: React.FC = () => {
         () => roomSummaryList.find((item) => item.roomId === selectedFileRoomId) ?? null,
         [roomSummaryList, selectedFileRoomId],
     );
+    const mobileNavItems = useMemo<AppShellNavItem[]>(() => {
+        const items: AppShellNavItem[] = [
+            {
+                key: "contacts",
+                icon: UserGroupIcon,
+                active: activeTab === "contacts",
+                badgeCount: inviteBadgeCount,
+                label: t("roomList.sections.contacts"),
+                onClick: () => openPrimaryTab("contacts"),
+            },
+            {
+                key: "chat",
+                icon: ChatBubbleLeftRightIcon,
+                active: activeTab === "chat",
+                badgeCount: unreadBadgeCount,
+                label: t("main.sidebar.rooms"),
+                onClick: () => openPrimaryTab("chat"),
+            },
+        ];
+
+        if (notebookWorkspaceVisible) {
+            items.push({
+                key: "notebook",
+                icon: BookOpenIcon,
+                active: activeTab === "notebook",
+                label: t("chat.notebook.panelTitle"),
+                onClick: () => openPrimaryTab("notebook"),
+            });
+        }
+
+        items.push(
+            {
+                key: "files",
+                icon: FolderIcon,
+                active: activeTab === "files",
+                label: t("layout.filesTitle"),
+                onClick: () => openPrimaryTab("files"),
+            },
+            {
+                key: "tasks",
+                icon: ClockIcon,
+                active: activeTab === "tasks",
+                label: t("tasks.title"),
+                onClick: () => openPrimaryTab("tasks"),
+            },
+            ...pluginNavItems.map((item) => ({
+                key: `plugin:${item.pluginId}:${item.id}`,
+                icon: resolvePluginNavIcon(item.icon),
+                active: false,
+                badgeCount: item.badgeCount,
+                label: item.label,
+                onClick: () => item.onSelect?.(pluginRuntimeContextValue),
+            })),
+            {
+                key: "settings",
+                icon: Cog6ToothIcon,
+                active: activeTab === "settings",
+                label: t("layout.settings"),
+                onClick: () => openPrimaryTab("settings"),
+            },
+        );
+
+        return items;
+    }, [activeTab, inviteBadgeCount, notebookWorkspaceVisible, openPrimaryTab, pluginNavItems, pluginRuntimeContextValue, t, unreadBadgeCount]);
 
     const visibleSelectedRoomFiles = useMemo(
         () =>
@@ -2845,6 +3344,58 @@ export const MainLayout: React.FC = () => {
         setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
     }, [selectedRoomFiles]);
 
+    useEffect(() => {
+        if (activeTab !== "files") return;
+        const previewableItems = pagedVisibleSelectedRoomFiles.filter((item) => {
+            const previewType = getFilePreviewType(item);
+            return previewType === "image" || previewType === "video";
+        });
+        const previewableIds = new Set(previewableItems.map((item) => item.eventId));
+
+        setFileThumbnailUrls((prev) => {
+            const next: Record<string, string> = {};
+            Object.entries(prev).forEach(([eventId, url]) => {
+                if (previewableIds.has(eventId)) {
+                    next[eventId] = url;
+                } else {
+                    URL.revokeObjectURL(url);
+                }
+            });
+            return next;
+        });
+
+        let cancelled = false;
+        previewableItems.forEach((item) => {
+            const httpUrl = getHttpFileUrl(item);
+            if (!httpUrl) return;
+            if (fileThumbnailUrls[item.eventId]) return;
+            void (async () => {
+                try {
+                    const blob = await fetchMediaBlob(httpUrl, matrixCredentials?.access_token);
+                    const objectUrl = URL.createObjectURL(blob);
+                    if (cancelled) {
+                        URL.revokeObjectURL(objectUrl);
+                        return;
+                    }
+                    setFileThumbnailUrls((prev) => {
+                        const existing = prev[item.eventId];
+                        if (existing) {
+                            URL.revokeObjectURL(objectUrl);
+                            return prev;
+                        }
+                        return { ...prev, [item.eventId]: objectUrl };
+                    });
+                } catch {
+                    // Keep the card usable even if the preview thumbnail cannot be prefetched.
+                }
+            })();
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeTab, pagedVisibleSelectedRoomFiles, matrixCredentials?.access_token, fileThumbnailUrls]);
+
     const getHttpFileUrl = (item: FileLibraryItem): string | null => {
         if (!matrixClient) return null;
         return matrixClient.mxcUrlToHttp(item.mxcUrl);
@@ -2852,8 +3403,23 @@ export const MainLayout: React.FC = () => {
 
     const isFileSelected = (eventId: string): boolean => selectedFileIds.includes(eventId);
 
+    const allVisibleFilesSelected =
+        visibleSelectedRoomFiles.length > 0
+        && visibleSelectedRoomFiles.every((item) => selectedFileIds.includes(item.eventId));
+
     const toggleFileSelection = (eventId: string): void => {
         setSelectedFileIds((prev) => (prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId]));
+    };
+
+    const toggleSelectAllVisibleFiles = (): void => {
+        const visibleIds = visibleSelectedRoomFiles.map((item) => item.eventId);
+        if (visibleIds.length === 0) return;
+        setSelectedFileIds((prev) => {
+            if (visibleIds.every((id) => prev.includes(id))) {
+                return prev.filter((id) => !visibleIds.includes(id));
+            }
+            return Array.from(new Set([...prev, ...visibleIds]));
+        });
     };
 
     const onOpenFileItem = (item: FileLibraryItem): void => {
@@ -2864,13 +3430,22 @@ export const MainLayout: React.FC = () => {
             eventId: item.eventId,
             fileName: item.body,
         });
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = item.body || "file";
-        anchor.rel = "noopener noreferrer";
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
+        void (async () => {
+            try {
+                const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
+                const blobUrl = URL.createObjectURL(blob);
+                const anchor = document.createElement("a");
+                anchor.href = blobUrl;
+                anchor.download = item.body || "file";
+                anchor.rel = "noopener noreferrer";
+                document.body.appendChild(anchor);
+                anchor.click();
+                document.body.removeChild(anchor);
+                URL.revokeObjectURL(blobUrl);
+            } catch {
+                setFileActionError(t("layout.fileDownloadFailed", "File download failed."));
+            }
+        })();
     };
 
     const onPreviewFileItem = (item: FileLibraryItem): void => {
@@ -2883,9 +3458,25 @@ export const MainLayout: React.FC = () => {
             type: previewType,
             fileName: item.body,
         });
-        setPreviewZoom(1);
-        setPreviewOffset({ x: 0, y: 0 });
-        setFilePreview({ url, type: previewType, name: item.body });
+        setFileActionError(null);
+        void (async () => {
+            try {
+                const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
+                const previewUrl = previewType === "pdf"
+                    ? await blobToDataUrl(blob)
+                    : URL.createObjectURL(blob);
+                setPreviewZoom(1);
+                setPreviewOffset({ x: 0, y: 0 });
+                setFilePreview({
+                    url: previewUrl,
+                    type: previewType,
+                    name: item.body,
+                    revokeOnClose: previewType !== "pdf",
+                });
+            } catch {
+                setFileActionError(t("layout.filePreviewFailed", "File preview failed."));
+            }
+        })();
     };
 
     const onJumpToFileMessage = (item: FileLibraryItem): void => {
@@ -2939,8 +3530,29 @@ export const MainLayout: React.FC = () => {
         }
     };
 
+    const deleteFileRecord = async (
+        item: FileLibraryItem,
+        options?: { sendNotice?: boolean },
+    ): Promise<void> => {
+        if (!matrixClient || !matrixCredentials?.user_id) {
+            throw new Error("MATRIX_CLIENT_UNAVAILABLE");
+        }
+        await matrixClient.redactEvent(item.roomId, item.eventId);
+        if (matrixCredentials.hs_url && matrixCredentials.access_token) {
+            await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
+        }
+        if (options?.sendNotice === false) {
+            return;
+        }
+        const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
+        await matrixClient.sendEvent(item.roomId, EventType.RoomMessage, {
+            msgtype: "m.notice",
+            body: t("chat.fileRevokedNotice", { name: selfLabel }),
+        } as never);
+    };
+
     const onDeleteBatchFiles = async (): Promise<void> => {
-        if (fileBatchDeleting) return;
+        if (fileBatchDeleting || !matrixClient) return;
         if (selectedFileIds.length === 0) return;
         const targets = selectedRoomFiles.filter((item) => selectedFileIds.includes(item.eventId));
         if (targets.length === 0) return;
@@ -2952,26 +3564,47 @@ export const MainLayout: React.FC = () => {
             targetCount: targets.length,
         });
         let failed = 0;
+        let succeeded = 0;
         let mappedError: "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" | null = null;
-        for (let i = 0; i < targets.length; i += 1) {
-            const item = targets[i];
+
+        const queue = [...targets];
+        let completed = 0;
+        const workerCount = Math.min(FILE_BATCH_DELETE_CONCURRENCY, queue.length);
+
+        const runWorker = async (): Promise<void> => {
+            while (queue.length > 0) {
+                const item = queue.shift();
+                if (!item) return;
+                try {
+                    await deleteFileRecord(item, { sendNotice: false });
+                    succeeded += 1;
+                } catch (error) {
+                    failed += 1;
+                    if (!mappedError) {
+                        mappedError = mapMediaActionError(error);
+                    }
+                } finally {
+                    completed += 1;
+                    setFileBatchDeleteProgress({ done: completed, total: targets.length });
+                }
+            }
+        };
+
+        await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+        if (succeeded > 0 && selectedFileRoomId) {
+            const selfLabel = getLocalPart(matrixCredentials?.user_id) || matrixCredentials?.user_id || "user";
             try {
-                await matrixClient?.redactEvent(item.roomId, item.eventId);
-                if (matrixCredentials?.hs_url && matrixCredentials.access_token) {
-                    await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
-                }
-                const selfLabel = getLocalPart(matrixCredentials?.user_id) || matrixCredentials?.user_id || "user";
-                await matrixClient?.sendEvent(item.roomId, EventType.RoomMessage, {
+                await matrixClient.sendEvent(selectedFileRoomId, EventType.RoomMessage, {
                     msgtype: "m.notice",
-                    body: t("chat.fileRevokedNotice", { name: selfLabel }),
+                    body: t("layout.fileBatchRevokedNotice", {
+                        name: selfLabel,
+                        count: succeeded,
+                        defaultValue: `${selfLabel} revoked ${succeeded} files`,
+                    }),
                 } as never);
-            } catch (error) {
-                failed += 1;
-                if (!mappedError) {
-                    mappedError = mapMediaActionError(error);
-                }
-            } finally {
-                setFileBatchDeleteProgress({ done: i + 1, total: targets.length });
+            } catch {
+                // Keep batch delete fast; file redactions already succeeded.
             }
         }
         setSelectedFileIds([]);
@@ -3000,11 +3633,16 @@ export const MainLayout: React.FC = () => {
     };
 
     const summaryWorkspacePanel = (
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full min-w-0 max-w-none">
             <div className="mb-4 text-base font-semibold text-slate-800 dark:text-slate-100">
                 {t("layout.notebook.summaryWorkspaceTitle", "AI Chat Summary")}
+                {summaryJobsRefreshing ? (
+                    <span className="ml-2 text-xs font-medium text-slate-400 dark:text-slate-500">
+                        {t("layout.notebook.summaryRefreshing", "Refreshing...")}
+                    </span>
+                ) : null}
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 dark:border-slate-700 dark:bg-slate-950">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-6 dark:border-slate-700 dark:bg-slate-950">
                 {summaryGenerationNotice ? (
                     <div className={`mb-3 rounded-lg px-3 py-2 text-xs ${
                         summaryGenerationNoticeTone === "error"
@@ -3035,12 +3673,27 @@ export const MainLayout: React.FC = () => {
                             <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                                 {`${formatSummaryDisplayDateTime(summaryPreviewJob.from_date)} ~ ${formatSummaryDisplayDateTime(summaryPreviewJob.to_date)}`}
                             </div>
-                            <pre className="max-h-[56vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                                {summaryPreviewJob.summary_text || ""}
-                            </pre>
+                            <div className="max-h-[56vh] max-w-full overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                                <div className="prose prose-sm max-w-none whitespace-pre-wrap break-words text-slate-700 prose-a:text-emerald-600 prose-a:underline dark:prose-invert dark:text-slate-200 dark:prose-a:text-emerald-300">
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm, remarkBreaks]}
+                                        components={{
+                                            a: ({ ...props }) => (
+                                                <a
+                                                    {...props}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                />
+                                            ),
+                                        }}
+                                    >
+                                        {summaryPreviewJob.summary_text || ""}
+                                    </ReactMarkdown>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                ) : summaryJobsLoading ? (
+                ) : summaryJobsLoading && summaryJobs.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
                         {t("layout.notebook.summaryJobsLoading", "Loading summary list...")}
                     </div>
@@ -3061,9 +3714,9 @@ export const MainLayout: React.FC = () => {
                                 className="rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900"
                             >
                                 <div className="mb-1 flex items-center justify-between gap-3">
-                                    <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                        {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
-                                    </div>
+                                        <div className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                            {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
+                                        </div>
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                         job.status === "completed"
                                             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
@@ -3083,7 +3736,7 @@ export const MainLayout: React.FC = () => {
                                 </div>
                                 {job.status === "processing" ? (
                                     <div className="mt-2 space-y-1">
-                                        <div className="text-xs text-slate-600 dark:text-slate-300">
+                                        <div className="break-words text-xs text-slate-600 dark:text-slate-300">
                                             {job.progress_message || t("layout.notebook.summaryStatusProcessing", "Processing")}
                                             {Number.isFinite(Number(job.progress_current)) && Number.isFinite(Number(job.progress_total)) && Number(job.progress_total) > 0
                                                 ? ` (${Number(job.progress_current)}/${Number(job.progress_total)})`
@@ -3106,7 +3759,7 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 ) : null}
                                 {job.status === "failed" ? (
-                                    <div className="mt-1 text-xs text-rose-500 dark:text-rose-300">
+                                    <div className="mt-1 break-words text-xs text-rose-500 dark:text-rose-300">
                                         {job.progress_message || job.error_message || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.")}
                                     </div>
                                 ) : null}
@@ -3159,9 +3812,46 @@ export const MainLayout: React.FC = () => {
     );
 
     return (
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
+        <div
+            className={`flex min-h-0 w-full min-w-0 flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row ${
+                isMobileApp ? "h-[100svh]" : "h-[100dvh]"
+            }`}
+        >
+            <div className="border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
+                <div className="px-3 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1.95rem)]">
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => openPrimaryTab("account")}
+                            className="mt-[0.2rem] inline-flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#2F5C56] text-sm font-bold text-white shadow-sm"
+                            aria-label={t("layout.accountSettings")}
+                        >
+                            {accountAvatarUrl ? (
+                                <img src={accountAvatarUrl} alt={accountId} className="h-full w-full object-cover" />
+                            ) : (
+                                accountInitial
+                            )}
+                        </button>
+                        <div className="min-w-0 flex-1 overflow-x-auto pb-1.5 pt-[0.35rem]">
+                            <div className="flex min-w-max items-center gap-2 pr-1">
+                                {mobileNavItems.map((item) => (
+                                    <MobileNavChip
+                                        key={item.key}
+                                        icon={item.icon}
+                                        active={item.active}
+                                        badgeCount={item.badgeCount}
+                                        label={item.label}
+                                        onClick={item.onClick}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
-            <nav className="w-full bg-gray-900 flex items-center justify-between px-4 py-2 flex-shrink-0 z-20 dark:bg-slate-900 lg:w-16 lg:flex-col lg:justify-start lg:py-4">
+            <nav className="hidden flex-shrink-0 items-center justify-between bg-gray-900 px-4 py-2 dark:bg-slate-900 lg:flex lg:w-16 lg:flex-col lg:justify-start lg:py-4">
                 {/* App Logo Placeholder */}
                 <div className="relative lg:mb-8">
                     <button
@@ -3224,7 +3914,7 @@ export const MainLayout: React.FC = () => {
                         }}
                         className="order-2 lg:order-none"
                     />
-                    {notebookCapabilityState.canUseNotebookBasic && (
+                    {notebookWorkspaceVisible && (
                         <NavBarItem
                             icon={BookOpenIcon}
                             active={activeTab === "notebook"}
@@ -3349,7 +4039,7 @@ export const MainLayout: React.FC = () => {
                                                 }`}
                                             aria-label={t("layout.light")}
                                         >
-                                            <span aria-hidden="true">☀</span>
+                                            <SunIcon className="h-4 w-4" />
                                         </button>
                                         <button
                                             type="button"
@@ -3360,7 +4050,7 @@ export const MainLayout: React.FC = () => {
                                                 }`}
                                             aria-label={t("layout.dark")}
                                         >
-                                            <span aria-hidden="true">🌙</span>
+                                            <MoonIcon className="h-4 w-4" />
                                         </button>
                                     </div>
                                 </div>
@@ -3440,6 +4130,7 @@ export const MainLayout: React.FC = () => {
                                             const next = event.target.value as NotificationSoundMode;
                                             setNotificationSoundMode(next);
                                             if (next !== "off") {
+                                                ensureNotificationSoundEnabled({ userInitiated: true });
                                                 playNotificationSound(next);
                                             }
                                         }}
@@ -3454,6 +4145,7 @@ export const MainLayout: React.FC = () => {
                                         type="button"
                                         onClick={() => {
                                             if (notificationSoundMode === "off") return;
+                                            ensureNotificationSoundEnabled({ userInitiated: true });
                                             playNotificationSound(notificationSoundMode);
                                         }}
                                         disabled={notificationSoundMode === "off"}
@@ -3510,7 +4202,55 @@ export const MainLayout: React.FC = () => {
                                 {t("layout.accountSettings")}
                             </div>
                         </div>
-                        <div className="p-4 space-y-3">
+                        <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar p-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] space-y-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                                <div className="flex items-center gap-3">
+                                    {accountAvatarUrl ? (
+                                        <img src={accountAvatarUrl} alt={accountId} className="h-14 w-14 rounded-2xl object-cover" />
+                                    ) : (
+                                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-200 text-lg font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-100">
+                                            {accountInitial}
+                                        </div>
+                                    )}
+                                    <div className="min-w-0">
+                                        <div className="truncate text-base font-semibold text-slate-900 dark:text-slate-50">
+                                            {meProfile?.display_name || accountId}
+                                        </div>
+                                    <div className="truncate text-sm text-slate-500 dark:text-slate-400">
+                                        {accountId}
+                                    </div>
+                                    <div className="truncate text-xs text-slate-400 dark:text-slate-500">
+                                        {accountSubtitle}
+                                    </div>
+                                </div>
+                            </div>
+                                <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Company</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.company_name || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Title</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.job_title || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Country</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.country || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Matrix ID</div>
+                                        <div className="mt-1 break-all text-slate-700 dark:text-slate-100">{meProfile?.matrix_user_id || matrixCredentials?.user_id || t("common.placeholder")}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Display Language</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{getDisplayLanguageLabel(meProfile?.locale || displayLanguage)}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Chat Language</div>
+                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{getTranslationLanguageLabel(meProfile?.translation_locale || chatReceiveLanguage)}</div>
+                                    </div>
+                                </div>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => avatarUploadInputRef.current?.click()}
@@ -3651,6 +4391,7 @@ export const MainLayout: React.FC = () => {
                             onManualSync={() => {
                                 void notebookModule.syncItems({ force: true, showIndicator: true });
                             }}
+                            manualSyncAvailable={notebookModule.hasRemoteNotebookApi}
                             busy={notebookModule.actionBusy}
                             listRefreshing={notebookModule.listRefreshing}
                             hasMore={notebookModule.hasMore}
@@ -3775,25 +4516,8 @@ export const MainLayout: React.FC = () => {
                     )
                 ) : (
                     <>
-                        {/* Header */}
-                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="flex items-center gap-3 min-w-0">
-                                {accountAvatarUrl ? (
-                                    <img src={accountAvatarUrl} alt={accountId} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                ) : (
-                                    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex-shrink-0" />
-                                )}
-                                <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 truncate dark:text-slate-100">
-                                        {accountId}
-                                    </div>
-                                    <div className="text-xs text-slate-500 truncate dark:text-slate-400">{accountSubtitle}</div>
-                                </div>
-                            </div>
-                        </div>
-
                         {/* Search Bar */}
-                        <div ref={chatGlobalSearchPanelRef} className="p-3 relative">
+                        <div ref={chatGlobalSearchPanelRef} className="relative p-3">
                             <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
                                 <svg
                                     className="w-5 h-5 text-gray-400 dark:text-slate-400"
@@ -3937,7 +4661,7 @@ export const MainLayout: React.FC = () => {
                                 setRestoredActiveContactId(contact?.id ?? null);
                                 setMobileView("detail");
                             }}
-                            activeContactId={activeContact?.id ?? restoredActiveContactId}
+                            activeContactId={mobileView === "detail" ? (activeContact?.id ?? restoredActiveContactId) : null}
                             contactsRefreshToken={contactsRefreshToken}
                             pinnedRoomIds={pinnedRoomIds}
                             enableContactPolling
@@ -3949,6 +4673,7 @@ export const MainLayout: React.FC = () => {
 
             {/* 3. Chat Area (Flex-grow, bg-[#F2F4F7]) */}
             <main
+                ref={mainPanelRef}
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
             >
@@ -3957,37 +4682,16 @@ export const MainLayout: React.FC = () => {
                         {...taskUi.reminderProps}
                     />
                 ) : null}
-                {capabilityError && (
-                    <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                        <div>{capabilityError}</div>
-                        <div className="mt-2 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={retryNotebookCapability}
-                                className="rounded-md border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-200 dark:hover:bg-rose-900/40"
-                            >
-                                {t("layout.notebook.retry")}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onLogout}
-                                className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-700"
-                            >
-                                {t("layout.notebook.relogin")}
-                            </button>
-                        </div>
-                    </div>
-                )}
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
-                    <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
+                    <div className="flex-1 min-h-0 overflow-hidden gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
                         {activeContact ? (
                             <div className="flex-1 min-h-0 flex flex-col">
                                 <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-slate-800 sm:px-8 sm:py-6">
                                     <div className="flex items-center gap-3 sm:gap-4">
                                         <button
                                             type="button"
-                                            onClick={() => setMobileView("list")}
+                                            onClick={returnToMobileList}
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
                                             aria-label={t("layout.backToList")}
                                         >
@@ -4200,13 +4904,13 @@ export const MainLayout: React.FC = () => {
                             description="The local file index is being restored first so room navigation stays smooth."
                         />
                     ) : (
-                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900">
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white dark:bg-slate-900">
                         {!selectedRoomSummary ? (
                             <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
                                 {t("layout.fileNoRoomSelected")}
                             </div>
                         ) : (
-                            <div className="flex-1 flex flex-col">
+                            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                                 <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-100 dark:border-slate-800">
                                     <button
                                         type="button"
@@ -4217,27 +4921,27 @@ export const MainLayout: React.FC = () => {
                                         &lt;
                                     </button>
                                     <div className="min-w-0">
-                                        <div className="text-base font-semibold text-slate-800 truncate dark:text-slate-100">
+                                        <div className="text-[18px] font-semibold leading-7 text-slate-800 truncate dark:text-slate-100">
                                             {selectedRoomSummary.roomName}
                                         </div>
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                                        <div className="text-[14px] leading-5 text-slate-500 dark:text-slate-400">
                                             {t("layout.filesCountLabel", { count: selectedRoomSummary.attachmentCount })}
                                         </div>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setShowFileToolbarMenu((prev) => !prev)}
-                                        className="h-8 rounded-lg border border-gray-200 px-2 text-xs text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                                        className="h-10 rounded-xl border border-gray-200 px-3 text-sm text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
                                     >
                                         ...
                                     </button>
                                 </div>
                                 {showFileToolbarMenu && (
-                                    <div className="mx-6 mt-2 w-36 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                    <div className="mx-6 mt-2 w-40 rounded-xl border border-gray-200 bg-white py-1.5 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                         <button
                                             type="button"
                                             disabled={fileBatchDeleting}
-                                            className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                            className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                             onClick={() => {
                                                 if (fileBatchDeleting) return;
                                                 setFileBatchMode((prev) => !prev);
@@ -4250,7 +4954,7 @@ export const MainLayout: React.FC = () => {
                                     </div>
                                 )}
                                 {fileBatchMode && (
-                                    <div className="mx-6 mt-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
+                                    <div className="mx-6 mt-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
                                         <span>
                                             {fileBatchDeleting
                                                 ? t("layout.fileBatchDeletingProgress", {
@@ -4259,19 +4963,31 @@ export const MainLayout: React.FC = () => {
                                                 })
                                                 : t("layout.fileBatchSelectedCount", { count: selectedFileIds.length })}
                                         </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => void onDeleteBatchFiles()}
-                                            disabled={fileBatchDeleting || selectedFileIds.length === 0}
-                                            className="rounded-md bg-rose-500 px-2 py-1 text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            {fileBatchDeleting ? t("layout.fileDeletingBusy") : t("layout.fileBatchDelete")}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={toggleSelectAllVisibleFiles}
+                                                disabled={fileBatchDeleting || visibleSelectedRoomFiles.length === 0}
+                                                className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:border-emerald-400 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300 dark:hover:border-emerald-500 dark:hover:bg-emerald-900/30"
+                                            >
+                                                {allVisibleFilesSelected
+                                                    ? t("layout.fileBatchDeselectAll", "取消全选")
+                                                    : t("layout.fileBatchSelectAll", "全选")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void onDeleteBatchFiles()}
+                                                disabled={fileBatchDeleting || selectedFileIds.length === 0}
+                                                className="rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                {fileBatchDeleting ? t("layout.fileDeletingBusy") : t("layout.fileBatchDelete")}
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                                 <div className="px-6 pt-4">
                                     {fileHistoryLoadingRoomId === selectedFileRoomId && (
-                                        <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                                        <div className="mb-2 text-sm text-slate-500 dark:text-slate-400">
                                             {t("common.loading")}
                                         </div>
                                     )}
@@ -4281,7 +4997,7 @@ export const MainLayout: React.FC = () => {
                                             value={fileListSearch}
                                             onChange={(event) => setFileListSearch(event.target.value)}
                                             placeholder={t("layout.filesListSearchPlaceholder")}
-                                            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                         />
                                         <select
                                             value={fileListTypeFilter}
@@ -4290,7 +5006,7 @@ export const MainLayout: React.FC = () => {
                                                     event.target.value as "all" | "image" | "video" | "audio" | "pdf" | "other",
                                                 )
                                             }
-                                            className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                            className="rounded-xl border border-gray-200 bg-white px-3 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                         >
                                             <option value="all">{t("layout.fileFilterTypeAll")}</option>
                                             <option value="image">{t("layout.fileFilterTypeImage")}</option>
@@ -4301,7 +5017,7 @@ export const MainLayout: React.FC = () => {
                                         </select>
                                     </div>
                                 </div>
-                                <div className="px-6 pt-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                                <div className="hidden px-6 pt-3 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400 sm:block">
                                     <div className="grid grid-cols-[32px_84px_90px_90px_1fr] gap-2">
                                         <span />
                                         <span>{t("layout.fileColumnPreview")}</span>
@@ -4310,54 +5026,87 @@ export const MainLayout: React.FC = () => {
                                         <span>{t("layout.fileColumnActions")}</span>
                                     </div>
                                 </div>
-                                <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar px-6 pb-6 space-y-2">
+                                <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] space-y-2 touch-pan-y">
                                     {visibleSelectedRoomFiles.length === 0 ? (
-                                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-base text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                                             {t("layout.fileListEmptyInRoom")}
                                         </div>
                                     ) : (
                                         pagedVisibleSelectedRoomFiles.map((item) => {
                                             const fileType = getFileTypeGroup(item);
                                             const ext = getFileExtension(item.body, item.mimeType);
-                                            const httpUrl = getHttpFileUrl(item);
                                             return (
-                                                <div key={item.eventId} className="grid grid-cols-[32px_84px_90px_90px_1fr] items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                                    <div className="flex items-center justify-center">
+                                                <div
+                                                    key={item.eventId}
+                                                    onClick={fileBatchMode ? () => toggleFileSelection(item.eventId) : undefined}
+                                                    className={`flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950 sm:grid sm:grid-cols-[32px_84px_90px_90px_1fr] sm:items-center sm:gap-3 sm:px-3 sm:py-3 ${
+                                                        fileBatchMode ? "cursor-pointer" : ""
+                                                    }`}
+                                                >
+                                                    <div className={fileBatchMode ? "flex w-6 shrink-0 items-center justify-center" : "hidden items-center justify-center sm:flex"}>
                                                         {fileBatchMode ? (
                                                             <input
                                                                 type="checkbox"
                                                                 checked={isFileSelected(item.eventId)}
                                                                 onChange={() => toggleFileSelection(item.eventId)}
+                                                                onClick={(event) => event.stopPropagation()}
                                                                 className="h-4 w-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900"
                                                             />
-                                                        ) : null}
+                                                        ) : <span />}
                                                     </div>
-                                                    <div className="h-14 w-20 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-                                                        {fileType === "image" && httpUrl ? (
-                                                            <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
-                                                                <img src={httpUrl} alt={item.body} className="h-full w-full object-cover" />
+                                                    <div className="h-14 w-20 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                                                        {fileType === "image" && fileThumbnailUrls[item.eventId] ? (
+                                                            <button
+                                                                type="button"
+                                                                disabled={fileBatchMode}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    if (fileBatchMode) return;
+                                                                    onPreviewFileItem(item);
+                                                                }}
+                                                                className="h-full w-full disabled:cursor-default"
+                                                            >
+                                                                <img src={fileThumbnailUrls[item.eventId]} alt={item.body} className="h-full w-full object-cover" />
                                                             </button>
-                                                        ) : fileType === "video" && httpUrl ? (
-                                                            <button type="button" onClick={() => onPreviewFileItem(item)} className="h-full w-full">
-                                                                <video src={httpUrl} className="h-full w-full object-cover" muted preload="metadata" />
+                                                        ) : fileType === "video" && fileThumbnailUrls[item.eventId] ? (
+                                                            <button
+                                                                type="button"
+                                                                disabled={fileBatchMode}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    if (fileBatchMode) return;
+                                                                    onPreviewFileItem(item);
+                                                                }}
+                                                                className="h-full w-full disabled:cursor-default"
+                                                            >
+                                                                <video src={fileThumbnailUrls[item.eventId]} className="h-full w-full object-cover" muted preload="metadata" />
                                                             </button>
                                                         ) : (
                                                             <button
                                                                 type="button"
-                                                                onClick={() => onPreviewFileItem(item)}
-                                                                disabled={fileType === "other"}
-                                                                className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500 disabled:cursor-default dark:text-slate-300"
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    if (fileBatchMode || fileType === "other") return;
+                                                                    onPreviewFileItem(item);
+                                                                }}
+                                                                disabled={fileBatchMode || fileType === "other"}
+                                                                className="flex h-full w-full items-center justify-center text-sm font-semibold text-slate-500 disabled:cursor-default dark:text-slate-300"
                                                             >
                                                                 {ext}
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className="text-sm text-slate-700 dark:text-slate-200">{ext}</div>
-                                                    <div className="text-sm text-slate-700 dark:text-slate-200">
-                                                        {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
+                                                    <div className="min-w-0 flex-1 sm:contents">
+                                                        <div className="truncate text-base font-semibold text-slate-700 dark:text-slate-200 sm:hidden">
+                                                            {item.body || "file"}
+                                                        </div>
+                                                        <div className="text-base text-slate-700 dark:text-slate-200 sm:block">{ext}</div>
+                                                        <div className="text-sm text-slate-500 dark:text-slate-400 sm:text-base sm:text-slate-700 sm:dark:text-slate-200">
+                                                            {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
+                                                        </div>
                                                     </div>
-                                                    <div className="relative flex items-center justify-between gap-2">
-                                                        <div className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                                                    <div className="relative ml-auto flex items-center justify-between gap-2 sm:ml-0">
+                                                        <div className="hidden min-w-0 flex-1 truncate text-sm text-slate-500 dark:text-slate-400 sm:block">
                                                             {new Date(item.ts).toLocaleString()}
                                                         </div>
                                                         {!fileBatchMode && (
@@ -4371,11 +5120,11 @@ export const MainLayout: React.FC = () => {
                                                             </button>
                                                         )}
                                                         {!fileBatchMode && activeFileMenuEventId === item.eventId && (
-                                                            <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                                            <div className="absolute right-0 top-8 z-20 w-32 rounded-xl border border-gray-200 bg-white py-1.5 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                                                 {getFilePreviewType(item) && (
                                                                     <button
                                                                         type="button"
-                                                                        className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                        className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                                                         onClick={() => {
                                                                             setActiveFileMenuEventId(null);
                                                                             onPreviewFileItem(item);
@@ -4386,7 +5135,7 @@ export const MainLayout: React.FC = () => {
                                                                 )}
                                                                 <button
                                                                     type="button"
-                                                                    className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                    className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                                                     onClick={() => {
                                                                         setActiveFileMenuEventId(null);
                                                                         onOpenFileItem(item);
@@ -4396,7 +5145,7 @@ export const MainLayout: React.FC = () => {
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                                                                    className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
                                                                     onClick={() => {
                                                                         setActiveFileMenuEventId(null);
                                                                         onJumpToFileMessage(item);
@@ -4407,7 +5156,7 @@ export const MainLayout: React.FC = () => {
                                                                 <button
                                                                     type="button"
                                                                     disabled={fileDeletingEventId === item.eventId || fileBatchDeleting}
-                                                                    className="w-full px-3 py-1.5 text-left text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-slate-800"
+                                                                    className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-slate-800"
                                                                     onClick={() => void onDeleteFileItem(item)}
                                                                 >
                                                                     {fileDeletingEventId === item.eventId
@@ -4425,7 +5174,7 @@ export const MainLayout: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={() => setFileListPage((prev) => prev + 1)}
-                                            className="mx-auto block rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                            className="mx-auto block rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
                                         >
                                             {t("layout.fileLoadMore", {
                                                 shown: pagedVisibleSelectedRoomFiles.length,
@@ -4455,7 +5204,7 @@ export const MainLayout: React.FC = () => {
                         </div>
                     ) : (
                         <NotebookPanel
-                            enabled={notebookCapabilityState.canUseNotebookBasic}
+                            enabled={notebookWorkspaceAvailable}
                             selectedItem={notebookModule.selectedItem}
                             isCreatingDraft={notebookModule.isCreatingDraft}
                             editorTitle={notebookModule.editorTitle}
@@ -4686,6 +5435,7 @@ export const MainLayout: React.FC = () => {
                             chunksTotal={notebookModule.chunksTotal}
                             busy={notebookModule.actionBusy}
                             actionError={notebookModule.actionError || notebookFileActionError}
+                            requestDebug={notebookModule.requestDebug}
                             uploadState={notebookUploadState}
                             onMobileBack={() => setMobileView("list")}
                             chunkSettings={notebookModule.chunkSettings}
@@ -4712,7 +5462,7 @@ export const MainLayout: React.FC = () => {
                                     <div className="flex items-center gap-3 mb-4">
                                         <button
                                             type="button"
-                                            onClick={() => setMobileView("list")}
+                                            onClick={returnToMobileList}
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
                                             aria-label={t("layout.backToList")}
                                         >
@@ -4730,14 +5480,9 @@ export const MainLayout: React.FC = () => {
                                                 disabled={chatReceiveLanguageSaving}
                                                 onClick={() => {
                                                     if (chatReceiveLanguageSaving || chatReceiveLanguage === option.value) {
-                                                        setSettingsDetail("none");
-                                                        setMobileView("list");
                                                         return;
                                                     }
-                                                    void handleChatReceiveLanguageChange(option.value).then(() => {
-                                                        setSettingsDetail("none");
-                                                        setMobileView("list");
-                                                    });
+                                                    void handleChatReceiveLanguageChange(option.value);
                                                 }}
                                                 className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${chatReceiveLanguage === option.value
                                                     ? "border-yellow-400 text-yellow-600 dark:text-yellow-300"
@@ -4874,7 +5619,7 @@ export const MainLayout: React.FC = () => {
                             onRetryNotebookCapability: retryNotebookCapability,
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
-                            notebookApiBaseUrl: notebookApiBaseUrlOverride,
+                            notebookApiBaseUrl: effectiveNotebookApiBaseUrl,
                             ...taskUi.chatContext,
                         }}
                     />
@@ -4922,7 +5667,13 @@ export const MainLayout: React.FC = () => {
             )}
             {filePreview && (
                 <div
-                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4"
+                    className={`fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4 ${
+                        isMobileApp
+                            ? "py-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
+                            : "py-6"
+                    }`}
+                    onClick={closeFilePreview}
+                    onTouchEnd={isMobileApp ? closeFilePreview : undefined}
                     onMouseMove={(event) => {
                         if (!previewDraggingRef.current) return;
                         const dx = event.clientX - previewDragStartRef.current.x;
@@ -4941,14 +5692,33 @@ export const MainLayout: React.FC = () => {
                 >
                     <button
                         type="button"
-                        onClick={() => setFilePreview(null)}
-                        className="absolute top-6 right-6 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            closeFilePreview();
+                        }}
+                        onTouchEnd={isMobileApp
+                            ? (event) => {
+                                event.stopPropagation();
+                                closeFilePreview();
+                            }
+                            : undefined}
+                        className={`absolute rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20 ${
+                            isMobileApp
+                                ? "right-4 top-[max(1rem,env(safe-area-inset-top))]"
+                                : "right-6 top-6"
+                        }`}
                     >
                         {t("common.close")}
                     </button>
                     {filePreview.type === "image" ? (
                         <div
-                            className="max-h-[90vh] max-w-[90vw] cursor-grab"
+                            className={`overflow-hidden rounded-xl bg-black/30 cursor-grab ${
+                                isMobileApp
+                                    ? "max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)]"
+                                    : "max-h-[90vh] max-w-[90vw]"
+                            }`}
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
                             onMouseDown={(event) => {
                                 previewDraggingRef.current = true;
                                 previewDragStartRef.current = { x: event.clientX, y: event.clientY };
@@ -4963,7 +5733,11 @@ export const MainLayout: React.FC = () => {
                             <img
                                 src={filePreview.url}
                                 alt={filePreview.name}
-                                className="max-h-[90vh] max-w-[90vw] select-none"
+                                className={`select-none ${
+                                    isMobileApp
+                                        ? "max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)]"
+                                        : "max-h-[90vh] max-w-[90vw]"
+                                }`}
                                 style={{
                                     transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewZoom})`,
                                     transition: previewDraggingRef.current ? "none" : "transform 120ms ease",
@@ -4972,14 +5746,39 @@ export const MainLayout: React.FC = () => {
                             />
                         </div>
                     ) : filePreview.type === "pdf" ? (
-                        <iframe src={filePreview.url} title={filePreview.name} className="h-[90vh] w-[90vw] rounded-lg bg-white" />
+                        <div
+                            className={`overflow-hidden rounded-xl bg-white ${
+                                isMobileApp
+                                    ? "h-[min(82vh,calc(100svh-5rem))] w-[min(92vw,42rem)]"
+                                    : "h-[90vh] w-[90vw]"
+                            }`}
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
+                        >
+                            <iframe src={filePreview.url} title={filePreview.name} className="h-full w-full bg-white" />
+                        </div>
                     ) : filePreview.type === "audio" ? (
-                        <div className="w-full max-w-xl rounded-xl bg-slate-900 p-6">
+                        <div
+                            className="w-full max-w-xl rounded-xl bg-slate-900 p-6"
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
+                        >
                             <div className="mb-3 text-sm text-slate-200">{filePreview.name}</div>
                             <audio src={filePreview.url} controls autoPlay className="w-full" />
                         </div>
                     ) : (
-                        <video src={filePreview.url} controls autoPlay className="max-h-[90vh] max-w-[90vw] rounded-lg" />
+                        <video
+                            src={filePreview.url}
+                            controls
+                            autoPlay
+                            className={`rounded-xl bg-black ${
+                                isMobileApp
+                                    ? "max-h-[min(82vh,calc(100svh-5rem))] max-w-[min(92vw,42rem)]"
+                                    : "max-h-[90vh] max-w-[90vw]"
+                            }`}
+                            onClick={(event) => event.stopPropagation()}
+                            onTouchEnd={isMobileApp ? (event) => event.stopPropagation() : undefined}
+                        />
                     )}
                 </div>
             )}
