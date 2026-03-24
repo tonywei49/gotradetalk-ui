@@ -85,6 +85,10 @@ import {
     type SummarySearchTarget,
     useNotebookModule,
 } from "../features/notebook";
+import {
+    deriveNotebookAuthUiState,
+    type NotebookTerminalAuthErrorCode,
+} from "../features/notebook/utils/deriveNotebookAuthUiState";
 import { TaskDetail, TaskList, TaskReminderBanner, useTaskModule, useTaskUI } from "../features/tasks";
 import {
     getCompanyNotebookAiSettings,
@@ -862,6 +866,8 @@ export const MainLayout: React.FC = () => {
     const [notebookApiBaseUrlOverride, setNotebookApiBaseUrlOverride] = useState<string | null>(null);
     const [notebookUploadLimitMb, setNotebookUploadLimitMb] = useState<number>(20);
     const [hubMeResolved, setHubMeResolved] = useState(false);
+    const [notebookTerminalAuthErrorCodeState, setNotebookTerminalAuthErrorCodeState] = useState<NotebookTerminalAuthErrorCode | null>(null);
+    const [notebookRetryableServiceError, setNotebookRetryableServiceError] = useState(false);
     const fallbackAccountId = (matrixCredentials?.user_id || "User").replace(/^@/, "").split(":")[0] || "User";
     const accountId = meProfile?.user_local_id || fallbackAccountId;
     const accountInitial = accountId.charAt(0).toUpperCase() || "U";
@@ -1168,13 +1174,6 @@ export const MainLayout: React.FC = () => {
         });
     }, [desktopUpdaterAvailable, hubMeResolved]);
 
-    useEffect(() => {
-        if (!desktopUpdaterAvailable || !hubMeResolved || !capabilityLoaded || !capabilityError) return;
-        if (notebookBootNoticeRef.current === capabilityError) return;
-        notebookBootNoticeRef.current = capabilityError;
-        pushToast("warn", capabilityError, 5000);
-    }, [capabilityError, capabilityLoaded, desktopUpdaterAvailable, hubMeResolved, pushToast]);
-
     const resolveAvatarUrl = useCallback((mxcUrl: string | null | undefined): string | null => {
         if (!matrixClient || !mxcUrl) return null;
         return matrixClient.mxcUrlToHttp(mxcUrl, 96, 96, "crop") ?? matrixClient.mxcUrlToHttp(mxcUrl) ?? null;
@@ -1182,6 +1181,11 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         notebookUserSubRef.current = parseJwtSub(hubSession?.access_token);
     }, [hubSession?.access_token]);
+
+    useEffect(() => {
+        setNotebookTerminalAuthErrorCodeState(null);
+        setNotebookRetryableServiceError(false);
+    }, [hubSession?.access_token, matrixCredentials?.user_id, userType]);
 
     useEffect(() => {
         if (!userType || !matrixCredentials) return;
@@ -1266,6 +1270,8 @@ export const MainLayout: React.FC = () => {
                 const nextIdentity = nextUserId || nextSub;
                 if (expectedSub && nextIdentity && expectedSub !== nextIdentity) {
                     clearSession();
+                    setNotebookTerminalAuthErrorCodeState("INVALID_AUTH_TOKEN");
+                    setNotebookRetryableServiceError(false);
                     setCapabilityError(t("layout.notebook.authFailed"));
                     return null;
                 }
@@ -1279,19 +1285,37 @@ export const MainLayout: React.FC = () => {
                 notebookRefreshBackoffUntilRef.current = 0;
                 notebookRefreshFailureCountRef.current = 0;
                 setCapabilityTokenRefreshSeq((prev) => prev + 1);
+                setNotebookTerminalAuthErrorCodeState(null);
+                setNotebookRetryableServiceError(false);
                 setCapabilityError(null);
                 return data.session.access_token;
             } catch (error) {
                 const status = (error as { status?: number } | null)?.status;
                 const message = error instanceof Error ? error.message : String(error ?? "");
                 const isRateLimited = status === 429 || message.includes("429") || message.toLowerCase().includes("too many requests");
+                const isAuthFailure =
+                    status === 401
+                    || message === "INVALID_AUTH_TOKEN"
+                    || message.includes("Invalid Refresh Token")
+                    || message.includes("NO_VALID_HUB_TOKEN")
+                    || message.includes("INVALID_TOKEN_TYPE");
                 notebookRefreshFailureCountRef.current = Math.min(notebookRefreshFailureCountRef.current + 1, 6);
                 const step = notebookRefreshFailureCountRef.current;
                 const delayMs = isRateLimited
                     ? Math.min(15000 * (2 ** Math.max(0, step - 1)), 5 * 60 * 1000)
                     : Math.min(5000 * (2 ** Math.max(0, step - 1)), 60 * 1000);
                 notebookRefreshBackoffUntilRef.current = Date.now() + delayMs;
-                setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.authFailed"));
+                if (isAuthFailure) {
+                    setNotebookTerminalAuthErrorCodeState("INVALID_AUTH_TOKEN");
+                    setNotebookRetryableServiceError(false);
+                    setCapabilityError(t("layout.notebook.authFailed"));
+                } else {
+                    setNotebookTerminalAuthErrorCodeState(null);
+                    setNotebookRetryableServiceError(true);
+                    setCapabilityError(isRateLimited
+                        ? t("layout.notebook.systemBusy")
+                        : t("layout.notebook.capabilityLoadFailed"));
+                }
                 return null;
             } finally {
                 if (notebookRefreshFlightTimerRef.current) {
@@ -1431,18 +1455,80 @@ export const MainLayout: React.FC = () => {
         refreshToken: notebookRefreshToken,
         onAuthFailure: async () => refreshNotebookToken({ force: true }),
     });
+    const notebookTerminalAuthErrorCode = useMemo<NotebookTerminalAuthErrorCode | null>(() => {
+        if (notebookTerminalAuthErrorCodeState) {
+            return notebookTerminalAuthErrorCodeState;
+        }
+        if (refreshingNotebookToken) {
+            return null;
+        }
+        if (hubSession?.refresh_token) {
+            return null;
+        }
+        if (notebookToken.reason === "missing_hub_token") {
+            return "NO_VALID_HUB_TOKEN";
+        }
+        if (notebookToken.reason === "expired_hub_token") {
+            return "INVALID_AUTH_TOKEN";
+        }
+        if (notebookToken.reason === "invalid_hub_token_format") {
+            return "INVALID_TOKEN_TYPE";
+        }
+        return null;
+    }, [hubSession?.refresh_token, notebookTerminalAuthErrorCodeState, notebookToken.reason, refreshingNotebookToken]);
+    const notebookAuthUiState = useMemo(() => deriveNotebookAuthUiState({
+        userType,
+        notebookTokenReason: notebookToken.reason,
+        hasRefreshToken: Boolean(hubSession?.refresh_token),
+        refreshingNotebookToken,
+        hubMeResolved,
+        hasResolvedNotebookApiBaseUrl: Boolean(effectiveNotebookApiBaseUrl),
+        capabilityLoaded,
+        terminalAuthErrorCode: notebookTerminalAuthErrorCode,
+        retryableServiceError: notebookRetryableServiceError,
+    }), [
+        capabilityLoaded,
+        effectiveNotebookApiBaseUrl,
+        hubMeResolved,
+        hubSession?.refresh_token,
+        notebookRetryableServiceError,
+        notebookTerminalAuthErrorCode,
+        notebookToken.reason,
+        refreshingNotebookToken,
+        userType,
+    ]);
+    useEffect(() => {
+        if (notebookAuthUiState.notebookAuthPhase !== "ready") return;
+        if (notebookAuthUiState.notebookErrorPolicy !== "retryable-service-error") return;
+        if (!desktopUpdaterAvailable || !hubMeResolved || !capabilityLoaded || !capabilityError) return;
+        if (notebookBootNoticeRef.current === capabilityError) return;
+        notebookBootNoticeRef.current = capabilityError;
+        pushToast("warn", capabilityError, 5000);
+    }, [
+        capabilityError,
+        capabilityLoaded,
+        desktopUpdaterAvailable,
+        hubMeResolved,
+        notebookAuthUiState.notebookAuthPhase,
+        notebookAuthUiState.notebookErrorPolicy,
+        pushToast,
+    ]);
     const notebookRuntimeDebug = useMemo(() => ({
         userType,
         hubMeResolved,
         configuredNotebookApiBaseUrl: configuredNotebookApiBaseUrl ?? null,
         notebookApiBaseUrlOverride: notebookApiBaseUrlOverride ?? null,
         effectiveNotebookApiBaseUrl: effectiveNotebookApiBaseUrl ?? null,
+        notebookAuthPhase: notebookAuthUiState.notebookAuthPhase,
+        notebookErrorPolicy: notebookAuthUiState.notebookErrorPolicy,
+        notebookRetryableServiceError,
         notebookReady,
         notebookWorkspaceAvailable,
         hasHubAccessToken: Boolean(hubAccessToken),
         hasMatrixAccessToken: Boolean(matrixCredentials?.access_token),
         matrixUserId: matrixCredentials?.user_id ?? null,
         notebookTokenReason: notebookToken.reason,
+        notebookTerminalAuthErrorCode,
         hasNotebookAuth: Boolean(notebookAuth?.accessToken),
         hasNotebookWorkspaceAuth: Boolean(notebookWorkspaceAuth?.accessToken),
         capabilityLoaded,
@@ -1471,8 +1557,12 @@ export const MainLayout: React.FC = () => {
         matrixCredentials?.access_token,
         matrixCredentials?.user_id,
         notebookToken.reason,
+        notebookTerminalAuthErrorCode,
         notebookAuth?.accessToken,
         notebookWorkspaceAuth?.accessToken,
+        notebookAuthUiState.notebookAuthPhase,
+        notebookAuthUiState.notebookErrorPolicy,
+        notebookRetryableServiceError,
         capabilityLoaded,
         capabilityError,
         capabilityValues,
@@ -1804,6 +1894,7 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!notebookReady) {
             setCapabilityError(null);
+            setNotebookRetryableServiceError(false);
             return;
         }
         if (!capabilityToken) {
@@ -1814,23 +1905,35 @@ export const MainLayout: React.FC = () => {
             ) {
                 if (hubSession?.refresh_token) {
                     setCapabilityLoaded(false);
+                    setNotebookRetryableServiceError(false);
                     if (!refreshingNotebookToken) {
                         void refreshNotebookToken();
                     }
                     return;
                 }
                 setCapabilityLoaded(true);
+                setNotebookTerminalAuthErrorCodeState(
+                    notebookToken.reason === "missing_hub_token"
+                        ? "NO_VALID_HUB_TOKEN"
+                        : notebookToken.reason === "expired_hub_token"
+                            ? "INVALID_AUTH_TOKEN"
+                            : "INVALID_TOKEN_TYPE",
+                );
+                setNotebookRetryableServiceError(false);
                 setCapabilityError(t("layout.notebook.authFailed"));
                 return;
             }
             setCapabilityLoaded(true);
             setCapabilityValues([]);
+            setNotebookTerminalAuthErrorCodeState("INVALID_AUTH_TOKEN");
+            setNotebookRetryableServiceError(false);
             setCapabilityError(t("layout.notebook.authFailed"));
             return;
         }
         if (!hubMeResolved) {
             setCapabilityLoaded(false);
             setCapabilityError(null);
+            setNotebookRetryableServiceError(false);
             return;
         }
         if (!effectiveNotebookApiBaseUrl) {
@@ -1841,11 +1944,13 @@ export const MainLayout: React.FC = () => {
             } else {
                 setCapabilityError(t("layout.notebook.serviceMissing"));
             }
+            setNotebookRetryableServiceError(false);
             return;
         }
         let alive = true;
         setCapabilityLoaded(false);
         setCapabilityError(null);
+        setNotebookRetryableServiceError(false);
         void runNotebookAuthedRequest((auth) => getNotebookCapabilities({
             accessToken: auth.accessToken,
             apiBaseUrl: auth.apiBaseUrl,
@@ -1875,6 +1980,8 @@ export const MainLayout: React.FC = () => {
             if (hasCachedCapabilities) {
                 setCapabilityLoaded(true);
                 setCapabilityError(null);
+                setNotebookTerminalAuthErrorCodeState(null);
+                setNotebookRetryableServiceError(false);
                 return;
             }
             setCapabilityValues([]);
@@ -1886,24 +1993,37 @@ export const MainLayout: React.FC = () => {
                     error.code === "INVALID_TOKEN_TYPE" ||
                     error.status === 401
                 ) {
+                    setNotebookTerminalAuthErrorCodeState(
+                        error.code === "NO_VALID_HUB_TOKEN"
+                            ? "NO_VALID_HUB_TOKEN"
+                            : error.code === "INVALID_TOKEN_TYPE"
+                                ? "INVALID_TOKEN_TYPE"
+                                : "INVALID_AUTH_TOKEN",
+                    );
+                    setNotebookRetryableServiceError(false);
                     setCapabilityError(`${t("layout.notebook.authFailed")} (${error.code} / HTTP ${error.status})`);
                     return;
                 }
                 if (error.code === "CAPABILITY_DISABLED") {
                     writeNotebookBootCache(notebookCapabilitiesCacheKey, null);
+                    setNotebookRetryableServiceError(false);
                     setCapabilityError(t("layout.notebook.capabilityDisabled"));
                     return;
                 }
                 if (error.code === "CAPABILITY_EXPIRED") {
                     writeNotebookBootCache(notebookCapabilitiesCacheKey, null);
+                    setNotebookRetryableServiceError(false);
                     setCapabilityError(t("layout.notebook.capabilityExpired"));
                     return;
                 }
                 if (error.code === "QUOTA_EXCEEDED") {
+                    setNotebookRetryableServiceError(false);
                     setCapabilityError(t("layout.notebook.quotaExceeded"));
                     return;
                 }
                 if (error.status >= 500) {
+                    setNotebookTerminalAuthErrorCodeState(null);
+                    setNotebookRetryableServiceError(true);
                     if (isTauriDesktop()) {
                         setCapabilityError(
                             `Notebook ${error.status} ${error.code}: ${error.message} @ ${effectiveNotebookApiBaseUrl || "no-base-url"}`,
@@ -1915,15 +2035,21 @@ export const MainLayout: React.FC = () => {
                 }
             }
             if (isTauriDesktop() && error instanceof Error) {
+                setNotebookTerminalAuthErrorCodeState(null);
+                setNotebookRetryableServiceError(true);
                 setCapabilityError(
                     `Notebook init failed: ${error.message} @ ${effectiveNotebookApiBaseUrl || "no-base-url"}`,
                 );
                 return;
             }
             if (error instanceof Error && !isTauriDesktop()) {
+                setNotebookTerminalAuthErrorCodeState(null);
+                setNotebookRetryableServiceError(true);
                 setCapabilityError(`${t("layout.notebook.capabilityLoadFailed")} (${error.message})`);
                 return;
             }
+            setNotebookTerminalAuthErrorCodeState(null);
+            setNotebookRetryableServiceError(true);
             setCapabilityError(t("layout.notebook.capabilityLoadFailed"));
         });
         return () => {
@@ -5614,6 +5740,10 @@ export const MainLayout: React.FC = () => {
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
                             notebookApiBaseUrl: effectiveNotebookApiBaseUrl,
+                            notebookAuthPhase: notebookAuthUiState.notebookAuthPhase,
+                            notebookErrorPolicy: notebookAuthUiState.notebookErrorPolicy,
+                            notebookTerminalAuthErrorCode,
+                            notebookRetryableServiceError,
                             ...taskUi.chatContext,
                         }}
                     />
