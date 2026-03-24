@@ -1087,10 +1087,6 @@ export const MainLayout: React.FC = () => {
                     ? Math.min(15000 * (2 ** Math.max(0, step - 1)), 5 * 60 * 1000)
                     : Math.min(5000 * (2 ** Math.max(0, step - 1)), 60 * 1000);
                 notebookRefreshBackoffUntilRef.current = Date.now() + delayMs;
-<<<<<<< HEAD
-                setCapabilityError(isRateLimited ? t("layout.notebook.systemBusy") : t("layout.notebook.authFailed"));
-                return false;
-=======
                 const isAuthFailure =
                     status === 401
                     || message === "INVALID_AUTH_TOKEN"
