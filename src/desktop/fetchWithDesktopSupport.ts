@@ -86,22 +86,26 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 export async function fetchWithDesktopSupport(input: URL | Request | string, init?: RequestInit): Promise<Response> {
     if (isTauriDesktop() && isRemoteHttpUrl(input)) {
-        const payload = {
-            url: toRequestUrl(input),
-            method: init?.method ?? (input instanceof Request ? input.method : "GET"),
-            headers: Array.from(mergeHeaders(input, init).entries()),
-            body: await readBody(input, init),
-        };
-        const response = await invoke<{
-            status: number;
-            headers: Array<[string, string]>;
-            bodyBase64: string;
-        }>("desktop_http_request", { input: payload });
+        try {
+            const payload = {
+                url: toRequestUrl(input),
+                method: init?.method ?? (input instanceof Request ? input.method : "GET"),
+                headers: Array.from(mergeHeaders(input, init).entries()),
+                body: await readBody(input, init),
+            };
+            const response = await invoke<{
+                status: number;
+                headers: Array<[string, string]>;
+                bodyBase64: string;
+            }>("desktop_http_request", { input: payload });
 
-        return new Response(new Blob([toArrayBuffer(decodeBase64(response.bodyBase64))]), {
-            status: response.status,
-            headers: new Headers(response.headers),
-        });
+            return new Response(new Blob([toArrayBuffer(decodeBase64(response.bodyBase64))]), {
+                status: response.status,
+                headers: new Headers(response.headers),
+            });
+        } catch (desktopBridgeError) {
+            console.warn("Desktop invoke HTTP bridge failed, falling back to native fetch:", desktopBridgeError);
+        }
     }
     const fallbackFetch = nativeFetchRef ?? fetch;
     return fallbackFetch(input, init);
