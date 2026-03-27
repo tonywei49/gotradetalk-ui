@@ -153,7 +153,8 @@ function parseAssistAnswerLines(answer: string): { summary: string; reference: s
         .trim();
 
     if (lines.length === 1) {
-        return { summary: stripPrefix(lines[0] || ""), reference: "" };
+        const single = stripPrefix(lines[0] || "");
+        return { summary: single, reference: single };
     }
 
     return {
@@ -1556,8 +1557,8 @@ export const ChatRoom: React.FC = () => {
         () => parseAssistAnswerLines(assistOutput?.answer || ""),
         [assistOutput?.answer],
     );
-    const assistSummaryText = (assistDraft || assistOutput?.summaryText || assistAnswerFallback.summary || assistOutput?.answer || "").trim();
-    const assistReferenceAnswer = (assistOutput?.referenceAnswer || assistAnswerFallback.reference || assistSummaryText || assistOutput?.answer || "").trim();
+    const assistReferenceAnswer = (assistDraft || assistOutput?.referenceAnswer || assistAnswerFallback.reference || assistOutput?.answer || "").trim();
+    const assistSummaryText = assistReferenceAnswer;
     const [sendingFileToNotebookEventId, setSendingFileToNotebookEventId] = useState<string | null>(null);
     const {
         pendingAttachmentsByRoom,
@@ -3733,15 +3734,11 @@ export const ChatRoom: React.FC = () => {
                         {assistOutput && (
                             <div className="mt-2 space-y-2">
                                 <textarea
-                                    value={assistSummaryText}
+                                    value={assistReferenceAnswer}
                                     onChange={(event) => setAssistDraft(event.target.value)}
                                     rows={assistEditorFullscreen ? 16 : assistEditorRows}
                                     className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                 />
-                                <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm dark:border-emerald-900/40 dark:bg-slate-900">
-                                    <div className="mb-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">參考答案</div>
-                                    <div className="text-slate-700 dark:text-slate-100">{assistReferenceAnswer || "（尚未生成）"}</div>
-                                </div>
                                 {assistLowConfidence && (
                                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/30 dark:text-amber-200">
                                         {t("chat.notebook.lowConfidenceWarning")}
@@ -3756,7 +3753,7 @@ export const ChatRoom: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={() => setAssistCitationsExpanded((prev) => !prev)}
-                                        className="text-xs font-medium text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
+                                        className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
                                     >
                                         {assistCitationsExpanded ? t("chat.notebook.hideCitations") : t("chat.notebook.showCitations")}
                                     </button>
