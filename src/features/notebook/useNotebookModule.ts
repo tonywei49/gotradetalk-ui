@@ -677,6 +677,8 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken }: UseN
         auth,
         enabled,
         selectedItemId,
+        selectedItemUpdatedAt: items.find((item) => item.id === selectedItemId)?.updatedAt ?? null,
+        selectedItemIndexStatus: items.find((item) => item.id === selectedItemId)?.indexStatus ?? null,
     });
 
     useEffect(() => {
