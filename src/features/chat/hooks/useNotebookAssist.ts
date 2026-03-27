@@ -135,7 +135,7 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
 
     const applyAssistOutput = useCallback((result: NotebookAssistResponse): void => {
         setAssistOutput(result);
-        setAssistDraft((result.summaryText || result.answer || "").trim());
+        setAssistDraft((result.referenceAnswer || result.answer || result.summaryText || "").trim());
         setAssistState("success");
         setAssistError(null);
     }, []);
