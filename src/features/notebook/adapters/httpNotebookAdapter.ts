@@ -286,7 +286,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
             return mapAssist(await assistQuery(auth, {
                 room_id: input.roomId,
                 query: input.query,
-                knowledge_scope: input.knowledgeScope,
+                scope: input.knowledgeScope,
                 response_lang: input.responseLang,
             }));
         } catch (error) {
@@ -299,7 +299,7 @@ export const httpNotebookAdapter: NotebookAdapter = {
                 room_id: input.roomId,
                 anchor_event_id: input.anchorEventId,
                 window_size: input.windowSize ?? 5,
-                knowledge_scope: input.knowledgeScope,
+                scope: input.knowledgeScope,
                 response_lang: input.responseLang,
             }));
         } catch (error) {

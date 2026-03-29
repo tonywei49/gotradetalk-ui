@@ -941,7 +941,7 @@ export const MainLayout: React.FC = () => {
     const [refreshingNotebookToken, setRefreshingNotebookToken] = useState(false);
     const notebookRefreshBackoffUntilRef = useRef(0);
     const notebookRefreshFailureCountRef = useRef(0);
-    const notebookRefreshFlightRef = useRef<Promise<boolean> | null>(null);
+    const notebookRefreshFlightRef = useRef<Promise<string | null> | null>(null);
     const notebookRefreshFlightTimerRef = useRef<number | null>(null);
     const notebookUserSubRef = useRef<string | null>(parseJwtSub(hubSession?.access_token));
     const [capabilityRefreshSeq, setCapabilityRefreshSeq] = useState(0);
@@ -953,6 +953,7 @@ export const MainLayout: React.FC = () => {
         capabilities: capabilityValues,
         apiBaseUrl: notebookApiBaseUrlOverride,
     }), [hubSession, matrixCredentials, userType, capabilityValues, notebookApiBaseUrlOverride]);
+    const effectiveNotebookApiBaseUrl = notebookApiBaseUrlOverride;
     const capabilityToken = notebookToken.accessToken;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
     const notebookCapabilityState = useMemo(
@@ -1034,12 +1035,12 @@ export const MainLayout: React.FC = () => {
         notebookUserSubRef.current = parseJwtSub(hubSession?.access_token);
     }, [hubSession?.access_token]);
 
-    const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<boolean> => {
-        if (!hubSession?.refresh_token) return false;
-        if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return false;
+    const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<string | null> => {
+        if (!hubSession?.refresh_token) return null;
+        if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return null;
         if (notebookRefreshFlightRef.current) return notebookRefreshFlightRef.current;
 
-        const flight = (async (): Promise<boolean> => {
+        const flight = (async (): Promise<string | null> => {
             setRefreshingNotebookToken(true);
             try {
                 const supabase = getSupabaseClient();
@@ -1076,7 +1077,7 @@ export const MainLayout: React.FC = () => {
                 notebookRefreshFailureCountRef.current = 0;
                 setCapabilityTokenRefreshSeq((prev) => prev + 1);
                 setCapabilityError(null);
-                return true;
+                return data.session.access_token;
             } catch (error) {
                 const status = (error as { status?: number } | null)?.status;
                 const message = error instanceof Error ? error.message : String(error ?? "");
@@ -1174,6 +1175,7 @@ export const MainLayout: React.FC = () => {
         auth: notebookAuth,
         enabled: notebookReady && notebookCapabilityState.canUseNotebookBasic,
         refreshToken: notebookRefreshToken,
+        onAuthFailure: async () => refreshNotebookToken({ force: true }),
     });
     useEffect(() => {
         const debugError = notebookModule.requestDebug?.error;
@@ -1417,6 +1419,51 @@ export const MainLayout: React.FC = () => {
         }
     }, [activeTab]);
 
+    const buildNotebookAuthWithAccessToken = useCallback((accessToken: string) => {
+        return buildNotebookAuth({
+            hubSession: {
+                access_token: accessToken,
+                refresh_token: hubSession?.refresh_token || "",
+                expires_at: hubSession?.expires_at,
+            },
+            matrixCredentials,
+            userType,
+            capabilities: capabilityValues,
+            apiBaseUrl: effectiveNotebookApiBaseUrl,
+        }).notebookAuth;
+    }, [
+        capabilityValues,
+        effectiveNotebookApiBaseUrl,
+        hubSession?.expires_at,
+        hubSession?.refresh_token,
+        matrixCredentials,
+        userType,
+    ]);
+
+    const runNotebookAuthedRequest = useCallback(async <T,>(
+        runner: (auth: NonNullable<typeof notebookAuth>) => Promise<T>,
+    ): Promise<T> => {
+        if (!notebookAuth) {
+            throw new Error("Missing notebook auth");
+        }
+        try {
+            return await runner(notebookAuth);
+        } catch (error) {
+            if (!(error instanceof NotebookServiceError) || !(error.status === 401 || error.code === "INVALID_AUTH_TOKEN" || error.code === "INVALID_TOKEN_TYPE" || error.code === "NO_VALID_HUB_TOKEN")) {
+                throw error;
+            }
+            const refreshedAccessToken = await refreshNotebookToken({ force: true });
+            if (!refreshedAccessToken) {
+                throw error;
+            }
+            const refreshedAuth = buildNotebookAuthWithAccessToken(refreshedAccessToken);
+            if (!refreshedAuth) {
+                throw error;
+            }
+            return runner(refreshedAuth);
+        }
+    }, [buildNotebookAuthWithAccessToken, notebookAuth, refreshNotebookToken]);
+
     useEffect(() => {
         if (matrixCredentials?.user_id) {
             localStorage.setItem("gt_matrix_user_id", matrixCredentials.user_id);
@@ -1483,12 +1530,12 @@ export const MainLayout: React.FC = () => {
             setNotebookUploadLimitMb(20);
             return;
         }
-        if (!notebookAuth || !notebookApiBaseUrlOverride) {
+        if (!notebookAuth || !effectiveNotebookApiBaseUrl) {
             setNotebookUploadLimitMb(20);
             return;
         }
         let alive = true;
-        void getCompanyNotebookAiSettings(notebookAuth)
+        void runNotebookAuthedRequest((auth) => getCompanyNotebookAiSettings(auth))
             .then((response) => {
                 if (!alive) return;
                 const raw = Number(response?.notebook_upload_max_mb ?? 20);
@@ -1502,7 +1549,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [notebookApiBaseUrlOverride, notebookAuth, notebookReady]);
+    }, [effectiveNotebookApiBaseUrl, notebookAuth, notebookReady, runNotebookAuthedRequest]);
 
     useEffect(() => {
         if (!notebookReady) {
@@ -1547,7 +1594,7 @@ export const MainLayout: React.FC = () => {
             setCapabilityError(null);
             return;
         }
-        if (!notebookApiBaseUrlOverride) {
+        if (!effectiveNotebookApiBaseUrl) {
             setCapabilityLoaded(true);
             setCapabilityValues([]);
             if (userType === "client") {
@@ -1560,12 +1607,12 @@ export const MainLayout: React.FC = () => {
         let alive = true;
         setCapabilityLoaded(false);
         setCapabilityError(null);
-        void getNotebookCapabilities({
-            accessToken: capabilityToken,
-            apiBaseUrl: notebookApiBaseUrlOverride,
-            hsUrl: matrixHsUrl,
-            matrixUserId: matrixCredentials?.user_id,
-        }).then((result) => {
+        void runNotebookAuthedRequest((auth) => getNotebookCapabilities({
+            accessToken: auth.accessToken,
+            apiBaseUrl: auth.apiBaseUrl,
+            hsUrl: auth.hsUrl,
+            matrixUserId: auth.matrixUserId,
+        })).then((result) => {
             if (!alive) return;
             const values = Array.isArray(result.capabilities)
                 ? result.capabilities.filter((value): value is string => typeof value === "string")

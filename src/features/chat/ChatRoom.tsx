@@ -169,6 +169,119 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
     return withoutPrefix.slice(0, colonIndex);
 }
 
+function normalizeMarkdownDisplayText(value: string): string {
+    return normalizeMarkdownTables(value
+        .replace(/\uFFFD/g, "")
+        .replace(/^(\s*(?:[-*+]|\d+\.)\s+)[\p{Extended_Pictographic}\uFE0F\u200D]+\s*/gmu, "$1")
+        .replace(/^(\s*)[\p{Extended_Pictographic}\uFE0F\u200D]+\s+/gmu, "$1"));
+}
+
+function normalizeMarkdownTables(value: string): string {
+    const lines = value.split(/\r?\n/);
+    if (lines.length < 2) return value;
+
+    const result: string[] = [];
+    let index = 0;
+
+    const isPipeRow = (line: string): boolean => {
+        const trimmed = line.trim();
+        return !trimmed.startsWith("```") && (trimmed.match(/\|/g)?.length ?? 0) >= 2;
+    };
+
+    const isSeparatorRow = (line: string): boolean => {
+        const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+        if (!trimmed) return false;
+        return trimmed.split("|").every((part) => /^:?-{3,}:?$/.test(part.trim()));
+    };
+
+    const normalizePipeRow = (line: string): string => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        const wrapped = trimmed.startsWith("|") ? trimmed : `| ${trimmed}`;
+        return wrapped.endsWith("|") ? wrapped : `${wrapped} |`;
+    };
+
+    const stripTableIndent = (line: string): string => line.replace(/^(?: {4}|\t)+/, "").trimEnd();
+
+    const extractTableRows = (blockLines: string[]): string[] | null => {
+        const stripped = blockLines.map(stripTableIndent);
+        let startIndex = -1;
+        for (let candidateIndex = 0; candidateIndex < stripped.length - 1; candidateIndex += 1) {
+            if (isPipeRow(stripped[candidateIndex] ?? "") && isSeparatorRow(stripped[candidateIndex + 1] ?? "")) {
+                startIndex = candidateIndex;
+                break;
+            }
+        }
+        if (startIndex < 0) return null;
+
+        let endIndex = startIndex + 2;
+        while (endIndex < stripped.length && isPipeRow(stripped[endIndex] ?? "")) {
+            endIndex += 1;
+        }
+
+        const onlyTableContent =
+            stripped.slice(0, startIndex).every((line) => line.trim() === "") &&
+            stripped.slice(endIndex).every((line) => line.trim() === "");
+        if (!onlyTableContent) return null;
+
+        return stripped.slice(startIndex, endIndex).map(normalizePipeRow);
+    };
+
+    const unwrapFencedTableBlock = (startIndex: number): { rows: string[]; nextIndex: number } | null => {
+        const openingFence = (lines[startIndex] ?? "").trim();
+        if (!openingFence.startsWith("```")) return null;
+        let endIndex = startIndex + 1;
+        while (endIndex < lines.length && !(lines[endIndex] ?? "").trim().startsWith("```")) {
+            endIndex += 1;
+        }
+        if (endIndex >= lines.length) return null;
+
+        const rows = extractTableRows(lines.slice(startIndex + 1, endIndex));
+        if (!rows) return null;
+        return { rows, nextIndex: endIndex + 1 };
+    };
+
+    while (index < lines.length) {
+        const current = lines[index] ?? "";
+        const next = lines[index + 1] ?? "";
+        const fencedTableBlock = unwrapFencedTableBlock(index);
+        if (fencedTableBlock) {
+            if (result.length > 0 && result[result.length - 1]?.trim() !== "") {
+                result.push("");
+            }
+            result.push(...fencedTableBlock.rows);
+            index = fencedTableBlock.nextIndex;
+            if (index < lines.length && (lines[index] ?? "").trim() !== "") {
+                result.push("");
+            }
+            continue;
+        }
+
+        const strippedCurrent = stripTableIndent(current);
+        const strippedNext = stripTableIndent(next);
+        if (isPipeRow(strippedCurrent) && isSeparatorRow(strippedNext)) {
+            if (result.length > 0 && result[result.length - 1]?.trim() !== "") {
+                result.push("");
+            }
+            result.push(normalizePipeRow(strippedCurrent));
+            result.push(normalizePipeRow(strippedNext));
+            index += 2;
+            while (index < lines.length && isPipeRow(stripTableIndent(lines[index] ?? ""))) {
+                result.push(normalizePipeRow(stripTableIndent(lines[index] ?? "")));
+                index += 1;
+            }
+            if (index < lines.length && (lines[index] ?? "").trim() !== "") {
+                result.push("");
+            }
+            continue;
+        }
+        result.push(current);
+        index += 1;
+    }
+
+    return result.join("\n");
+}
+
 type DraftMediaRegistryEntry = {
     mxcUrl: string;
     createdAt: number;
@@ -176,50 +289,51 @@ type DraftMediaRegistryEntry = {
 };
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
+    const normalizedText = normalizeMarkdownDisplayText(text);
     const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
     const mutedTextClass = isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-400";
     const borderClass = isMe ? "border-white/20" : "border-slate-300/60 dark:border-slate-600";
     const tableHeaderClass = isMe ? "bg-white/10" : "bg-slate-100 dark:bg-slate-700";
     const codeClass = isMe
-        ? "rounded bg-white/15 px-1 py-0.5 text-[12px] text-white"
-        : "rounded bg-slate-100 px-1 py-0.5 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+        ? "rounded bg-white/15 px-1 py-0.5 text-[12px] text-white whitespace-pre-wrap break-all [overflow-wrap:anywhere]"
+        : "rounded bg-slate-100 px-1 py-0.5 text-[12px] text-slate-700 whitespace-pre-wrap break-all [overflow-wrap:anywhere] dark:bg-slate-700 dark:text-slate-100";
     const preClass = isMe
-        ? "my-2 overflow-x-auto rounded-lg bg-black/20 p-2 text-[12px] text-white"
-        : "my-2 overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+        ? "my-2 max-w-full overflow-x-auto rounded-lg bg-black/20 p-2 text-[12px] text-white"
+        : "my-2 max-w-full overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
 
     return (
-        <div className="max-w-full break-words">
+        <div className="w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere]">
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 components={{
-                    p: ({ children }) => <p className="my-1 last:mb-0">{children}</p>,
+                    p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{children}</p>,
                     br: () => <br />,
                     ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
                     ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
-                    li: ({ children }) => <li className="my-0.5">{children}</li>,
+                    li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{children}</li>,
                     blockquote: ({ children }) => (
-                        <blockquote className={`my-2 border-l-2 pl-2 italic ${borderClass} ${mutedTextClass}`}>{children}</blockquote>
+                        <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] ${borderClass} ${mutedTextClass}`}>{children}</blockquote>
                     ),
                     code: ({ children }) => <code className={codeClass}>{children}</code>,
                     pre: ({ children }) => <pre className={preClass}>{children}</pre>,
                     table: ({ children }) => (
-                        <div className="my-2 overflow-x-auto">
-                            <table className={`min-w-full border-collapse text-left text-[12px] ${textClass}`}>{children}</table>
+                        <div className="my-2 max-w-full overflow-x-auto overflow-y-hidden [overscroll-behavior-x:contain] [-webkit-overflow-scrolling:touch] scrollbar-thin">
+                            <table className={`w-max border-collapse text-left text-[12px] ${textClass}`}>{children}</table>
                         </div>
                     ),
                     thead: ({ children }) => <thead className={tableHeaderClass}>{children}</thead>,
                     tbody: ({ children }) => <tbody>{children}</tbody>,
                     tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{children}</tr>,
-                    th: ({ children }) => <th className={`border px-2 py-1 font-semibold ${borderClass}`}>{children}</th>,
-                    td: ({ children }) => <td className={`border px-2 py-1 align-top ${borderClass}`}>{children}</td>,
+                    th: ({ children }) => <th className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 font-semibold ${borderClass}`}>{children}</th>,
+                    td: ({ children }) => <td className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 align-top ${borderClass}`}>{children}</td>,
                     a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noreferrer" className="underline">
+                        <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
                             {children}
                         </a>
                     )
                 }}
             >
-                {text}
+                {normalizedText}
             </ReactMarkdown>
         </div>
     );

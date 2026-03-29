@@ -661,29 +661,33 @@ export function NotebookSidebar({
                                     : "border-gray-100 bg-white hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900"
                             }`}
                         >
-                            <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {item.title || t("layout.notebook.untitled", "Untitled")}
-                            </div>
-                            <div className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-                                {item.contentMarkdown || t("layout.notebook.noContent", "No content")}
-                            </div>
-                            <div className="mt-2 flex items-center justify-between">
-                                <div className="flex items-center gap-1">
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${item.sourceScope === "company" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 truncate text-[17px] leading-6 font-semibold text-slate-800 dark:text-slate-100">
+                                    {item.title || t("layout.notebook.untitled", "Untitled")}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase ${item.sourceScope === "company" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
                                         {item.sourceScope === "company"
                                             ? t("layout.notebook.itemScopeCompany", "Company")
                                             : t("layout.notebook.itemScopePersonal", "Personal")}
                                     </span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${typeChip(item.isIndexable)}`}>
+                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase ${typeChip(item.isIndexable)}`}>
                                         {item.isIndexable
                                             ? t("layout.notebook.itemTypeKnowledge", "Knowledge")
                                             : t("layout.notebook.itemTypeNote", "Note")}
                                     </span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${indexStateChip(item.indexStatus)}`}>
+                                </div>
+                            </div>
+                            <div className="mt-1.5 line-clamp-2 text-[14px] leading-5 text-slate-500 dark:text-slate-400">
+                                {item.contentMarkdown || t("layout.notebook.noContent", "No content")}
+                            </div>
+                            <div className="mt-2 flex items-center justify-between">
+                                <div className="flex items-center gap-1">
+                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase ${indexStateChip(item.indexStatus)}`}>
                                         {item.indexStatus}
                                     </span>
                                 </div>
-                                <span className="text-[10px] text-slate-400">
+                                <span className="text-[12px] text-slate-400">
                                     {new Date(item.updatedAt).toLocaleString()}
                                 </span>
                             </div>
