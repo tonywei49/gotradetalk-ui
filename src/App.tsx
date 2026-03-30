@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./stores/AuthStore";
 import { useThemeStore } from "./stores/ThemeStore";
@@ -98,11 +98,41 @@ function RouteTransitionScreen() {
     );
 }
 
+function DesktopWorkspaceBootstrap() {
+    const ensureMatrixClient = useAuthStore((state) => state.ensureMatrixClient);
+    const [ready, setReady] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        const boot = () => {
+            if (cancelled) return;
+            ensureMatrixClient();
+            requestAnimationFrame(() => {
+                if (cancelled) return;
+                setReady(true);
+            });
+        };
+        const timer = window.setTimeout(boot, 0);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [ensureMatrixClient]);
+
+    if (!ready) {
+        return <RouteTransitionScreen />;
+    }
+
+    return <MainLayout />;
+}
+
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
     const initTheme = useThemeStore((state) => state.initTheme);
+    const isDesktop = useMemo(() => isTauriDesktop(), []);
+    const isWindowsDesktop = useMemo(() => isDesktop && resolveRuntimePlatform() === "windows", [isDesktop]);
     useDesktopUpdater();
-    useDesktopWindowLifecycle(!isAuthenticated);
+    useDesktopWindowLifecycle(isDesktop);
 
     useEffect(() => {
         initTheme();
@@ -115,11 +145,13 @@ export function App() {
             return;
         }
 
-        void loadMainLayout();
-        if (!(isTauriDesktop() && resolveRuntimePlatform() === "windows")) {
-            void loadChatRoom();
+        if (!isWindowsDesktop) {
+            void loadMainLayout();
+            if (!isDesktop) {
+                void loadChatRoom();
+            }
         }
-    }, [isAuthenticated]);
+    }, [isAuthenticated, isDesktop, isWindowsDesktop]);
 
     return (
         <PluginHostProvider>
@@ -130,9 +162,8 @@ export function App() {
                         <Route path="/oauth" element={!isAuthenticated ? <OauthSetupPage /> : <Navigate to="/app" replace />} />
                         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-                        <Route path="/app" element={isAuthenticated ? <MainLayout /> : <Navigate to="/auth" replace />}>
+                        <Route path="/app" element={isAuthenticated ? (isWindowsDesktop ? <DesktopWorkspaceBootstrap /> : <MainLayout />) : <Navigate to="/auth" replace />}>
                             <Route index element={<ChatRoom />} />
-                            {/* Add more routes here later */}
                         </Route>
 
                         <Route path="/" element={<Navigate to={isAuthenticated ? "/app" : "/auth"} replace />} />

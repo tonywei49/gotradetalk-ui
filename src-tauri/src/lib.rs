@@ -320,7 +320,6 @@ pub fn run() {
       reveal_primary_instance(app);
     }))
     .setup(|app| {
-      let app_handle = app.handle().clone();
       let show_item = MenuItemBuilder::with_id("show", "Open GoTradeTalk").build(app)?;
       let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
       let tray_menu = MenuBuilder::new(app)
@@ -361,11 +360,6 @@ pub fn run() {
       if let Some(window) = app.get_webview_window("main") {
         hide_main_window(&window);
       }
-
-      thread::spawn(move || {
-        thread::sleep(Duration::from_secs(20));
-        reveal_primary_instance(&app_handle);
-      });
 
       Ok(())
     })

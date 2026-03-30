@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -845,6 +844,7 @@ export const MainLayout: React.FC = () => {
     const userType = useAuthStore((state) => state.userType);
     const setHubSession = useAuthStore((state) => state.setHubSession);
     const clearSession = useAuthStore((state) => state.clearSession);
+    const ensureMatrixClient = useAuthStore((state) => state.ensureMatrixClient);
     const navigate = useNavigate();
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
@@ -918,7 +918,6 @@ export const MainLayout: React.FC = () => {
     const [desktopUpdaterVersion, setDesktopUpdaterVersion] = useState<string | null>(null);
     const pushToast = useToastStore((state) => state.pushToast);
     const desktopUpdaterAvailable = useMemo(() => isTauriDesktop(), []);
-    const desktopBootReadyRef = useRef(false);
     const notebookBootNoticeRef = useRef<string | null>(null);
     const taskTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const taskAccessToken = !taskTokenExpired && hubAccessToken ? hubAccessToken : matrixAccessToken;
@@ -1164,16 +1163,6 @@ export const MainLayout: React.FC = () => {
         };
     }, [desktopUpdaterAvailable]);
 
-    useEffect(() => {
-        if (!desktopUpdaterAvailable || desktopBootReadyRef.current) return;
-        if (!hubMeResolved) return;
-
-        desktopBootReadyRef.current = true;
-        void invoke("desktop_boot_ready").catch((error) => {
-            console.warn("Desktop boot ready notification failed:", error);
-            desktopBootReadyRef.current = false;
-        });
-    }, [desktopUpdaterAvailable, hubMeResolved]);
 
     useEffect(() => {
         if (!desktopUpdaterAvailable || !hubMeResolved || !capabilityLoaded || !capabilityError) return;
@@ -1611,6 +1600,11 @@ export const MainLayout: React.FC = () => {
         newPasswordDraft,
         t,
     ]);
+
+    useEffect(() => {
+        if (matrixClient || !matrixCredentials) return;
+        ensureMatrixClient();
+    }, [ensureMatrixClient, matrixClient, matrixCredentials]);
 
     useEffect(() => {
         if (!matrixClient) return undefined;
