@@ -132,7 +132,7 @@ export function App() {
     const isDesktop = useMemo(() => isTauriDesktop(), []);
     const isWindowsDesktop = useMemo(() => isDesktop && resolveRuntimePlatform() === "windows", [isDesktop]);
     useDesktopUpdater();
-    useDesktopWindowLifecycle(isDesktop);
+    useDesktopWindowLifecycle();
 
     useEffect(() => {
         initTheme();

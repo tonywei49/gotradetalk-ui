@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -11,9 +11,7 @@ function isWindowsDesktop(): boolean {
     return navigator.userAgent.toLowerCase().includes("windows");
 }
 
-export function useDesktopWindowLifecycle(bootReady = false) {
-    const bootNotifiedRef = useRef(false);
-
+export function useDesktopWindowLifecycle() {
     useEffect(() => {
         if (!isTauriDesktop()) return;
 
@@ -56,13 +54,4 @@ export function useDesktopWindowLifecycle(bootReady = false) {
             window.removeEventListener("keydown", openDevtoolsShortcut, true);
         };
     }, []);
-
-    useEffect(() => {
-        if (!isTauriDesktop() || !bootReady || bootNotifiedRef.current) return;
-        bootNotifiedRef.current = true;
-        void invoke("desktop_boot_ready").catch((error) => {
-            console.warn("Desktop boot ready notification failed:", error);
-            bootNotifiedRef.current = false;
-        });
-    }, [bootReady]);
 }
