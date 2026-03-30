@@ -6,6 +6,7 @@ import { ToastViewport } from "./components/ToastViewport";
 import { PluginHostProvider } from "./plugins";
 import { useDesktopUpdater } from "./desktop/useDesktopUpdater";
 import { useDesktopWindowLifecycle } from "./desktop/useDesktopWindowLifecycle";
+import { isTauriDesktop, resolveRuntimePlatform } from "./runtime/appRuntime";
 
 const loadMainLayout = async () => {
     const module = await import("./layouts/MainLayout");
@@ -115,7 +116,9 @@ export function App() {
         }
 
         void loadMainLayout();
-        void loadChatRoom();
+        if (!(isTauriDesktop() && resolveRuntimePlatform() === "windows")) {
+            void loadChatRoom();
+        }
     }, [isAuthenticated]);
 
     return (

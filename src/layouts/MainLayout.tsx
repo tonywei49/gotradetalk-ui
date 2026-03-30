@@ -698,6 +698,8 @@ export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
     const { runtimeContext, platformState, tools } = usePluginHost();
     const isMobileApp = isTauriMobile();
+    const runtimePlatform = useMemo(() => resolveRuntimePlatform(), []);
+    const shouldWarmDeferredModules = !(isTauriDesktop() && runtimePlatform === "windows");
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
@@ -956,6 +958,10 @@ export const MainLayout: React.FC = () => {
             notebook: false,
         });
 
+        if (!shouldWarmDeferredModules) {
+            return;
+        }
+
         const tasksTimer = window.setTimeout(() => {
             setDeferredModules((prev) => ({ ...prev, tasks: true }));
         }, TASKS_WARMUP_DELAY_MS);
@@ -971,7 +977,7 @@ export const MainLayout: React.FC = () => {
             window.clearTimeout(filesTimer);
             window.clearTimeout(notebookTimer);
         };
-    }, [matrixCredentials?.user_id]);
+    }, [matrixCredentials?.user_id, shouldWarmDeferredModules]);
 
     useEffect(() => {
         let disposed = false;

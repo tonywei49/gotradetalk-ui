@@ -18,7 +18,8 @@ type UseRoomTimelineResult = {
 
 const ROOM_TIMELINE_CACHE_PREFIX = "gtt_room_timeline_cache_v2:";
 const ROOM_TIMELINE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const ROOM_TIMELINE_PERSIST_LIMIT = 200;
+const ROOM_TIMELINE_PERSIST_LIMIT = 120;
+const ROOM_LIVE_EVENT_WINDOW_LIMIT = 60;
 
 type SerializedRoomTimelineCache = {
     version: 2;
@@ -114,6 +115,7 @@ export function useRoomTimeline(
     const limit = options.limit;
     const cacheKey = useMemo(() => buildRoomTimelineCacheKey(client, roomId), [client, roomId]);
     const cacheUserId = useMemo(() => client?.getUserId() ?? null, [client]);
+    const historyExpandedRef = useRef(false);
 
     useEffect(() => {
         if (!client || !roomId) {
@@ -125,8 +127,16 @@ export function useRoomTimeline(
         }
 
         roomGenerationRef.current += 1;
+        historyExpandedRef.current = false;
         const generation = roomGenerationRef.current;
         const isCurrentRoom = (): boolean => roomGenerationRef.current === generation;
+        const trimLiveWindow = (items: MatrixEvent[]): MatrixEvent[] => {
+            if (historyExpandedRef.current) {
+                return items;
+            }
+            const effectiveLimit = limit ? Math.max(limit, ROOM_LIVE_EVENT_WINDOW_LIMIT) : ROOM_LIVE_EVENT_WINDOW_LIMIT;
+            return items.slice(-effectiveLimit);
+        };
 
         // Reset room-scoped state immediately when switching rooms so we never
         // render the previous room's timeline under the new room header.
@@ -168,7 +178,9 @@ export function useRoomTimeline(
             setShowingCachedEvents(false);
             setEvents((prev) => {
                 const base = prev.length > 0 ? prev : initialEvents;
-                const snapshot = prev.length > 0 ? mergeRoomEvents(roomId, prev, liveEvents) : [...base];
+                const snapshot = prev.length > 0
+                    ? trimLiveWindow(mergeRoomEvents(roomId, prev, liveEvents))
+                    : trimLiveWindow([...base]);
                 writeCachedTimeline(cacheKey, roomId, snapshot, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, snapshot, limit));
                 return snapshot;
@@ -188,13 +200,18 @@ export function useRoomTimeline(
             if (!isCurrentRoom()) return;
             setRoom(timelineRoom);
             setShowingCachedEvents(false);
+            if (toStartOfTimeline) {
+                historyExpandedRef.current = true;
+            }
 
             setEvents((prev) => {
                 const eventId = event.getId();
                 if (eventId && prev.some((item) => item.getId() === eventId)) {
                     return prev;
                 }
-                const next = filterEventsForRoom(toStartOfTimeline ? [event, ...prev] : [...prev, event], roomId);
+                const next = trimLiveWindow(
+                    filterEventsForRoom(toStartOfTimeline ? [event, ...prev] : [...prev, event], roomId),
+                );
                 writeCachedTimeline(cacheKey, roomId, next, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, next, limit));
                 return next;
@@ -209,8 +226,8 @@ export function useRoomTimeline(
             setEvents((prev) => {
                 const liveEvents = filterEventsForRoom(resetRoom.getLiveTimeline().getEvents(), roomId);
                 const snapshot = prev.length > 0
-                    ? mergeRoomEvents(roomId, prev, liveEvents)
-                    : (limit ? liveEvents.slice(-limit) : liveEvents);
+                    ? trimLiveWindow(mergeRoomEvents(roomId, prev, liveEvents))
+                    : trimLiveWindow(limit ? liveEvents.slice(-limit) : liveEvents);
                 writeCachedTimeline(cacheKey, roomId, snapshot, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, snapshot, limit));
                 return snapshot;

@@ -170,6 +170,7 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
 }
 
 function shouldNormalizeMarkdownDisplayText(value: string): boolean {
+    if (value.length > 6000 && !value.includes("\uFFFD")) return false;
     if (value.includes("\uFFFD")) return true;
     if (!value.includes("|")) return false;
     return value.includes("\n|") || value.includes("\n    |") || value.includes("\n\t|") || value.includes("```");
@@ -294,8 +295,27 @@ type DraftMediaRegistryEntry = {
     ownerUserId: string;
 };
 
+const CHAT_INITIAL_RENDER_WINDOW = 40;
+const CHAT_RENDER_WINDOW_STEP = 40;
+
+function shouldUseRichMarkdownRenderer(value: string): boolean {
+    if (!value) return false;
+    if (value.length > 12000) return false;
+    if (value.includes("```")) return true;
+    if (value.includes("|") && shouldNormalizeMarkdownDisplayText(value)) return true;
+    if (/\[[^\]]+\]\([^)]+\)/.test(value)) return true;
+    if (/^(?:>\s|#{1,6}\s|\s*[-*]\s|\s*\d+\.\s)/m.test(value)) return true;
+    if (/[`*_~]/.test(value)) return true;
+    if (/https?:\/\/\S+/i.test(value)) return true;
+    return false;
+}
+
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
-    const normalizedText = useMemo(() => normalizeMarkdownDisplayText(text), [text]);
+    const shouldRenderRichMarkdown = useMemo(() => shouldUseRichMarkdownRenderer(text), [text]);
+    const normalizedText = useMemo(
+        () => (shouldRenderRichMarkdown ? normalizeMarkdownDisplayText(text) : text),
+        [shouldRenderRichMarkdown, text],
+    );
     const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
     const mutedTextClass = isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-400";
     const borderClass = isMe ? "border-white/20" : "border-slate-300/60 dark:border-slate-600";
@@ -306,6 +326,14 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
     const preClass = isMe
         ? "my-2 max-w-full overflow-x-auto rounded-lg bg-black/20 p-2 text-[12px] text-white"
         : "my-2 max-w-full overflow-x-auto rounded-lg bg-slate-100 p-2 text-[12px] text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+
+    if (!shouldRenderRichMarkdown) {
+        return (
+            <div className={`w-full max-w-full min-w-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${textClass}`}>
+                {text}
+            </div>
+        );
+    }
 
     return (
         <div className="w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere]">
@@ -1178,6 +1206,7 @@ export const ChatRoom: React.FC = () => {
     const [activeMention, setActiveMention] = useState<{ start: number; end: number; query: string } | null>(null);
     const [activeMentionIndex, setActiveMentionIndex] = useState(0);
     const [typingMemberLabels, setTypingMemberLabels] = useState<string[]>([]);
+    const [renderedEventCount, setRenderedEventCount] = useState(CHAT_INITIAL_RENDER_WINDOW);
     const [showTaskQuickCreate, setShowTaskQuickCreate] = useState(false);
     const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1620,6 +1649,14 @@ export const ChatRoom: React.FC = () => {
         filtered.sort((a, b) => a.getTs() - b.getTs());
         return filtered;
     }, [events, room]);
+    const renderedEvents = useMemo(
+        () => mergedEvents.slice(-Math.max(CHAT_INITIAL_RENDER_WINDOW, renderedEventCount)),
+        [mergedEvents, renderedEventCount],
+    );
+
+    useEffect(() => {
+        setRenderedEventCount(CHAT_INITIAL_RENDER_WINDOW);
+    }, [activeRoomId]);
 
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
@@ -2151,12 +2188,12 @@ export const ChatRoom: React.FC = () => {
         const anchor = historyScrollAnchorRef.current;
         const container = timelineRef.current;
         if (!anchor || !container || !activeRoomId || anchor.roomId !== activeRoomId) return;
-        if (mergedEvents.length <= anchor.previousEventCount) return;
+        if (renderedEvents.length <= anchor.previousEventCount) return;
         const delta = container.scrollHeight - anchor.previousScrollHeight;
         container.scrollTop = anchor.previousScrollTop + delta;
         historyScrollAnchorRef.current = null;
         suppressAutoStickBottomRef.current = false;
-    }, [activeRoomId, mergedEvents.length]);
+    }, [activeRoomId, renderedEvents.length]);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {
@@ -2217,12 +2254,27 @@ export const ChatRoom: React.FC = () => {
                 roomId: activeRoom,
                 previousScrollHeight: container.scrollHeight,
                 previousScrollTop: container.scrollTop,
-                previousEventCount: mergedEvents.length,
+                previousEventCount: renderedEvents.length,
             }
             : null;
         setScrollLoading(true);
         if (activeRoom) {
             roomStickBottomRef.current[activeRoom] = false;
+        }
+        if (renderedEventCount < mergedEvents.length) {
+            if (anchor) {
+                historyScrollAnchorRef.current = anchor;
+                suppressAutoStickBottomRef.current = true;
+            }
+            setRenderedEventCount((prev) => Math.min(mergedEvents.length, prev + CHAT_RENDER_WINDOW_STEP));
+            window.setTimeout(() => {
+                if (historyScrollAnchorRef.current === anchor) {
+                    historyScrollAnchorRef.current = null;
+                    suppressAutoStickBottomRef.current = false;
+                }
+                setScrollLoading(false);
+            }, 80);
+            return;
         }
         if (anchor) {
             historyScrollAnchorRef.current = anchor;
@@ -3161,7 +3213,7 @@ export const ChatRoom: React.FC = () => {
                         {t("common.loading")}
                     </div>
                 )}
-                {mergedEvents.map((event) => {
+                {renderedEvents.map((event) => {
                     if (event.getType() === EventType.RoomMember) {
                         if (!room || room.isSpaceRoom()) return null;
                         const content = (event.getContent() ?? {}) as { membership?: string };
