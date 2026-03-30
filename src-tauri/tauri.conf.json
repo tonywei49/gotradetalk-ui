@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "GoTradeTalk",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "identifier": "com.gotradetalk.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -20,7 +20,8 @@
         "minHeight": 720,
         "resizable": true,
         "fullscreen": false,
-        "visible": false
+        "visible": false,
+        "additionalBrowserArgs": "--disable-features=RendererCodeIntegrity --js-flags=--max-old-space-size=512"
       },
       {
         "label": "splashscreen",

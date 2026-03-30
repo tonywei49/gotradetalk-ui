@@ -618,7 +618,7 @@ const WORKSPACE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const NOTEBOOK_API_BASE_URL_CACHE_PREFIX = "gtt_notebook_api_base_url_v1:";
 const NOTEBOOK_CAPABILITIES_CACHE_PREFIX = "gtt_notebook_capabilities_v1:";
 const NOTEBOOK_BOOT_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-const MATRIX_INITIAL_SYNC_LIMIT = 12;
+const MATRIX_INITIAL_SYNC_LIMIT = (isTauriDesktop() && resolveRuntimePlatform() === "windows") ? 6 : 12;
 
 type DeferredModuleState = {
     tasks: boolean;

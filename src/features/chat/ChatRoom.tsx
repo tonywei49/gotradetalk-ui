@@ -47,6 +47,7 @@ import {
     resolveDirectPeerUserId,
     type PowerLevelContent,
 } from "./roomMembershipPolicy";
+import { isTauriDesktop, resolveRuntimePlatform } from "../../runtime/appRuntime";
 import {
     redactMessageEvent,
     resendMessageEvent,
@@ -295,12 +296,15 @@ type DraftMediaRegistryEntry = {
     ownerUserId: string;
 };
 
-const CHAT_INITIAL_RENDER_WINDOW = 40;
-const CHAT_RENDER_WINDOW_STEP = 40;
+const IS_WINDOWS_DESKTOP = isTauriDesktop() && resolveRuntimePlatform() === "windows";
+
+const CHAT_INITIAL_RENDER_WINDOW = IS_WINDOWS_DESKTOP ? 20 : 40;
+const CHAT_RENDER_WINDOW_STEP = IS_WINDOWS_DESKTOP ? 20 : 40;
 
 function shouldUseRichMarkdownRenderer(value: string): boolean {
     if (!value) return false;
-    if (value.length > 12000) return false;
+    const sizeLimit = IS_WINDOWS_DESKTOP ? 4000 : 12000;
+    if (value.length > sizeLimit) return false;
     if (value.includes("```")) return true;
     if (value.includes("|") && shouldNormalizeMarkdownDisplayText(value)) return true;
     if (/\[[^\]]+\]\([^)]+\)/.test(value)) return true;

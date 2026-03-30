@@ -5,6 +5,7 @@ import {
     readRoomTimelineCacheFromSqlite,
     writeRoomTimelineCacheToSqlite,
 } from "../../desktop/desktopCacheDb";
+import { isTauriDesktop, resolveRuntimePlatform } from "../../runtime/appRuntime";
 
 type UseRoomTimelineOptions = {
     limit?: number;
@@ -16,10 +17,12 @@ type UseRoomTimelineResult = {
     showingCachedEvents: boolean;
 };
 
+const IS_WINDOWS_DESKTOP = isTauriDesktop() && resolveRuntimePlatform() === "windows";
+
 const ROOM_TIMELINE_CACHE_PREFIX = "gtt_room_timeline_cache_v2:";
 const ROOM_TIMELINE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const ROOM_TIMELINE_PERSIST_LIMIT = 120;
-const ROOM_LIVE_EVENT_WINDOW_LIMIT = 60;
+const ROOM_TIMELINE_PERSIST_LIMIT = IS_WINDOWS_DESKTOP ? 60 : 120;
+const ROOM_LIVE_EVENT_WINDOW_LIMIT = IS_WINDOWS_DESKTOP ? 30 : 60;
 
 type SerializedRoomTimelineCache = {
     version: 2;

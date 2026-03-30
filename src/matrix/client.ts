@@ -1,6 +1,7 @@
 import { MatrixClient, MatrixScheduler, MemoryStore } from "matrix-js-sdk";
 import { IndexedDBStore } from "matrix-js-sdk/lib/store/indexeddb";
 import { logger as matrixLogger } from "matrix-js-sdk/lib/logger";
+import { isTauriDesktop, resolveRuntimePlatform } from "../runtime/appRuntime";
 
 type MatrixClientConfig = {
     baseUrl: string;
@@ -15,8 +16,22 @@ function getMatrixStoreName(userId: string): string {
     return `gtt-matrix-store-${userId.replace(/[^a-z0-9_.-]/gi, "_")}`;
 }
 
+function shouldUseMemoryStoreOnly(): boolean {
+    if (!isTauriDesktop()) return false;
+    return resolveRuntimePlatform() === "windows";
+}
+
 function createMatrixStore(userId: string): MemoryStore | IndexedDBStore {
     const storage = typeof window === "undefined" ? undefined : window.localStorage;
+
+    // On Windows desktop, IndexedDBStore restores the full sync state into the JS
+    // heap on startup.  WebView2 has tighter memory limits than WKWebView, which
+    // easily triggers OOM right after login.  Use a lightweight MemoryStore (no
+    // localStorage either – the custom SQLite cache handles persistence).
+    if (shouldUseMemoryStoreOnly()) {
+        return new MemoryStore();
+    }
+
     if (typeof window === "undefined" || !window.indexedDB) {
         return new MemoryStore({ localStorage: storage });
     }

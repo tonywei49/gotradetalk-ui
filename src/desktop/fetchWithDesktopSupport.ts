@@ -15,6 +15,17 @@ function shouldBypassDesktopBridge(url: URL): boolean {
         return true;
     }
 
+    // Matrix sync responses can be very large (multi-MB JSON). The desktop
+    // bridge serialises bodies as base64 which triples peak memory usage
+    // (base64 string + atob binary string + Uint8Array copy). Bypass the
+    // bridge for these heavy endpoints to avoid OOM on Windows WebView2.
+    if (url.pathname.includes("/_matrix/client/")) {
+        const p = url.pathname;
+        if (p.includes("/sync") || p.includes("/messages") || p.includes("/initialSync")) {
+            return true;
+        }
+    }
+
     return false;
 }
 
