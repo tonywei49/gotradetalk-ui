@@ -100,6 +100,16 @@ fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
   Ok(())
 }
 
+#[tauri::command]
+fn desktop_open_devtools(app: AppHandle) -> Result<(), String> {
+  let main_window = app
+    .get_webview_window("main")
+    .ok_or_else(|| "main window is unavailable".to_string())?;
+
+  main_window.open_devtools();
+  Ok(())
+}
+
 fn updater_runtime_config() -> Result<Option<UpdaterRuntimeConfig>, String> {
   let pubkey = option_env!("TAURI_UPDATER_PUBKEY")
     .map(str::trim)
@@ -468,6 +478,7 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
       desktop_boot_ready,
+      desktop_open_devtools,
       desktop_http_request,
       desktop_updater_status,
       desktop_check_for_updates,

@@ -108,7 +108,7 @@ export function App() {
     }, [initTheme]);
 
     useEffect(() => {
-        if (isAuthenticated) {
+        if (!isAuthenticated) {
             void loadAuthPage();
             void loadOauthSetupPage();
             return;

@@ -21,10 +21,20 @@ export function useDesktopWindowLifecycle(bootReady = false) {
         const preventContextMenu = (event: MouseEvent) => {
             event.preventDefault();
         };
+        const openDevtoolsShortcut = (event: KeyboardEvent) => {
+            const isF12 = event.key === "F12";
+            const isCtrlShiftI = event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "i";
+            if (!isWindowsDesktop() || (!isF12 && !isCtrlShiftI)) return;
+            event.preventDefault();
+            void invoke("desktop_open_devtools").catch((error) => {
+                console.warn("Desktop open devtools failed:", error);
+            });
+        };
 
         if (!isWindowsDesktop()) {
             window.addEventListener("contextmenu", preventContextMenu, true);
         }
+        window.addEventListener("keydown", openDevtoolsShortcut, true);
 
         void (async () => {
             try {
@@ -43,6 +53,7 @@ export function useDesktopWindowLifecycle(bootReady = false) {
             if (!isWindowsDesktop()) {
                 window.removeEventListener("contextmenu", preventContextMenu, true);
             }
+            window.removeEventListener("keydown", openDevtoolsShortcut, true);
         };
     }, []);
 
