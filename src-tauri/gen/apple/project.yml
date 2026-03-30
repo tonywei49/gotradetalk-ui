@@ -54,8 +54,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.12
-        CFBundleVersion: "0.1.12"
+        CFBundleShortVersionString: 0.1.21
+        CFBundleVersion: "0.1.21"
         NSLocalNetworkUsageDescription: GoTradeTalk needs local network access to connect to the development server on your Mac during iOS development.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

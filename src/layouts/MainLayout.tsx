@@ -99,7 +99,7 @@ import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../de
 import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
 import { useToastStore } from "../stores/ToastStore";
 import { isTauriMobile, resolveRuntimePlatform } from "../runtime/appRuntime";
-import { notebookApiBaseUrl as configuredNotebookApiBaseUrl } from "../config";
+import { appVersion, notebookApiBaseUrl as configuredNotebookApiBaseUrl } from "../config";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -4153,6 +4153,14 @@ export const MainLayout: React.FC = () => {
                                     >
                                         {t("layout.notificationSoundPreview")}
                                     </button>
+                                </div>
+                            </div>
+                            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
+                                <div className="text-sm text-slate-700 dark:text-slate-100">
+                                    App Version
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    v{appVersion}
                                 </div>
                             </div>
                             {desktopUpdaterAvailable && (

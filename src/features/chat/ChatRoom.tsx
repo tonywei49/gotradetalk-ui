@@ -1370,7 +1370,6 @@ export const ChatRoom: React.FC = () => {
         companyName,
         jumpToEventId,
         onJumpHandled,
-        notebookAssistEnabled,
         notebookCapabilities,
         onReloginForNotebook,
         notebookApiBaseUrl,
@@ -1503,7 +1502,7 @@ export const ChatRoom: React.FC = () => {
         capabilities: notebookCapabilities,
         apiBaseUrl: notebookApiBaseUrl,
     }), [hubSession, matrixCredentials, userType, notebookCapabilities, notebookApiBaseUrl]);
-    const canUseNotebookAssist = Boolean(notebookAssistEnabled && notebookAuth);
+    const canUseNotebookAssist = Boolean(notebookAuth);
     const canUseNotebookBasic = Boolean(notebookAuth && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
     const {
         assistState,
