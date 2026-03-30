@@ -169,11 +169,17 @@ function formatMatrixUserLocalId(matrixUserId: string | null | undefined): strin
     return withoutPrefix.slice(0, colonIndex);
 }
 
+function shouldNormalizeMarkdownDisplayText(value: string): boolean {
+    if (value.includes("\uFFFD")) return true;
+    if (!value.includes("|")) return false;
+    return value.includes("\n|") || value.includes("\n    |") || value.includes("\n\t|") || value.includes("```");
+}
+
 function normalizeMarkdownDisplayText(value: string): string {
-    return normalizeMarkdownTables(value
-        .replace(/\uFFFD/g, "")
-        .replace(/^(\s*(?:[-*+]|\d+\.)\s+)[\p{Extended_Pictographic}\uFE0F\u200D]+\s*/gmu, "$1")
-        .replace(/^(\s*)[\p{Extended_Pictographic}\uFE0F\u200D]+\s+/gmu, "$1"));
+    if (!shouldNormalizeMarkdownDisplayText(value)) {
+        return value;
+    }
+    return normalizeMarkdownTables(value.replace(/\uFFFD/g, ""));
 }
 
 function normalizeMarkdownTables(value: string): string {
@@ -289,7 +295,7 @@ type DraftMediaRegistryEntry = {
 };
 
 const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
-    const normalizedText = normalizeMarkdownDisplayText(text);
+    const normalizedText = useMemo(() => normalizeMarkdownDisplayText(text), [text]);
     const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
     const mutedTextClass = isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-400";
     const borderClass = isMe ? "border-white/20" : "border-slate-300/60 dark:border-slate-600";

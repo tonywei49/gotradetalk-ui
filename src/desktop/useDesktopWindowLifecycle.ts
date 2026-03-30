@@ -6,6 +6,11 @@ function isTauriDesktop(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function isWindowsDesktop(): boolean {
+    if (!isTauriDesktop() || typeof navigator === "undefined") return false;
+    return navigator.userAgent.toLowerCase().includes("windows");
+}
+
 export function useDesktopWindowLifecycle(bootReady = false) {
     const bootNotifiedRef = useRef(false);
 
@@ -17,7 +22,9 @@ export function useDesktopWindowLifecycle(bootReady = false) {
             event.preventDefault();
         };
 
-        window.addEventListener("contextmenu", preventContextMenu, true);
+        if (!isWindowsDesktop()) {
+            window.addEventListener("contextmenu", preventContextMenu, true);
+        }
 
         void (async () => {
             try {
@@ -33,7 +40,9 @@ export function useDesktopWindowLifecycle(bootReady = false) {
 
         return () => {
             unlistenCloseRequested?.();
-            window.removeEventListener("contextmenu", preventContextMenu, true);
+            if (!isWindowsDesktop()) {
+                window.removeEventListener("contextmenu", preventContextMenu, true);
+            }
         };
     }, []);
 
