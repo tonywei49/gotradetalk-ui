@@ -1,8 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
+import { invoke } from "@tauri-apps/api/core";
 import {
     ChatBubbleLeftRightIcon,
     BookOpenIcon,
@@ -16,11 +14,10 @@ import {
     SunIcon,
     MoonIcon,
 } from "@heroicons/react/24/outline";
-import { ClientEvent, EventTimeline, EventType, Preset, RoomEvent, type MatrixEvent, type Room } from "matrix-js-sdk";
+import type { MatrixEvent, Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
 import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
-import { RoomList } from "../features/rooms";
 import type { ContactSummary } from "../features/rooms/RoomList";
 import {
     createChatSummaryJob,
@@ -40,7 +37,6 @@ import type { HubProfileSummary, HubSupabaseSession } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { prepareMatrixClient } from "../matrix/client";
-import { CreateRoomModal } from "../features/groups/CreateRoomModal";
 // RoomDetailsPanel 將在 ChatRoom 中整合使用
 // import { RoomDetailsPanel, isRoomWithMultipleMembers } from "../features/groups/RoomDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
@@ -75,16 +71,15 @@ import {
 } from "../features/chat/chatSearchApi";
 import {
     getNotebookAdapter,
-    NotebookPanel,
-    NotebookSidebar,
     type SummaryDirectionPayload,
     resolveNotebookCapabilities,
     type SummarySearchPersonItem,
     type SummarySearchRoomItem,
     type SummarySearchTarget,
-    useNotebookModule,
 } from "../features/notebook";
-import { TaskDetail, TaskList, TaskReminderBanner, useTaskModule, useTaskUI } from "../features/tasks";
+import { useNotebookModule } from "../features/notebook/useNotebookModule";
+import { useTaskModule } from "../features/tasks/hooks/useTaskModule";
+import { useTaskUI } from "../features/tasks/hooks/useTaskUI";
 import {
     getCompanyNotebookAiSettings,
     getNotebookCapabilities,
@@ -99,6 +94,69 @@ import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
 import { useToastStore } from "../stores/ToastStore";
 import { isTauriMobile, resolveRuntimePlatform } from "../runtime/appRuntime";
 import { notebookApiBaseUrl as configuredNotebookApiBaseUrl } from "../config";
+import {
+    MATRIX_CLIENT_EVENT_EVENT,
+    MATRIX_CLIENT_EVENT_ROOM,
+    MATRIX_CLIENT_EVENT_SYNC,
+    MATRIX_EVENT_TYPE_DIRECT,
+    MATRIX_EVENT_TYPE_ROOM_CREATE,
+    MATRIX_EVENT_TYPE_ROOM_MEMBER,
+    MATRIX_EVENT_TYPE_ROOM_MESSAGE,
+    MATRIX_EVENT_TYPE_ROOM_NAME,
+    MATRIX_PRESET_PRIVATE_CHAT,
+    MATRIX_ROOM_EVENT_MY_MEMBERSHIP,
+    MATRIX_ROOM_EVENT_TIMELINE,
+    MATRIX_ROOM_EVENT_TIMELINE_RESET,
+    MATRIX_TIMELINE_BACKWARDS,
+} from "../matrix/matrixEventConstants";
+
+const RoomList = lazy(async () => {
+    const module = await import("../features/rooms");
+    return { default: module.RoomList };
+});
+
+const CreateRoomModal = lazy(async () => {
+    const module = await import("../features/groups/CreateRoomModal");
+    return { default: module.CreateRoomModal };
+});
+
+const NotebookSidebar = lazy(async () => {
+    const module = await import("../features/notebook/components/NotebookSidebar");
+    return { default: module.NotebookSidebar };
+});
+
+const NotebookPanel = lazy(async () => {
+    const module = await import("../features/notebook/components/NotebookPanel");
+    return { default: module.NotebookPanel };
+});
+
+const NotebookSummaryMarkdown = lazy(async () => {
+    const module = await import("../features/notebook/components/NotebookSummaryMarkdown");
+    return { default: module.NotebookSummaryMarkdown };
+});
+
+const TaskList = lazy(async () => {
+    const module = await import("../features/tasks/components/TaskList");
+    return { default: module.TaskList };
+});
+
+const TaskDetail = lazy(async () => {
+    const module = await import("../features/tasks/components/TaskDetail");
+    return { default: module.TaskDetail };
+});
+
+const TaskReminderBanner = lazy(async () => {
+    const module = await import("../features/tasks/components/TaskReminderBanner");
+    return { default: module.TaskReminderBanner };
+});
+
+const bindMatrixRuntimeEvent = (client: any, event: string, listener: (...args: any[]) => void): void => {
+    client.on(event, listener);
+};
+
+const unbindMatrixRuntimeEvent = (client: any, event: string, listener: (...args: any[]) => void): void => {
+    client.off(event, listener);
+};
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -374,7 +432,7 @@ async function changeMatrixPassword(
 
 function resolveRoomListDisplayName(room: Room, myUserId: string | null): string {
     const fallback = room.name || room.getCanonicalAlias() || room.roomId;
-    const explicitNameEvent = room.currentState.getStateEvents(EventType.RoomName, "");
+    const explicitNameEvent = room.currentState.getStateEvents(MATRIX_EVENT_TYPE_ROOM_NAME, "");
     const explicitName = String((explicitNameEvent?.getContent() as { name?: string } | undefined)?.name || "").trim();
     if (explicitName) return explicitName;
     const normalizedMyUserId = myUserId || null;
@@ -387,7 +445,7 @@ function resolveRoomListDisplayName(room: Room, myUserId: string | null): string
     }
 
     if (normalizedMyUserId) {
-        const selfMemberEvent = room.currentState.getStateEvents(EventType.RoomMember, normalizedMyUserId);
+        const selfMemberEvent = room.currentState.getStateEvents(MATRIX_EVENT_TYPE_ROOM_MEMBER, normalizedMyUserId);
         const isDirect = Boolean(selfMemberEvent?.getContent()?.is_direct);
         if (isDirect) {
             const other = room
@@ -403,7 +461,7 @@ function resolveRoomListDisplayName(room: Room, myUserId: string | null): string
 }
 
 function resolveRoomCreatedAt(room: Room): number | null {
-    const createEvent = room.currentState.getStateEvents(EventType.RoomCreate, "");
+    const createEvent = room.currentState.getStateEvents(MATRIX_EVENT_TYPE_ROOM_CREATE, "");
     if (!createEvent) return null;
     const ts = createEvent.getTs();
     return Number.isFinite(ts) && ts > 0 ? ts : null;
@@ -587,7 +645,7 @@ function isNotebookAuthFailure(error: unknown): boolean {
 function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
     const out: MatrixEvent[] = [];
     const seen = new Set<string>();
-    let timeline: EventTimeline | null = room.getLiveTimeline();
+    let timeline: ReturnType<Room["getLiveTimeline"]> | null = room.getLiveTimeline();
     while (timeline && out.length < maxEvents) {
         const events = timeline.getEvents();
         for (const event of events) {
@@ -597,7 +655,7 @@ function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
             out.push(event);
             if (out.length >= maxEvents) break;
         }
-        timeline = timeline.getNeighbouringTimeline(EventTimeline.BACKWARDS) ?? null;
+        timeline = timeline.getNeighbouringTimeline(MATRIX_TIMELINE_BACKWARDS as never) ?? null;
     }
     return out;
 }
@@ -698,7 +756,10 @@ export const MainLayout: React.FC = () => {
     const { runtimeContext, platformState, tools } = usePluginHost();
     const isMobileApp = isTauriMobile();
     const runtimePlatform = useMemo(() => resolveRuntimePlatform(), []);
+    const isWindowsDesktop = useMemo(() => isTauriDesktop() && runtimePlatform === "windows", [runtimePlatform]);
     const shouldWarmDeferredModules = !(isTauriDesktop() && runtimePlatform === "windows");
+    const [shellReady, setShellReady] = useState(!isWindowsDesktop);
+    const [roomListMounted, setRoomListMounted] = useState(!isWindowsDesktop);
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
@@ -1053,6 +1114,29 @@ export const MainLayout: React.FC = () => {
             setDeferredModules((prev) => ({ ...prev, notebook: true }));
         }
     }, [activeTab, deferredModules.files, deferredModules.notebook, deferredModules.tasks]);
+
+    useEffect(() => {
+        if (!isWindowsDesktop) return;
+        let cancelled = false;
+        const revealShell = async (): Promise<void> => {
+            try {
+                await invoke("desktop_boot_ready");
+            } catch (error) {
+                console.warn("Desktop boot ready notification failed:", error);
+            }
+            if (cancelled) return;
+            setShellReady(true);
+            window.setTimeout(() => {
+                if (!cancelled) {
+                    setRoomListMounted(true);
+                }
+            }, 180);
+        };
+        void revealShell();
+        return () => {
+            cancelled = true;
+        };
+    }, [isWindowsDesktop]);
     const activeRoomName = useMemo(() => {
         if (!matrixClient || !activeRoomId) return null;
         const room = matrixClient.getRoom(activeRoomId);
@@ -1602,12 +1686,12 @@ export const MainLayout: React.FC = () => {
     ]);
 
     useEffect(() => {
-        if (matrixClient || !matrixCredentials) return;
+        if (!shellReady || matrixClient || !matrixCredentials) return;
         void ensureMatrixClient();
-    }, [ensureMatrixClient, matrixClient, matrixCredentials]);
+    }, [ensureMatrixClient, matrixClient, matrixCredentials, shellReady]);
 
     useEffect(() => {
-        if (!matrixClient) return undefined;
+        if (!shellReady || !matrixClient) return undefined;
         let cancelled = false;
 
         void prepareMatrixClient(matrixClient).finally(() => {
@@ -1622,7 +1706,7 @@ export const MainLayout: React.FC = () => {
             cancelled = true;
             matrixClient.stopClient();
         };
-    }, [matrixClient]);
+    }, [matrixClient, shellReady]);
 
     useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) return undefined;
@@ -1634,7 +1718,7 @@ export const MainLayout: React.FC = () => {
             if (membership !== "leave" && membership !== "ban") return;
             if (prevMembership !== "join" && prevMembership !== "invite") return;
             if (shownForRoom.has(room.roomId)) return;
-            const selfMemberEvent = room.currentState.getStateEvents(EventType.RoomMember, myUserId);
+            const selfMemberEvent = room.currentState.getStateEvents(MATRIX_EVENT_TYPE_ROOM_MEMBER, myUserId);
             const sender = selfMemberEvent?.getSender();
             if (!sender || sender === myUserId) return;
             shownForRoom.add(room.roomId);
@@ -1651,9 +1735,9 @@ export const MainLayout: React.FC = () => {
             });
         };
 
-        matrixClient.on(RoomEvent.MyMembership, onMyMembership);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_MY_MEMBERSHIP, onMyMembership);
         return () => {
-            matrixClient.off(RoomEvent.MyMembership, onMyMembership);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_MY_MEMBERSHIP, onMyMembership);
         };
     }, [matrixClient, matrixCredentials?.user_id]);
 
@@ -1683,7 +1767,7 @@ export const MainLayout: React.FC = () => {
             removed: boolean,
         ): void => {
             if (!room || removed || toStartOfTimeline) return;
-            if (event.getType() !== EventType.RoomMember) return;
+            if (event.getType() !== MATRIX_EVENT_TYPE_ROOM_MEMBER) return;
             const content = (event.getContent() ?? {}) as { membership?: string };
             const prev = (event.getPrevContent() ?? {}) as { membership?: string };
             traceEvent("matrix.member_timeline", {
@@ -1698,13 +1782,13 @@ export const MainLayout: React.FC = () => {
             });
         };
 
-        matrixClient.on(ClientEvent.Sync, onSync);
-        matrixClient.on(RoomEvent.MyMembership, onMyMembership);
-        matrixClient.on(RoomEvent.Timeline, onTimeline);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_SYNC, onSync);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_MY_MEMBERSHIP, onMyMembership);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_TIMELINE, onTimeline);
         return () => {
-            matrixClient.off(ClientEvent.Sync, onSync);
-            matrixClient.off(RoomEvent.MyMembership, onMyMembership);
-            matrixClient.off(RoomEvent.Timeline, onTimeline);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_SYNC, onSync);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_MY_MEMBERSHIP, onMyMembership);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_TIMELINE, onTimeline);
         };
     }, [matrixClient, matrixCredentials?.user_id, activeRoomId]);
 
@@ -2129,12 +2213,12 @@ export const MainLayout: React.FC = () => {
             void refreshMyAvatar();
         };
 
-        matrixClient.on(ClientEvent.Sync, onSync);
-        matrixClient.on(ClientEvent.Event, onEvent);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_SYNC, onSync);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_EVENT, onEvent);
         return () => {
             alive = false;
-            matrixClient.off(ClientEvent.Sync, onSync);
-            matrixClient.off(ClientEvent.Event, onEvent);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_SYNC, onSync);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_EVENT, onEvent);
         };
     }, [matrixClient, matrixCredentials?.user_id, resolveAvatarUrl]);
 
@@ -2172,15 +2256,15 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!matrixClient) return undefined;
         const onTimelineChanged = (): void => setFileLibraryTick((prev) => prev + 1);
-        matrixClient.on(RoomEvent.Timeline, onTimelineChanged);
-        matrixClient.on(RoomEvent.TimelineReset, onTimelineChanged);
-        matrixClient.on(ClientEvent.Room, onTimelineChanged);
-        matrixClient.on(RoomEvent.MyMembership, onTimelineChanged);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_TIMELINE, onTimelineChanged);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_TIMELINE_RESET, onTimelineChanged);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_ROOM, onTimelineChanged);
+        bindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_MY_MEMBERSHIP, onTimelineChanged);
         return () => {
-            matrixClient.off(RoomEvent.Timeline, onTimelineChanged);
-            matrixClient.off(RoomEvent.TimelineReset, onTimelineChanged);
-            matrixClient.off(ClientEvent.Room, onTimelineChanged);
-            matrixClient.off(RoomEvent.MyMembership, onTimelineChanged);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_TIMELINE, onTimelineChanged);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_TIMELINE_RESET, onTimelineChanged);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_CLIENT_EVENT_ROOM, onTimelineChanged);
+            unbindMatrixRuntimeEvent(matrixClient, MATRIX_ROOM_EVENT_MY_MEMBERSHIP, onTimelineChanged);
         };
     }, [matrixClient]);
 
@@ -2909,7 +2993,7 @@ export const MainLayout: React.FC = () => {
         const room = matrixClient.getRoom(activeRoomId);
         if (!room) return;
         try {
-            const accountData = matrixClient.getAccountData(EventType.Direct);
+            const accountData = matrixClient.getAccountData(MATRIX_EVENT_TYPE_DIRECT as never);
             const directContent = (accountData?.getContent() ?? {}) as Record<string, string[]>;
             const directRoomIds = new Set<string>();
             Object.values(directContent).forEach((roomIds) => {
@@ -3095,7 +3179,7 @@ export const MainLayout: React.FC = () => {
         try {
             const result = await matrixClient.createRoom({
                 invite: [matrixUserId],
-                preset: Preset.PrivateChat,
+                preset: MATRIX_PRESET_PRIVATE_CHAT as never,
                 power_level_content_override: {
                     users: {
                         [currentUserId]: 100,
@@ -3145,7 +3229,7 @@ export const MainLayout: React.FC = () => {
             if (room.getMyMembership() !== "join" || room.isSpaceRoom()) return;
             const events = getLoadedRoomEvents(room);
             events.forEach((event) => {
-                if (event.getType() !== EventType.RoomMessage) return;
+                if (event.getType() !== MATRIX_EVENT_TYPE_ROOM_MESSAGE) return;
                 if (event.isRedacted()) return;
                 if (event.getSender() !== me) return;
                 const eventId = event.getId();
@@ -3506,7 +3590,7 @@ export const MainLayout: React.FC = () => {
                 await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
             }
             const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
-            await matrixClient.sendEvent(item.roomId, EventType.RoomMessage, {
+            await matrixClient.sendEvent(item.roomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
                 msgtype: "m.notice",
                 body: t("chat.fileRevokedNotice", { name: selfLabel }),
             } as never);
@@ -3545,7 +3629,7 @@ export const MainLayout: React.FC = () => {
             return;
         }
         const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
-        await matrixClient.sendEvent(item.roomId, EventType.RoomMessage, {
+        await matrixClient.sendEvent(item.roomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
             msgtype: "m.notice",
             body: t("chat.fileRevokedNotice", { name: selfLabel }),
         } as never);
@@ -3595,7 +3679,7 @@ export const MainLayout: React.FC = () => {
         if (succeeded > 0 && selectedFileRoomId) {
             const selfLabel = getLocalPart(matrixCredentials?.user_id) || matrixCredentials?.user_id || "user";
             try {
-                await matrixClient.sendEvent(selectedFileRoomId, EventType.RoomMessage, {
+                await matrixClient.sendEvent(selectedFileRoomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
                     msgtype: "m.notice",
                     body: t("layout.fileBatchRevokedNotice", {
                         name: selfLabel,
@@ -3674,22 +3758,9 @@ export const MainLayout: React.FC = () => {
                                 {`${formatSummaryDisplayDateTime(summaryPreviewJob.from_date)} ~ ${formatSummaryDisplayDateTime(summaryPreviewJob.to_date)}`}
                             </div>
                             <div className="max-h-[56vh] max-w-full overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                                <div className="prose prose-sm max-w-none whitespace-pre-wrap break-words text-slate-700 prose-a:text-emerald-600 prose-a:underline dark:prose-invert dark:text-slate-200 dark:prose-a:text-emerald-300">
-                                    <ReactMarkdown
-                                        remarkPlugins={[remarkGfm, remarkBreaks]}
-                                        components={{
-                                            a: ({ ...props }) => (
-                                                <a
-                                                    {...props}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                />
-                                            ),
-                                        }}
-                                    >
-                                        {summaryPreviewJob.summary_text || ""}
-                                    </ReactMarkdown>
-                                </div>
+                                <Suspense fallback={<div className="text-sm text-slate-500 dark:text-slate-400">Loading summary preview...</div>}>
+                                    <NotebookSummaryMarkdown content={summaryPreviewJob.summary_text || ""} />
+                                </Suspense>
                             </div>
                         </div>
                     </div>
@@ -4369,6 +4440,10 @@ export const MainLayout: React.FC = () => {
                     </>
                 ) : activeTab === "notebook" ? (
                     notebookReady ? (
+                        <Suspense fallback={<DeferredModulePanel
+                            title="Preparing notebook"
+                            description="The notebook workspace is warming up from local cache and will be ready shortly."
+                        />}>
                         <NotebookSidebar
                             listState={notebookModule.listState}
                             listError={notebookModule.listError}
@@ -4424,6 +4499,7 @@ export const MainLayout: React.FC = () => {
                             summaryConfirmHint={summaryConfirmHint}
                             summaryMobilePanel={notebookSidebarMode === "chatSummary" ? summaryWorkspacePanel : null}
                         />
+                        </Suspense>
                     ) : (
                         <DeferredModulePanel
                             title="Preparing notebook"
@@ -4507,7 +4583,12 @@ export const MainLayout: React.FC = () => {
                     )
                 ) : activeTab === "tasks" ? (
                     tasksReady && taskModule.hydrated ? (
-                        <TaskList {...taskUi.listProps} />
+                        <Suspense fallback={<DeferredModulePanel
+                            title="Preparing tasks"
+                            description="Task data is being restored from local storage and recent updates."
+                        />}>
+                            <TaskList {...taskUi.listProps} />
+                        </Suspense>
                     ) : (
                         <DeferredModulePanel
                             title="Preparing tasks"
@@ -4641,32 +4722,38 @@ export const MainLayout: React.FC = () => {
                         </div>
 
                         {/* Room List Content (Placeholder) */}
-                        <RoomList
-                            client={matrixClient}
-                            hubAccessToken={hubAccessToken}
-                            matrixAccessToken={matrixAccessToken}
-                            matrixHsUrl={matrixHsUrl}
-                            userType={userType}
-                            hubSessionExpiresAt={hubSessionExpiresAt}
-                            activeRoomId={activeRoomId}
-                            onSelectRoom={(roomId) => {
-                                setActiveRoomId(roomId);
-                                setMobileView("detail");
-                            }}
-                            onInviteBadgeChange={setInviteBadgeCount}
-                            onUnreadBadgeChange={setUnreadBadgeCount}
-                            view={activeTab === "contacts" ? "contacts" : "chat"}
-                            onSelectContact={(contact) => {
-                                setActiveContact(contact);
-                                setRestoredActiveContactId(contact?.id ?? null);
-                                setMobileView("detail");
-                            }}
-                            activeContactId={mobileView === "detail" ? (activeContact?.id ?? restoredActiveContactId) : null}
-                            contactsRefreshToken={contactsRefreshToken}
-                            pinnedRoomIds={pinnedRoomIds}
-                            enableContactPolling
-                            notificationSoundMode={notificationSoundMode}
-                        />
+                        {roomListMounted ? (
+                            <Suspense fallback={<div className="flex-1 min-h-0 bg-white dark:bg-slate-900" />}>
+                                <RoomList
+                                    client={matrixClient}
+                                    hubAccessToken={hubAccessToken}
+                                    matrixAccessToken={matrixAccessToken}
+                                    matrixHsUrl={matrixHsUrl}
+                                    userType={userType}
+                                    hubSessionExpiresAt={hubSessionExpiresAt}
+                                    activeRoomId={activeRoomId}
+                                    onSelectRoom={(roomId) => {
+                                        setActiveRoomId(roomId);
+                                        setMobileView("detail");
+                                    }}
+                                    onInviteBadgeChange={setInviteBadgeCount}
+                                    onUnreadBadgeChange={setUnreadBadgeCount}
+                                    view={activeTab === "contacts" ? "contacts" : "chat"}
+                                    onSelectContact={(contact) => {
+                                        setActiveContact(contact);
+                                        setRestoredActiveContactId(contact?.id ?? null);
+                                        setMobileView("detail");
+                                    }}
+                                    activeContactId={mobileView === "detail" ? (activeContact?.id ?? restoredActiveContactId) : null}
+                                    contactsRefreshToken={contactsRefreshToken}
+                                    pinnedRoomIds={pinnedRoomIds}
+                                    enableContactPolling
+                                    notificationSoundMode={notificationSoundMode}
+                                />
+                            </Suspense>
+                        ) : (
+                            <div className="flex-1 min-h-0 bg-white dark:bg-slate-900" />
+                        )}
                     </>
                 )}
             </aside>
@@ -4678,9 +4765,11 @@ export const MainLayout: React.FC = () => {
                     }`}
             >
                 {tasksReady && taskModule.hydrated ? (
-                    <TaskReminderBanner
-                        {...taskUi.reminderProps}
-                    />
+                    <Suspense fallback={null}>
+                        <TaskReminderBanner
+                            {...taskUi.reminderProps}
+                        />
+                    </Suspense>
                 ) : null}
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
@@ -5203,6 +5292,10 @@ export const MainLayout: React.FC = () => {
                             </div>
                         </div>
                     ) : (
+                        <Suspense fallback={<DeferredModulePanel
+                            title="Preparing notebook"
+                            description="Local notebook cache is loading first, then recent changes will sync in the background."
+                        />}>
                         <NotebookPanel
                             enabled={notebookWorkspaceAvailable}
                             selectedItem={notebookModule.selectedItem}
@@ -5441,10 +5534,16 @@ export const MainLayout: React.FC = () => {
                             chunkSettings={notebookModule.chunkSettings}
                             onChunkSettingsChange={notebookModule.setChunkSettings}
                         />
+                        </Suspense>
                     )
                 ) : activeTab === "tasks" ? (
                     tasksReady && taskModule.hydrated ? (
-                        <TaskDetail {...taskUi.detailProps} />
+                        <Suspense fallback={<DeferredModulePanel
+                            title="Preparing tasks"
+                            description="The task workspace is restoring local data before showing the latest task state."
+                        />}>
+                            <TaskDetail {...taskUi.detailProps} />
+                        </Suspense>
                     ) : (
                         <DeferredModulePanel
                             title="Preparing tasks"
@@ -5630,18 +5729,20 @@ export const MainLayout: React.FC = () => {
             </main>
 
             {/* Create Room Modal */}
-            <CreateRoomModal
-                isOpen={showCreateRoomModal}
-                onClose={() => setShowCreateRoomModal(false)}
-                onSuccess={(roomId) => {
-                    setActiveRoomId(roomId);
-                    setActiveTab("chat");
-                    setMobileView("detail");
-                }}
-                matrixClient={matrixClient}
-                accessToken={hubAccessToken}
-                hsUrl={matrixHsUrl}
-            />
+            <Suspense fallback={null}>
+                <CreateRoomModal
+                    isOpen={showCreateRoomModal}
+                    onClose={() => setShowCreateRoomModal(false)}
+                    onSuccess={(roomId) => {
+                        setActiveRoomId(roomId);
+                        setActiveTab("chat");
+                        setMobileView("detail");
+                    }}
+                    matrixClient={matrixClient}
+                    accessToken={hubAccessToken}
+                    hsUrl={matrixHsUrl}
+                />
+            </Suspense>
             {removedFromRoomNotice && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
                     <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">

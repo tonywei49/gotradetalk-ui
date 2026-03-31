@@ -58,11 +58,6 @@ function installBootstrapDevtoolsShortcut(): void {
 async function boot(): Promise<void> {
     if (isTauriDesktop()) {
         installBootstrapDevtoolsShortcut();
-        try {
-            await invoke("desktop_boot_ready");
-        } catch (error) {
-            console.warn("Desktop boot ready notification failed:", error);
-        }
     }
 
     requestAnimationFrame(() => {
