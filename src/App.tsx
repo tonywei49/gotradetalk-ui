@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./stores/AuthStore";
@@ -144,21 +144,39 @@ function DesktopChatRouteBootstrap() {
 function DesktopWorkspaceBootstrap() {
     const ensureMatrixClient = useAuthStore((state) => state.ensureMatrixClient);
     const [ready, setReady] = useState(false);
+    const [LayoutComponent, setLayoutComponent] = useState<ComponentType | null>(null);
 
     useEffect(() => {
         let cancelled = false;
-        const boot = () => {
+        const boot = async () => {
+            try {
+                await invoke("desktop_boot_ready");
+            } catch (error) {
+                console.warn("Desktop workspace bootstrap failed:", error);
+            }
             if (cancelled) return;
             requestAnimationFrame(() => {
                 if (cancelled) return;
                 setReady(true);
-                window.setTimeout(() => {
-                    if (cancelled) return;
-                    void ensureMatrixClient();
-                }, 180);
             });
+            window.setTimeout(async () => {
+                if (cancelled) return;
+                try {
+                    const module = await loadMainLayout();
+                    if (cancelled) return;
+                    setLayoutComponent(() => module.default);
+                    window.setTimeout(() => {
+                        if (cancelled) return;
+                        void ensureMatrixClient();
+                    }, 120);
+                } catch (error) {
+                    console.warn("Desktop workspace layout load failed:", error);
+                }
+            }, 80);
         };
-        const timer = window.setTimeout(boot, 0);
+        const timer = window.setTimeout(() => {
+            void boot();
+        }, 0);
         return () => {
             cancelled = true;
             window.clearTimeout(timer);
@@ -169,7 +187,11 @@ function DesktopWorkspaceBootstrap() {
         return <RouteTransitionScreen />;
     }
 
-    return <MainLayout />;
+    if (!LayoutComponent) {
+        return <RouteTransitionScreen />;
+    }
+
+    return <LayoutComponent />;
 }
 
 export function App() {

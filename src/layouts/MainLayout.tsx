@@ -1,6 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
 import {
     ChatBubbleLeftRightIcon,
     BookOpenIcon,
@@ -70,16 +69,12 @@ import {
     type ChatSearchPersonHit,
 } from "../features/chat/chatSearchApi";
 import {
-    getNotebookAdapter,
     type SummaryDirectionPayload,
     resolveNotebookCapabilities,
     type SummarySearchPersonItem,
     type SummarySearchRoomItem,
     type SummarySearchTarget,
 } from "../features/notebook";
-import { useNotebookModule } from "../features/notebook/useNotebookModule";
-import { useTaskModule } from "../features/tasks/hooks/useTaskModule";
-import { useTaskUI } from "../features/tasks/hooks/useTaskUI";
 import {
     getCompanyNotebookAiSettings,
     getNotebookCapabilities,
@@ -120,34 +115,18 @@ const CreateRoomModal = lazy(async () => {
     return { default: module.CreateRoomModal };
 });
 
-const NotebookSidebar = lazy(async () => {
-    const module = await import("../features/notebook/components/NotebookSidebar");
-    return { default: module.NotebookSidebar };
-});
-
-const NotebookPanel = lazy(async () => {
-    const module = await import("../features/notebook/components/NotebookPanel");
-    return { default: module.NotebookPanel };
-});
-
 const NotebookSummaryMarkdown = lazy(async () => {
     const module = await import("../features/notebook/components/NotebookSummaryMarkdown");
     return { default: module.NotebookSummaryMarkdown };
 });
-
-const TaskList = lazy(async () => {
-    const module = await import("../features/tasks/components/TaskList");
-    return { default: module.TaskList };
+const NotebookWorkspaceDesktop = lazy(async () => {
+    const module = await import("../features/notebook/components/NotebookWorkspaceDesktop");
+    return { default: module.NotebookWorkspaceDesktop };
 });
 
-const TaskDetail = lazy(async () => {
-    const module = await import("../features/tasks/components/TaskDetail");
-    return { default: module.TaskDetail };
-});
-
-const TaskReminderBanner = lazy(async () => {
-    const module = await import("../features/tasks/components/TaskReminderBanner");
-    return { default: module.TaskReminderBanner };
+const TaskWorkspaceDesktop = lazy(async () => {
+    const module = await import("../features/tasks/components/TaskWorkspaceDesktop");
+    return { default: module.TaskWorkspaceDesktop };
 });
 
 const bindMatrixRuntimeEvent = (client: any, event: string, listener: (...args: any[]) => void): void => {
@@ -264,11 +243,6 @@ function parseMxcUri(mxcUrl: string): { serverName: string; mediaId: string } | 
     const match = /^mxc:\/\/([^/]+)\/(.+)$/.exec(mxcUrl);
     if (!match) return null;
     return { serverName: match[1], mediaId: match[2] };
-}
-
-function isMockNotebookMxc(mxcUrl: string): boolean {
-    const parsed = parseMxcUri(mxcUrl);
-    return parsed?.serverName === "mock.server";
 }
 
 async function cleanupUploadedMedia(
@@ -779,7 +753,7 @@ export const MainLayout: React.FC = () => {
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
     const [notebookRefreshToken, setNotebookRefreshToken] = useState(0);
     const [fileLibraryTick, setFileLibraryTick] = useState(0);
-    const [fileRoomSearch, setFileRoomSearch] = useState("");
+    const [fileRoomSearch] = useState("");
     const [debouncedFileRoomSearch, setDebouncedFileRoomSearch] = useState("");
     const [selectedFileRoomId, setSelectedFileRoomId] = useState<string | null>(null);
     const [fileListSearch, setFileListSearch] = useState("");
@@ -805,18 +779,6 @@ export const MainLayout: React.FC = () => {
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
     const fileThumbnailUrlsRef = useRef<Record<string, string>>({});
-    const [notebookFileActionError, setNotebookFileActionError] = useState<string | null>(null);
-    const [notebookUploadState, setNotebookUploadState] = useState<{
-        busy: boolean;
-        progress: number;
-        fileName: string | null;
-        error: string | null;
-    }>({
-        busy: false,
-        progress: 0,
-        fileName: null,
-        error: null,
-    });
     const previewDraggingRef = useRef(false);
     const previewDragStartRef = useRef({ x: 0, y: 0 });
     const previewDragOriginRef = useRef({ x: 0, y: 0 });
@@ -1118,12 +1080,7 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!isWindowsDesktop) return;
         let cancelled = false;
-        const revealShell = async (): Promise<void> => {
-            try {
-                await invoke("desktop_boot_ready");
-            } catch (error) {
-                console.warn("Desktop boot ready notification failed:", error);
-            }
+        const revealShell = (): void => {
             if (cancelled) return;
             setShellReady(true);
             window.setTimeout(() => {
@@ -1132,39 +1089,11 @@ export const MainLayout: React.FC = () => {
                 }
             }, 180);
         };
-        void revealShell();
+        revealShell();
         return () => {
             cancelled = true;
         };
     }, [isWindowsDesktop]);
-    const activeRoomName = useMemo(() => {
-        if (!matrixClient || !activeRoomId) return null;
-        const room = matrixClient.getRoom(activeRoomId);
-        if (!room) return null;
-        return resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
-    }, [matrixClient, activeRoomId, matrixCredentials?.user_id]);
-    const taskModule = useTaskModule({
-        userId: tasksReady ? matrixCredentials?.user_id ?? null : null,
-        activeRoomId,
-        activeRoomName,
-        accessToken: tasksReady ? taskAccessToken : null,
-        hsUrl: tasksReady ? taskHsUrl : null,
-        matrixUserId: tasksReady ? matrixCredentials?.user_id ?? null : null,
-    });
-    const taskUi = useTaskUI({
-        taskModule,
-        onOpenRoom: (roomId) => {
-            setActiveRoomId(roomId);
-            setActiveTab("chat");
-            setMobileView("detail");
-        },
-        onOpenTasksTab: () => {
-            setActiveTab("tasks");
-            setMobileView("list");
-        },
-        onMobileDetail: () => setMobileView("detail"),
-        onMobileList: () => setMobileView("list"),
-    });
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : null;
     const meUpdateOptions = undefined;
     const [capabilityValues, setCapabilityValues] = useState<string[]>([]);
@@ -1216,7 +1145,6 @@ export const MainLayout: React.FC = () => {
         userType,
     ]);
     const capabilityToken = notebookToken.accessToken;
-    const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
     const notebookCapabilityState = useMemo(
         () =>
             resolveNotebookCapabilities({
@@ -1520,7 +1448,6 @@ export const MainLayout: React.FC = () => {
         if (!hubSession?.refresh_token || refreshingNotebookToken) return;
         void refreshNotebookToken();
     }, [hubSession?.refresh_token, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
-
     useEffect(() => {
         if (!notebookReady) return;
         const shouldTryRefresh =
@@ -1547,32 +1474,6 @@ export const MainLayout: React.FC = () => {
             document.removeEventListener("visibilitychange", onVisibility);
         };
     }, [hubSession?.refresh_token, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken]);
-    const notebookModule = useNotebookModule({
-        adapter: notebookAdapter,
-        auth: notebookWorkspaceAuth,
-        enabled: notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved),
-        refreshToken: notebookRefreshToken,
-        onAuthFailure: async () => refreshNotebookToken({ force: true }),
-    });
-    useEffect(() => {
-        const debugError = notebookModule.requestDebug?.error;
-        if (!debugError) return;
-        if (!notebookModule.listError && !notebookModule.actionError) return;
-        const signal = {
-            code: debugError.code,
-            status: debugError.status,
-            terminal: debugError.status === 401,
-        } satisfies NotebookTerminalAuthFailureSignal;
-        if (!isNotebookTerminalAuthFailure(signal)) return;
-        triggerNotebookTerminalLogout(signal);
-    }, [notebookModule.actionError, notebookModule.listError, notebookModule.requestDebug, triggerNotebookTerminalLogout]);
-    useEffect(() => {
-        if (!notebookReady) return;
-        if (userType === "client" && notebookModule.sourceScope === "company") {
-            notebookModule.setSourceScope("personal");
-            notebookModule.setViewFilter("all");
-        }
-    }, [notebookModule, notebookReady, userType]);
 
     const handleDisplayLanguageChange = async (value: string): Promise<void> => {
         const previous = displayLanguage;
@@ -4072,7 +3973,8 @@ export const MainLayout: React.FC = () => {
 
             {/* 2. List Panel (w-80, bg-white) */}
             <aside
-                className={`min-h-0 w-full flex-1 lg:flex-none bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${mobileView === "detail" ? "hidden lg:flex" : "flex"
+                className={`min-h-0 w-full flex-1 lg:flex-none bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${
+                    activeTab === "tasks" || activeTab === "notebook" ? "hidden lg:hidden" : mobileView === "detail" ? "hidden lg:flex" : "flex"
                     }`}
             >
                 {activeTab === "settings" ? (
@@ -4439,162 +4341,60 @@ export const MainLayout: React.FC = () => {
                         </div>
                     </>
                 ) : activeTab === "notebook" ? (
-                    notebookReady ? (
+                    !notebookReady ? (
+                        <DeferredModulePanel
+                            title="Preparing notebook"
+                            description="Local notebook cache is loading first, then recent changes will sync in the background."
+                        />
+                    ) : (
                         <Suspense fallback={<DeferredModulePanel
                             title="Preparing notebook"
-                            description="The notebook workspace is warming up from local cache and will be ready shortly."
+                            description="Local notebook cache is loading first, then recent changes will sync in the background."
                         />}>
-                        <NotebookSidebar
-                            listState={notebookModule.listState}
-                            listError={notebookModule.listError}
-                            search={notebookModule.search}
-                            onSearchChange={notebookModule.setSearch}
-                            items={notebookModule.items}
-                            selectedItemId={notebookModule.selectedItemId}
-                            filter={notebookModule.viewFilter}
-                            onFilterChange={notebookModule.setViewFilter}
-                            sourceScope={notebookModule.sourceScope}
-                            onSourceScopeChange={notebookModule.setSourceScope}
-                            onSelect={(itemId) => {
-                                notebookModule.setSelectedItemId(itemId);
-                                setMobileView("detail");
-                            }}
-                            onCreate={() => {
-                                void notebookModule.createItem();
-                                setMobileView("detail");
-                            }}
-                            onManualSync={() => {
-                                void notebookModule.syncItems({ force: true, showIndicator: true });
-                            }}
-                            manualSyncAvailable={notebookModule.hasRemoteNotebookApi}
-                            busy={notebookModule.actionBusy}
-                            listRefreshing={notebookModule.listRefreshing}
-                            hasMore={notebookModule.hasMore}
-                            loadingMore={notebookModule.loadingMore}
-                            onLoadMore={() => {
-                                void notebookModule.loadMore();
-                            }}
-                            showCompanyFilter={userType !== "client"}
-                            mode={notebookSidebarMode}
-                            onModeChange={setNotebookSidebarMode}
-                            summaryQuery={summarySearchQuery}
-                            onSummaryQueryChange={setSummarySearchQuery}
-                            onSummarySearchNow={(value) => {
-                                void runSummarySearch({ forceQuery: value });
-                            }}
-                            summaryLoading={summarySearchLoading}
-                            summaryError={summarySearchError}
-                            summaryPeopleResults={summaryPeopleResults}
-                            summaryRoomResults={summaryRoomResults}
-                            summarySelectedTarget={summarySelectedTarget}
-                            onSummarySelectTarget={setSummarySelectedTarget}
-                            summaryStartDate={summaryStartDate}
-                            summaryEndDate={summaryEndDate}
-                            onSummaryStartDateChange={setSummaryStartDate}
-                            onSummaryEndDateChange={setSummaryEndDate}
-                            onSummaryConfirm={(payload) => {
-                                void onStartGenerateSummary(payload);
-                            }}
-                            summaryConfirmLoading={summaryContentLoading}
-                            summaryConfirmHint={summaryConfirmHint}
-                            summaryMobilePanel={notebookSidebarMode === "chatSummary" ? summaryWorkspacePanel : null}
-                        />
+                            <NotebookWorkspaceDesktop
+                                auth={notebookWorkspaceAuth}
+                                enabled={notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved)}
+                                refreshToken={notebookRefreshToken}
+                                onAuthFailure={async () => refreshNotebookToken({ force: true })}
+                                onTerminalAuthFailure={triggerNotebookTerminalLogout}
+                                workspaceAvailable={notebookWorkspaceAvailable}
+                                userType={userType}
+                                sidebarMode={notebookSidebarMode}
+                                onSidebarModeChange={setNotebookSidebarMode}
+                                summaryQuery={summarySearchQuery}
+                                onSummaryQueryChange={setSummarySearchQuery}
+                                onSummarySearchNow={setDebouncedSummarySearchQuery}
+                                summaryLoading={summarySearchLoading}
+                                summaryError={summarySearchError}
+                                summaryPeopleResults={summaryPeopleResults}
+                                summaryRoomResults={summaryRoomResults}
+                                summarySelectedTarget={summarySelectedTarget}
+                                onSummarySelectTarget={setSummarySelectedTarget}
+                                summaryStartDate={summaryStartDate}
+                                summaryEndDate={summaryEndDate}
+                                onSummaryStartDateChange={setSummaryStartDate}
+                                onSummaryEndDateChange={setSummaryEndDate}
+                                onSummaryConfirm={onStartGenerateSummary}
+                                summaryConfirmLoading={summaryContentLoading}
+                                summaryConfirmHint={summaryConfirmHint}
+                                summaryWorkspacePanel={summaryWorkspacePanel}
+                                matrixClient={matrixClient}
+                                matrixAccessToken={matrixCredentials?.access_token ?? null}
+                                uploadLimitMb={notebookUploadLimitMb}
+                                pushToast={pushToast}
+                                onOpenPreview={(payload) => {
+                                    setPreviewZoom(1);
+                                    setPreviewOffset({ x: 0, y: 0 });
+                                    setFilePreview(payload);
+                                }}
+                            />
                         </Suspense>
-                    ) : (
-                        <DeferredModulePanel
-                            title="Preparing notebook"
-                            description="The notebook workspace is warming up from local cache and will be ready shortly."
-                        />
-                    )
-                ) : activeTab === "files" ? (
-                    filesReady ? (
-                    <>
-                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {t("layout.filesTitle")}
-                            </div>
-                        </div>
-                        <div className="p-3">
-                            <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
-                                <svg
-                                    className="w-5 h-5 text-gray-400 dark:text-slate-400"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                                    />
-                                </svg>
-                                <input
-                                    type="text"
-                                    value={fileRoomSearch}
-                                    onChange={(event) => setFileRoomSearch(event.target.value)}
-                                    placeholder={t("layout.filesRoomSearchPlaceholder")}
-                                    className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
-                                />
-                            </div>
-                        </div>
-                        <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar px-3 pb-3 space-y-2">
-                            {filteredRoomSummaryList.length === 0 ? (
-                                <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
-                                    {t("layout.filesRoomsEmpty")}
-                                </div>
-                            ) : (
-                                filteredRoomSummaryList.map((room) => {
-                                    const active = room.roomId === selectedFileRoomId;
-                                    const sizeText =
-                                        room.unknownSizeCount > 0
-                                            ? `${formatBytesToMb(room.totalKnownBytes)} MB+`
-                                            : `${formatBytesToMb(room.totalKnownBytes)} MB`;
-                                    return (
-                                        <button
-                                            key={room.roomId}
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedFileRoomId(room.roomId);
-                                                setMobileView("detail");
-                                            }}
-                                            className={`w-full rounded-xl border px-3 py-2 text-left ${active
-                                                ? "border-emerald-400 bg-emerald-50/70 dark:bg-emerald-900/20"
-                                                : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800"
-                                                }`}
-                                        >
-                                            <div className="truncate text-sm font-semibold text-slate-700 dark:text-slate-100">
-                                                {room.roomName} ({room.attachmentCount})
-                                            </div>
-                                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                {t("layout.filesRoomSizeLabel", { size: sizeText })}
-                                            </div>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </>
-                    ) : (
-                        <DeferredModulePanel
-                            title="Preparing files"
-                            description="The file index is loading in the background so the main workspace can stay responsive."
-                        />
                     )
                 ) : activeTab === "tasks" ? (
-                    tasksReady && taskModule.hydrated ? (
-                        <Suspense fallback={<DeferredModulePanel
-                            title="Preparing tasks"
-                            description="Task data is being restored from local storage and recent updates."
-                        />}>
-                            <TaskList {...taskUi.listProps} />
-                        </Suspense>
-                    ) : (
-                        <DeferredModulePanel
-                            title="Preparing tasks"
-                            description="Task data is being restored from local storage and recent updates."
-                        />
-                    )
+                    <DeferredModulePanel
+                        title="Preparing tasks"
+                        description="The task workspace now loads as an isolated page to keep startup memory under control."
+                    />
                 ) : (
                     <>
                         {/* Search Bar */}
@@ -4764,13 +4564,6 @@ export const MainLayout: React.FC = () => {
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
             >
-                {tasksReady && taskModule.hydrated ? (
-                    <Suspense fallback={null}>
-                        <TaskReminderBanner
-                            {...taskUi.reminderProps}
-                        />
-                    </Suspense>
-                ) : null}
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
                     <div className="flex-1 min-h-0 overflow-hidden gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
@@ -5285,264 +5078,80 @@ export const MainLayout: React.FC = () => {
                             title="Preparing notebook"
                             description="Local notebook cache is loading first, then recent changes will sync in the background."
                         />
-                    ) : notebookSidebarMode === "chatSummary" ? (
-                        <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar bg-white p-6 dark:bg-slate-900">
-                            <div className="hidden lg:block">
-                                {summaryWorkspacePanel}
-                            </div>
-                        </div>
                     ) : (
                         <Suspense fallback={<DeferredModulePanel
                             title="Preparing notebook"
                             description="Local notebook cache is loading first, then recent changes will sync in the background."
                         />}>
-                        <NotebookPanel
-                            enabled={notebookWorkspaceAvailable}
-                            selectedItem={notebookModule.selectedItem}
-                            isCreatingDraft={notebookModule.isCreatingDraft}
-                            editorTitle={notebookModule.editorTitle}
-                            editorContent={notebookModule.editorContent}
-                            isEditing={notebookModule.isEditing}
-                            setEditorTitle={notebookModule.setEditorTitle}
-                            setEditorContent={notebookModule.setEditorContent}
-                            onStartEdit={() => {
-                                notebookModule.startEdit();
-                            }}
-                            onCancelEdit={() => {
-                                notebookModule.cancelEdit();
-                            }}
-                            onSaveAsKnowledge={() => {
-                                void notebookModule.saveItemAs(true);
-                            }}
-                            onSaveAsNote={() => {
-                                void notebookModule.saveItemAs(false);
-                            }}
-                            onDelete={() => {
-                                void notebookModule.deleteItem();
-                            }}
-                            onSwitchToKnowledge={() => {
-                                void notebookModule.switchItemMode(true);
-                            }}
-                            onSwitchToNote={() => {
-                                void notebookModule.switchItemMode(false);
-                            }}
-                            onRetryIndex={() => {
-                                void notebookModule.retryIndex();
-                            }}
-                            onAttachFile={() => {
-                                const mxc = window.prompt("Input matrix_media_mxc (mxc://server/mediaId)");
-                                if (!mxc) return;
-                                const fileName = window.prompt("Input matrix_media_name (optional)") || "linked-file";
-                                const mime = window.prompt("Input matrix_media_mime (optional)") || undefined;
-                                void notebookModule.attachFile({
-                                    matrixMediaMxc: mxc,
-                                    matrixMediaName: fileName,
-                                    matrixMediaMime: mime,
-                                    isIndexable: false,
-                                });
-                            }}
-                            onUploadFile={(file) => {
-                                if (!matrixClient) return;
-                                setNotebookFileActionError(null);
-                                const maxBytes = notebookUploadLimitMb * 1024 * 1024;
-                                if (file.size > maxBytes) {
-                                    window.alert(`檔案超過上限（${notebookUploadLimitMb}MB）`);
-                                    return;
-                                }
-                                void (async () => {
-                                    setNotebookUploadState({
-                                        busy: true,
-                                        progress: 0,
-                                        fileName: file.name,
-                                        error: null,
-                                    });
-                                    try {
-                                        const uploadResult = (await matrixClient.uploadContent(file, {
-                                            includeFilename: false,
-                                            progressHandler: (progressInfo) => {
-                                                const loaded = Number(progressInfo.loaded ?? 0);
-                                                const total = Number(progressInfo.total ?? file.size ?? 0);
-                                                const nextProgress = total > 0 ? Math.round((loaded / total) * 100) : 0;
-                                                setNotebookUploadState((prev) => ({
-                                                    ...prev,
-                                                    progress: Math.max(prev.progress, nextProgress),
-                                                }));
-                                            },
-                                        })) as unknown;
-
-                                        let mxcUrl = "";
-                                        if (typeof uploadResult === "string") {
-                                            if (uploadResult.startsWith("mxc://")) {
-                                                mxcUrl = uploadResult;
-                                            } else {
-                                                try {
-                                                    const parsed = JSON.parse(uploadResult) as { content_uri?: string };
-                                                    mxcUrl = parsed.content_uri || "";
-                                                } catch {
-                                                    mxcUrl = "";
-                                                }
-                                            }
-                                        } else if (uploadResult && typeof uploadResult === "object") {
-                                            const uri = (uploadResult as { content_uri?: string }).content_uri;
-                                            mxcUrl = typeof uri === "string" ? uri : "";
-                                        }
-
-                                        if (!mxcUrl.startsWith("mxc://")) {
-                                            throw new Error("Failed to upload file to Matrix media");
-                                        }
-
-                                        await notebookModule.attachFile({
-                                            matrixMediaMxc: mxcUrl,
-                                            matrixMediaName: file.name,
-                                            matrixMediaMime: file.type || undefined,
-                                            matrixMediaSize: file.size,
-                                            isIndexable: false,
-                                        });
-                                        setNotebookUploadState({
-                                            busy: false,
-                                            progress: 100,
-                                            fileName: file.name,
-                                            error: null,
-                                        });
-                                        window.setTimeout(() => {
-                                            setNotebookUploadState((prev) => prev.fileName === file.name ? {
-                                                busy: false,
-                                                progress: 0,
-                                                fileName: null,
-                                                error: null,
-                                            } : prev);
-                                        }, 1200);
-                                    } catch {
-                                        const message = "檔案上傳失敗，請稍後重試。";
-                                        setNotebookUploadState({
-                                            busy: false,
-                                            progress: 0,
-                                            fileName: file.name,
-                                            error: message,
-                                        });
-                                        setNotebookFileActionError(message);
-                                    }
-                                })();
-                            }}
-                            uploadLimitMb={notebookUploadLimitMb}
-                            onDeleteFile={(fileId) => {
-                                void notebookModule.removeFile(fileId);
-                            }}
-                            onDownloadFile={(mxcUrl, preferredName) => {
-                                if (!matrixClient) return;
-                                setNotebookFileActionError(null);
-                                if (isMockNotebookMxc(mxcUrl)) {
-                                    const message = "此檔案仍指向舊的 mock 快取資料，請重新整理 Notebook 後再試。";
-                                    setNotebookFileActionError(message);
-                                    pushToast("error", message);
-                                    void notebookModule.syncItems();
-                                    return;
-                                }
-                                const url = matrixClient.mxcUrlToHttp(mxcUrl);
-                                if (!url) {
-                                    const message = "無法解析檔案下載地址。";
-                                    setNotebookFileActionError(message);
-                                    pushToast("error", message);
-                                    return;
-                                }
-                                void (async () => {
-                                    try {
-                                        const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
-                                        const blobUrl = URL.createObjectURL(blob);
-                                        const anchor = document.createElement("a");
-                                        anchor.href = blobUrl;
-                                        anchor.download = preferredName || "notebook-file";
-                                        anchor.rel = "noopener noreferrer";
-                                        document.body.appendChild(anchor);
-                                        anchor.click();
-                                        document.body.removeChild(anchor);
-                                        URL.revokeObjectURL(blobUrl);
-                                    } catch {
-                                        const message = "檔案下載失敗，請確認 Matrix 媒體仍存在後再試。";
-                                        setNotebookFileActionError(message);
-                                        pushToast("error", message);
-                                    }
-                                })();
-                            }}
-                            onPreviewFile={(file) => {
-                                if (!matrixClient) return;
-                                setNotebookFileActionError(null);
-                                if (isMockNotebookMxc(file.matrixMediaMxc)) {
-                                    const message = "此檔案仍指向舊的 mock 快取資料，請重新整理 Notebook 後再試。";
-                                    setNotebookFileActionError(message);
-                                    pushToast("error", message);
-                                    void notebookModule.syncItems();
-                                    return;
-                                }
-                                const previewType = getFilePreviewType({
-                                    msgtype: (file.matrixMediaMime || "").toLowerCase().startsWith("image/")
-                                        ? "m.image"
-                                        : (file.matrixMediaMime || "").toLowerCase().startsWith("video/")
-                                            ? "m.video"
-                                            : (file.matrixMediaMime || "").toLowerCase().startsWith("audio/")
-                                                ? "m.audio"
-                                                : "m.file",
-                                    mimeType: file.matrixMediaMime ?? undefined,
-                                });
-                                if (!previewType) {
-                                    const message = "此檔案類型暫不支援預覽，請改用下載。";
-                                    setNotebookFileActionError(message);
-                                    pushToast("error", message);
-                                    return;
-                                }
-                                const url = matrixClient.mxcUrlToHttp(file.matrixMediaMxc);
-                                if (!url) {
-                                    const message = "無法解析檔案預覽地址。";
-                                    setNotebookFileActionError(message);
-                                    pushToast("error", message);
-                                    return;
-                                }
-                                void (async () => {
-                                    try {
-                                        const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
-                                        const previewUrl = previewType === "pdf"
-                                            ? await blobToDataUrl(blob)
-                                            : URL.createObjectURL(blob);
-                                        setPreviewZoom(1);
-                                        setPreviewOffset({ x: 0, y: 0 });
-                                        setFilePreview({
-                                            url: previewUrl,
-                                            type: previewType,
-                                            name: file.matrixMediaName || "notebook-file",
-                                            revokeOnClose: previewType !== "pdf",
-                                        });
-                                    } catch {
-                                        const message = previewType === "pdf"
-                                            ? "PDF 預覽失敗，請改用下載檢查原檔。"
-                                            : "檔案預覽失敗，請稍後重試或改用下載。";
-                                        setNotebookFileActionError(message);
-                                        pushToast("error", message);
-                                    }
-                                })();
-                            }}
-                            draftFiles={notebookModule.draftFiles}
-                            previewBusy={notebookModule.previewBusy}
-                            previewError={notebookModule.previewError}
-                            parsedPreview={notebookModule.parsedPreview}
-                            chunks={notebookModule.chunks}
-                            chunksTotal={notebookModule.chunksTotal}
-                            busy={notebookModule.actionBusy}
-                            actionError={notebookModule.actionError || notebookFileActionError}
-                            requestDebug={notebookModule.requestDebug}
-                            uploadState={notebookUploadState}
-                            onMobileBack={() => setMobileView("list")}
-                            chunkSettings={notebookModule.chunkSettings}
-                            onChunkSettingsChange={notebookModule.setChunkSettings}
-                        />
+                            <NotebookWorkspaceDesktop
+                                auth={notebookWorkspaceAuth}
+                                enabled={notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved)}
+                                refreshToken={notebookRefreshToken}
+                                onAuthFailure={async () => refreshNotebookToken({ force: true })}
+                                onTerminalAuthFailure={triggerNotebookTerminalLogout}
+                                workspaceAvailable={notebookWorkspaceAvailable}
+                                userType={userType}
+                                sidebarMode={notebookSidebarMode}
+                                onSidebarModeChange={setNotebookSidebarMode}
+                                summaryQuery={summarySearchQuery}
+                                onSummaryQueryChange={setSummarySearchQuery}
+                                onSummarySearchNow={setDebouncedSummarySearchQuery}
+                                summaryLoading={summarySearchLoading}
+                                summaryError={summarySearchError}
+                                summaryPeopleResults={summaryPeopleResults}
+                                summaryRoomResults={summaryRoomResults}
+                                summarySelectedTarget={summarySelectedTarget}
+                                onSummarySelectTarget={setSummarySelectedTarget}
+                                summaryStartDate={summaryStartDate}
+                                summaryEndDate={summaryEndDate}
+                                onSummaryStartDateChange={setSummaryStartDate}
+                                onSummaryEndDateChange={setSummaryEndDate}
+                                onSummaryConfirm={onStartGenerateSummary}
+                                summaryConfirmLoading={summaryContentLoading}
+                                summaryConfirmHint={summaryConfirmHint}
+                                summaryWorkspacePanel={summaryWorkspacePanel}
+                                matrixClient={matrixClient}
+                                matrixAccessToken={matrixCredentials?.access_token ?? null}
+                                uploadLimitMb={notebookUploadLimitMb}
+                                pushToast={pushToast}
+                                onOpenPreview={(payload) => {
+                                    setPreviewZoom(1);
+                                    setPreviewOffset({ x: 0, y: 0 });
+                                    setFilePreview(payload);
+                                }}
+                            />
                         </Suspense>
                     )
                 ) : activeTab === "tasks" ? (
-                    tasksReady && taskModule.hydrated ? (
+                    tasksReady ? (
                         <Suspense fallback={<DeferredModulePanel
                             title="Preparing tasks"
                             description="The task workspace is restoring local data before showing the latest task state."
                         />}>
-                            <TaskDetail {...taskUi.detailProps} />
+                            <TaskWorkspaceDesktop
+                                userId={matrixCredentials?.user_id ?? null}
+                                activeRoomId={activeRoomId}
+                                activeRoomName={(() => {
+                                    if (!activeRoomId || !matrixClient) return null;
+                                    const room = matrixClient.getRoom(activeRoomId);
+                                    if (!room) return null;
+                                    return resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
+                                })()}
+                                accessToken={taskAccessToken}
+                                hsUrl={taskHsUrl}
+                                matrixUserId={matrixCredentials?.user_id ?? null}
+                                onOpenRoom={(roomId) => {
+                                    setActiveRoomId(roomId);
+                                    setActiveTab("chat");
+                                    setMobileView("detail");
+                                }}
+                                onOpenTasksTab={() => {
+                                    setActiveTab("tasks");
+                                    setMobileView("list");
+                                }}
+                                onMobileDetail={() => setMobileView("detail")}
+                                onMobileList={() => setMobileView("list")}
+                            />
                         </Suspense>
                     ) : (
                         <DeferredModulePanel
@@ -5719,7 +5328,6 @@ export const MainLayout: React.FC = () => {
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
                             notebookApiBaseUrl: effectiveNotebookApiBaseUrl,
-                            ...taskUi.chatContext,
                         }}
                     />
                 )}

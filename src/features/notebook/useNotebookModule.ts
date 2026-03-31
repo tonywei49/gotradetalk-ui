@@ -1260,3 +1260,5 @@ export function useNotebookModule({ adapter, auth, enabled, refreshToken, onAuth
         hasRemoteNotebookApi,
     };
 }
+
+export type NotebookModuleState = ReturnType<typeof useNotebookModule>;
