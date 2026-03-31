@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./stores/AuthStore";
 import { useThemeStore } from "./stores/ThemeStore";
@@ -98,6 +99,48 @@ function RouteTransitionScreen() {
     );
 }
 
+function DesktopAuthBootstrap({ children }: { children: React.ReactNode }) {
+    useEffect(() => {
+        let cancelled = false;
+        const reveal = () => {
+            if (cancelled) return;
+            void invoke("desktop_boot_ready").catch((error) => {
+                console.warn("Desktop boot ready notification failed:", error);
+            });
+        };
+        const timer = window.setTimeout(reveal, 0);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, []);
+
+    return <>{children}</>;
+}
+
+function DesktopChatRouteBootstrap() {
+    const [ready, setReady] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        const activate = () => {
+            if (cancelled) return;
+            setReady(true);
+        };
+        const timer = window.setTimeout(activate, 600);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, []);
+
+    if (!ready) {
+        return <RouteTransitionScreen />;
+    }
+
+    return <ChatRoom />;
+}
+
 function DesktopWorkspaceBootstrap() {
     const ensureMatrixClient = useAuthStore((state) => state.ensureMatrixClient);
     const [ready, setReady] = useState(false);
@@ -161,12 +204,12 @@ export function App() {
             <BrowserRouter>
                 <Suspense fallback={<RouteTransitionScreen />}>
                     <Routes>
-                        <Route path="/auth" element={!isAuthenticated ? <AuthPage /> : <Navigate to="/app" replace />} />
-                        <Route path="/oauth" element={!isAuthenticated ? <OauthSetupPage /> : <Navigate to="/app" replace />} />
+                        <Route path="/auth" element={!isAuthenticated ? (isWindowsDesktop ? <DesktopAuthBootstrap><AuthPage /></DesktopAuthBootstrap> : <AuthPage />) : <Navigate to="/app" replace />} />
+                        <Route path="/oauth" element={!isAuthenticated ? (isWindowsDesktop ? <DesktopAuthBootstrap><OauthSetupPage /></DesktopAuthBootstrap> : <OauthSetupPage />) : <Navigate to="/app" replace />} />
                         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
                         <Route path="/app" element={isAuthenticated ? (isWindowsDesktop ? <DesktopWorkspaceBootstrap /> : <MainLayout />) : <Navigate to="/auth" replace />}>
-                            <Route index element={<ChatRoom />} />
+                            <Route index element={isWindowsDesktop ? <DesktopChatRouteBootstrap /> : <ChatRoom />} />
                         </Route>
 
                         <Route path="/" element={<Navigate to={isAuthenticated ? "/app" : "/auth"} replace />} />
