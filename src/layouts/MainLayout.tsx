@@ -1006,6 +1006,13 @@ export const MainLayout: React.FC = () => {
 
         const applyCachedState = (cached: PersistedWorkspaceState | null): void => {
             if (!cached || disposed) return;
+            if (isWindowsDesktop) {
+                setActiveTab("chat");
+                setActiveRoomId(null);
+                setSelectedFileRoomId(null);
+                setRestoredActiveContactId(null);
+                return;
+            }
             if (cached.activeTab) {
                 setActiveTab(cached.activeTab);
             }

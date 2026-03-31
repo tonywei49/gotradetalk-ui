@@ -102,11 +102,16 @@ function RouteTransitionScreen() {
 function DesktopAuthBootstrap({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         let cancelled = false;
-        const reveal = () => {
+        const reveal = async () => {
             if (cancelled) return;
-            void invoke("desktop_boot_ready").catch((error) => {
+            try {
+                const revealed = await invoke<boolean>("desktop_boot_ready");
+                if (!revealed) {
+                    console.warn("Desktop auth bootstrap did not reveal main window.");
+                }
+            } catch (error) {
                 console.warn("Desktop boot ready notification failed:", error);
-            });
+            }
         };
         const timer = window.setTimeout(reveal, 0);
         return () => {
@@ -145,14 +150,25 @@ function DesktopWorkspaceBootstrap() {
     const ensureMatrixClient = useAuthStore((state) => state.ensureMatrixClient);
     const [ready, setReady] = useState(false);
     const [LayoutComponent, setLayoutComponent] = useState<ComponentType | null>(null);
+    const [bootFailed, setBootFailed] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
         const boot = async () => {
             try {
-                await invoke("desktop_boot_ready");
+                const revealed = await invoke<boolean>("desktop_boot_ready");
+                if (!revealed) {
+                    if (!cancelled) {
+                        setBootFailed(true);
+                    }
+                    return;
+                }
             } catch (error) {
                 console.warn("Desktop workspace bootstrap failed:", error);
+                if (!cancelled) {
+                    setBootFailed(true);
+                }
+                return;
             }
             if (cancelled) return;
             requestAnimationFrame(() => {
@@ -185,6 +201,19 @@ function DesktopWorkspaceBootstrap() {
 
     if (!ready) {
         return <RouteTransitionScreen />;
+    }
+
+    if (bootFailed) {
+        return (
+            <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f8fafc", color: "#0f172a", padding: "24px" }}>
+                <div style={{ maxWidth: "440px", textAlign: "center", display: "grid", gap: "12px" }}>
+                    <div style={{ fontSize: "18px", fontWeight: 700 }}>Workspace bootstrap failed</div>
+                    <div style={{ fontSize: "14px", lineHeight: 1.6, color: "#475569" }}>
+                        The desktop window did not become ready, so startup was stopped before loading the full workspace.
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     if (!LayoutComponent) {

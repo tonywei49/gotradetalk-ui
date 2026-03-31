@@ -87,7 +87,7 @@ fn reveal_primary_instance(app: &AppHandle) {
 }
 
 #[tauri::command]
-fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
+fn desktop_boot_ready(app: AppHandle) -> Result<bool, String> {
   let main_window = app
     .get_webview_window("main")
     .ok_or_else(|| "main window is unavailable".to_string())?;
@@ -97,7 +97,9 @@ fn desktop_boot_ready(app: AppHandle) -> Result<(), String> {
   }
 
   show_main_window(&main_window);
-  Ok(())
+  main_window
+    .is_visible()
+    .map_err(|error| format!("failed to confirm main window visibility: {error}"))
 }
 
 #[tauri::command]
