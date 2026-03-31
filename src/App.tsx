@@ -106,10 +106,13 @@ function DesktopWorkspaceBootstrap() {
         let cancelled = false;
         const boot = () => {
             if (cancelled) return;
-            ensureMatrixClient();
             requestAnimationFrame(() => {
                 if (cancelled) return;
                 setReady(true);
+                window.setTimeout(() => {
+                    if (cancelled) return;
+                    void ensureMatrixClient();
+                }, 180);
             });
         };
         const timer = window.setTimeout(boot, 0);

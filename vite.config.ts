@@ -45,8 +45,17 @@ export default defineConfig(({ mode }) => {
                             if (id.includes("react-dom") || id.includes("/react/")) return "react-vendor";
                             if (id.includes("i18next")) return "i18n-vendor";
                         }
-                        if (id.includes("/src/layouts/MainLayout") || id.includes("/src/features/chat/") || id.includes("/src/features/rooms/") || id.includes("/src/matrix/")) {
-                            return "chat-runtime";
+                        if (id.includes("/src/layouts/MainLayout")) {
+                            return "workspace-layout";
+                        }
+                        if (id.includes("/src/features/chat/ChatRoom") || id.includes("/src/features/chat/chatService") || id.includes("/src/features/chat/hooks/") || id.includes("/src/features/chat/translationPolicy") || id.includes("/src/features/chat/components/")) {
+                            return "chat-room";
+                        }
+                        if (id.includes("/src/features/rooms/") || id.includes("/src/features/groups/")) {
+                            return "room-list";
+                        }
+                        if (id.includes("/src/matrix/")) {
+                            return "matrix-runtime";
                         }
                         if (id.includes("/src/features/notebook/") || id.includes("/src/services/notebook")) {
                             return "notebook-runtime";

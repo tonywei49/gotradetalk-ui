@@ -2,7 +2,6 @@ import type { MatrixClient } from "matrix-js-sdk";
 import { create } from "zustand";
 
 import type { HubMatrixCredentials, HubSupabaseSession } from "../api/types";
-import { createMatrixClient } from "../matrix/client";
 
 export type AuthUserType = "client" | "staff";
 
@@ -24,7 +23,7 @@ type AuthState = {
         hubSession: HubSupabaseSession | null;
     }) => void;
     setHubSession: (hubSession: HubSupabaseSession | null) => void;
-    ensureMatrixClient: () => MatrixClient | null;
+    ensureMatrixClient: () => Promise<MatrixClient | null>;
     validateSession: () => Promise<void>;
     clearSession: () => void;
 };
@@ -32,6 +31,13 @@ type AuthState = {
 const STORAGE_KEY = "gt_auth_session";
 const MATRIX_USER_ID_KEY = "gt_matrix_user_id";
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24;
+let matrixClientModulePromise: Promise<typeof import("../matrix/client")> | null = null;
+let matrixClientInitPromise: Promise<MatrixClient | null> | null = null;
+
+function loadMatrixClientModule(): Promise<typeof import("../matrix/client")> {
+    matrixClientModulePromise ??= import("../matrix/client");
+    return matrixClientModulePromise;
+}
 
 function loadPersistedState(): PersistedAuthState | null {
     try {
@@ -117,18 +123,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         set({ hubSession });
     },
-    ensureMatrixClient: () => {
+    ensureMatrixClient: async () => {
         const state = get();
         if (state.matrixClient) return state.matrixClient;
         if (!state.matrixCredentials) return null;
-        const matrixClient = createMatrixClient({
-            baseUrl: state.matrixCredentials.hs_url,
-            accessToken: state.matrixCredentials.access_token,
-            userId: state.matrixCredentials.user_id,
-            deviceId: state.matrixCredentials.device_id,
-        });
-        set({ matrixClient });
-        return matrixClient;
+        if (matrixClientInitPromise) return matrixClientInitPromise;
+
+        const credentials = state.matrixCredentials;
+        matrixClientInitPromise = loadMatrixClientModule()
+            .then(({ createMatrixClient }) => {
+                const current = get();
+                if (current.matrixClient) return current.matrixClient;
+                if (
+                    !current.matrixCredentials ||
+                    current.matrixCredentials.user_id !== credentials.user_id ||
+                    current.matrixCredentials.access_token !== credentials.access_token
+                ) {
+                    return null;
+                }
+
+                const matrixClient = createMatrixClient({
+                    baseUrl: current.matrixCredentials.hs_url,
+                    accessToken: current.matrixCredentials.access_token,
+                    userId: current.matrixCredentials.user_id,
+                    deviceId: current.matrixCredentials.device_id,
+                });
+                set({ matrixClient });
+                return matrixClient;
+            })
+            .finally(() => {
+                matrixClientInitPromise = null;
+            });
+
+        return matrixClientInitPromise;
     },
     validateSession: async () => {
         const state = get();
@@ -151,6 +178,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
     clearSession: () => {
         persistState(null);
+        matrixClientInitPromise = null;
         set({
             userType: null,
             matrixCredentials: null,

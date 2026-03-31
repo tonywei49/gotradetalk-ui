@@ -1603,7 +1603,7 @@ export const MainLayout: React.FC = () => {
 
     useEffect(() => {
         if (matrixClient || !matrixCredentials) return;
-        ensureMatrixClient();
+        void ensureMatrixClient();
     }, [ensureMatrixClient, matrixClient, matrixCredentials]);
 
     useEffect(() => {
