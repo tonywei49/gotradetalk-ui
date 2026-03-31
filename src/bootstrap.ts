@@ -27,16 +27,50 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-function renderBootstrapFailure(error: unknown): void {
-    console.error("Failed to mount desktop app:", error);
+type DesktopBootReadyResult = {
+    revealed: boolean;
+    mainVisible: boolean;
+    splashClosed: boolean;
+    errors: string[];
+    warnings: string[];
+};
+
+function renderBootstrapFailure(title: string, detail: string, items?: string[]): void {
     rootElement.innerHTML = `
       <div style="min-height:100vh;display:grid;place-items:center;background:#fff;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:32px;">
         <div style="max-width:520px;display:grid;gap:12px;">
-          <div style="font-size:24px;font-weight:700;">Application bootstrap failed</div>
-          <div style="font-size:14px;line-height:1.6;">The desktop workspace could not finish startup. Open DevTools with F12 / Ctrl+Shift+I and inspect the console.</div>
+          <div style="font-size:24px;font-weight:700;">${title}</div>
+          <div style="font-size:14px;line-height:1.6;">${detail}</div>
+          ${items && items.length > 0 ? `
+            <ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.6;color:#4b5563;">
+              ${items.map((item) => `<li>${item}</li>`).join("")}
+            </ul>
+          ` : ""}
         </div>
       </div>
     `;
+}
+
+function renderMainImportFailure(error: unknown): void {
+    console.error("Failed to mount desktop app:", error);
+    renderBootstrapFailure(
+        "Application bootstrap failed",
+        "The desktop workspace could not finish startup. Open DevTools with F12 / Ctrl+Shift+I and inspect the console.",
+    );
+}
+
+function renderRevealFailure(result: DesktopBootReadyResult): void {
+    console.error("Desktop bootstrap reveal failed:", result);
+    const items = [
+        `mainVisible: ${String(result.mainVisible)}`,
+        `splashClosed: ${String(result.splashClosed)}`,
+        ...result.errors,
+    ];
+    renderBootstrapFailure(
+        "Desktop window reveal failed",
+        "Startup was stopped before loading the full workspace because the desktop window did not complete reveal cleanly.",
+        items,
+    );
 }
 
 function installBootstrapDevtoolsShortcut(): void {
@@ -58,11 +92,29 @@ function installBootstrapDevtoolsShortcut(): void {
 async function boot(): Promise<void> {
     if (isTauriDesktop()) {
         installBootstrapDevtoolsShortcut();
+        try {
+            const result = await invoke<DesktopBootReadyResult>("desktop_boot_ready");
+            if (!result.revealed) {
+                renderRevealFailure(result);
+                return;
+            }
+            if (result.warnings.length > 0) {
+                console.warn("Desktop bootstrap reveal warnings:", result.warnings);
+            }
+        } catch (error) {
+            console.error("Desktop bootstrap reveal request failed:", error);
+            renderBootstrapFailure(
+                "Desktop bootstrap failed",
+                "The desktop window did not complete its startup handshake, so loading the full workspace was stopped.",
+                [error instanceof Error ? error.message : String(error)],
+            );
+            return;
+        }
     }
 
     requestAnimationFrame(() => {
         window.setTimeout(() => {
-            void import("./main").catch(renderBootstrapFailure);
+            void import("./main").catch(renderMainImportFailure);
         }, 32);
     });
 }

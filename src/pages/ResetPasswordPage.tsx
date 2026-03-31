@@ -9,7 +9,7 @@ import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
 import { getSupabaseClient } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
-import { setLanguage } from "../i18n";
+import { setLanguage } from "../i18n/language";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";

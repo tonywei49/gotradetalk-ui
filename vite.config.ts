@@ -14,6 +14,10 @@ function resolveProxyTarget(value: string | undefined, fallback: string): string
     return normalizeBaseUrl(fallback);
 }
 
+function matchesChunk(id: string, patterns: string[]): boolean {
+    return patterns.some((pattern) => id.includes(pattern));
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), "");
@@ -39,6 +43,45 @@ export default defineConfig(({ mode }) => {
                 },
                 output: {
                     manualChunks(id) {
+                        const notebookWorkspacePatterns = [
+                            "/src/features/notebook/components/NotebookWorkspaceDesktop",
+                            "/src/features/notebook/components/NotebookPanel",
+                            "/src/features/notebook/components/NotebookSidebar",
+                            "/src/features/notebook/components/NotebookSummaryMarkdown",
+                            "/src/features/notebook/useNotebookModule",
+                            "/src/features/notebook/cache",
+                            "/src/features/notebook/sync",
+                            "/src/features/notebook/hooks/",
+                        ];
+                        const notebookBridgePatterns = [
+                            "/src/features/notebook/adapters/",
+                            "/src/features/notebook/adapterMode",
+                            "/src/features/notebook/capabilities",
+                            "/src/features/notebook/constants",
+                            "/src/features/notebook/notebookErrorMap",
+                            "/src/features/notebook/types",
+                            "/src/features/notebook/utils/",
+                            "/src/services/notebook",
+                        ];
+                        const taskWorkspacePatterns = [
+                            "/src/features/tasks/components/TaskWorkspaceDesktop",
+                            "/src/features/tasks/TaskWorkspace",
+                            "/src/features/tasks/hooks/useTaskModule",
+                            "/src/features/tasks/components/TaskList",
+                            "/src/features/tasks/components/TaskDetail",
+                            "/src/features/tasks/components/TaskReminderBanner",
+                            "/src/features/tasks/taskFilters",
+                            "/src/features/tasks/taskStorage",
+                        ];
+                        const taskBridgePatterns = [
+                            "/src/features/tasks/components/TaskQuickCreate",
+                            "/src/features/tasks/components/TaskRoomBar",
+                            "/src/features/tasks/hooks/useTaskUI",
+                            "/src/features/tasks/statusStyles",
+                            "/src/features/tasks/taskStatusConfig",
+                            "/src/features/tasks/types",
+                        ];
+
                         if (id.includes("node_modules")) {
                             if (id.includes("matrix-js-sdk")) return "matrix-sdk";
                             if (id.includes("react-router")) return "router";
@@ -47,6 +90,36 @@ export default defineConfig(({ mode }) => {
                         }
                         if (id.includes("/src/layouts/MainLayout")) {
                             return "workspace-layout";
+                        }
+                        if (id.includes("/src/layouts/ChatSearchBar")) {
+                            return "chat-search-bar";
+                        }
+                        if (id.includes("/src/layouts/NotebookPanel")) {
+                            return "notebook-panel";
+                        }
+                        if (id.includes("/src/layouts/FileCenterPanel") || id.includes("/src/features/files/")) {
+                            return "file-center";
+                        }
+                        if (id.includes("/src/layouts/SettingsAccountPanel")) {
+                            return "settings-account";
+                        }
+                        if (id.includes("/src/layouts/ContactsPanel")) {
+                            return "contacts-panel";
+                        }
+                        if (id.includes("/src/runtime/appRuntime")) {
+                            return "runtime-core";
+                        }
+                        if (id.includes("/src/i18n/")) {
+                            return "app-i18n";
+                        }
+                        if (id.includes("/src/constants/roomKinds") || id.includes("/src/constants/rooms")) {
+                            return "room-metadata";
+                        }
+                        if (id.includes("/src/desktop/desktopCacheDb")) {
+                            return "desktop-cache";
+                        }
+                        if (id.includes("/src/features/chat/chatSearchApi")) {
+                            return "chat-search";
                         }
                         if (id.includes("/src/features/chat/ChatRoom") || id.includes("/src/features/chat/chatService") || id.includes("/src/features/chat/hooks/") || id.includes("/src/features/chat/translationPolicy") || id.includes("/src/features/chat/components/")) {
                             return "chat-room";
@@ -57,11 +130,23 @@ export default defineConfig(({ mode }) => {
                         if (id.includes("/src/matrix/")) {
                             return "matrix-runtime";
                         }
-                        if (id.includes("/src/features/notebook/") || id.includes("/src/services/notebook")) {
-                            return "notebook-runtime";
+                        if (matchesChunk(id, notebookWorkspacePatterns)) {
+                            return "notebook-workspace";
+                        }
+                        if (matchesChunk(id, notebookBridgePatterns)) {
+                            return "notebook-bridge";
+                        }
+                        if (matchesChunk(id, taskWorkspacePatterns)) {
+                            return "task-workspace";
+                        }
+                        if (matchesChunk(id, taskBridgePatterns)) {
+                            return "task-bridge";
+                        }
+                        if (id.includes("/src/features/notebook/")) {
+                            return "notebook-workspace";
                         }
                         if (id.includes("/src/features/tasks/")) {
-                            return "task-runtime";
+                            return "task-workspace";
                         }
                         return undefined;
                     },

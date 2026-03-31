@@ -20,7 +20,7 @@ import { getSupabaseClient } from "../api/supabase";
 import { displayLanguageOptions, isSupportedDisplayLanguage, type DisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { LanguageModal } from "../components/LanguageModal";
-import { setLanguage } from "../i18n";
+import { setLanguage } from "../i18n/language";
 import { loginWithPassword } from "../matrix/login";
 import { useAuthStore } from "../stores/AuthStore";
 import { useToastStore } from "../stores/ToastStore";

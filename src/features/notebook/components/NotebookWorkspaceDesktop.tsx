@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
-import { getNotebookAdapter } from "..";
+import { getNotebookAdapter } from "../adapters";
 import type { NotebookAuthContext, NotebookItemFile } from "../types";
 import { useNotebookModule } from "../useNotebookModule";
 import { NotebookSidebar, type SummaryDirectionPayload, type SummarySearchPersonItem, type SummarySearchRoomItem, type SummarySearchTarget } from "./NotebookSidebar";

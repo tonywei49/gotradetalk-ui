@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useOutletContext } from "react-router-dom";
 import { useAuthStore } from "./stores/AuthStore";
 import { useThemeStore } from "./stores/ThemeStore";
 import { ToastViewport } from "./components/ToastViewport";
@@ -100,44 +99,66 @@ function RouteTransitionScreen() {
 }
 
 function DesktopAuthBootstrap({ children }: { children: React.ReactNode }) {
-    useEffect(() => {
-        let cancelled = false;
-        const reveal = async () => {
-            if (cancelled) return;
-            try {
-                const revealed = await invoke<boolean>("desktop_boot_ready");
-                if (!revealed) {
-                    console.warn("Desktop auth bootstrap did not reveal main window.");
-                }
-            } catch (error) {
-                console.warn("Desktop boot ready notification failed:", error);
-            }
-        };
-        const timer = window.setTimeout(reveal, 0);
-        return () => {
-            cancelled = true;
-            window.clearTimeout(timer);
-        };
-    }, []);
-
     return <>{children}</>;
 }
 
+type DesktopChatOutletContext = {
+    activeRoomId: string | null;
+};
+
+function DesktopChatIdleScreen() {
+    return (
+        <div
+            style={{
+                minHeight: "100%",
+                display: "grid",
+                placeItems: "center",
+                background: "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
+                color: "#334155",
+                padding: "24px",
+            }}
+        >
+            <div
+                style={{
+                    display: "grid",
+                    gap: "8px",
+                    justifyItems: "center",
+                    textAlign: "center",
+                }}
+            >
+                <div style={{ fontSize: "16px", fontWeight: 600 }}>Select a conversation</div>
+                <div style={{ fontSize: "13px", color: "#64748b", maxWidth: "320px" }}>
+                    Choose a room from the sidebar before loading the chat workspace.
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function DesktopChatRouteBootstrap() {
+    const { activeRoomId } = useOutletContext<DesktopChatOutletContext>();
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
+        if (!activeRoomId) {
+            setReady(false);
+            return undefined;
+        }
         let cancelled = false;
         const activate = () => {
             if (cancelled) return;
             setReady(true);
         };
-        const timer = window.setTimeout(activate, 600);
+        const frame = window.requestAnimationFrame(activate);
         return () => {
             cancelled = true;
-            window.clearTimeout(timer);
+            window.cancelAnimationFrame(frame);
         };
-    }, []);
+    }, [activeRoomId]);
+
+    if (!activeRoomId) {
+        return <DesktopChatIdleScreen />;
+    }
 
     if (!ready) {
         return <RouteTransitionScreen />;
@@ -150,26 +171,10 @@ function DesktopWorkspaceBootstrap() {
     const ensureMatrixClient = useAuthStore((state) => state.ensureMatrixClient);
     const [ready, setReady] = useState(false);
     const [LayoutComponent, setLayoutComponent] = useState<ComponentType | null>(null);
-    const [bootFailed, setBootFailed] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
         const boot = async () => {
-            try {
-                const revealed = await invoke<boolean>("desktop_boot_ready");
-                if (!revealed) {
-                    if (!cancelled) {
-                        setBootFailed(true);
-                    }
-                    return;
-                }
-            } catch (error) {
-                console.warn("Desktop workspace bootstrap failed:", error);
-                if (!cancelled) {
-                    setBootFailed(true);
-                }
-                return;
-            }
             if (cancelled) return;
             requestAnimationFrame(() => {
                 if (cancelled) return;
@@ -201,19 +206,6 @@ function DesktopWorkspaceBootstrap() {
 
     if (!ready) {
         return <RouteTransitionScreen />;
-    }
-
-    if (bootFailed) {
-        return (
-            <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f8fafc", color: "#0f172a", padding: "24px" }}>
-                <div style={{ maxWidth: "440px", textAlign: "center", display: "grid", gap: "12px" }}>
-                    <div style={{ fontSize: "18px", fontWeight: 700 }}>Workspace bootstrap failed</div>
-                    <div style={{ fontSize: "14px", lineHeight: 1.6, color: "#475569" }}>
-                        The desktop window did not become ready, so startup was stopped before loading the full workspace.
-                    </div>
-                </div>
-            </div>
-        );
     }
 
     if (!LayoutComponent) {

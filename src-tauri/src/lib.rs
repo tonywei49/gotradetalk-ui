@@ -62,44 +62,102 @@ struct DesktopHttpResponse {
   body_base64: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopBootReadyResult {
+  revealed: bool,
+  main_visible: bool,
+  splash_closed: bool,
+  errors: Vec<String>,
+  warnings: Vec<String>,
+}
+
 fn current_version(app: &AppHandle) -> String {
   app.package_info().version.to_string()
 }
 
-fn show_main_window(window: &WebviewWindow) {
-  let _ = window.unminimize();
-  let _ = window.show();
-  let _ = window.set_focus();
+fn show_main_window(window: &WebviewWindow) -> Result<(), String> {
+  window
+    .unminimize()
+    .map_err(|error| format!("failed to unminimize main window: {error}"))?;
+  window
+    .show()
+    .map_err(|error| format!("failed to show main window: {error}"))?;
+  window
+    .set_focus()
+    .map_err(|error| format!("failed to focus main window: {error}"))
 }
 
-fn hide_main_window(window: &WebviewWindow) {
-  let _ = window.hide();
+fn hide_main_window(window: &WebviewWindow) -> Result<(), String> {
+  window
+    .hide()
+    .map_err(|error| format!("failed to hide main window: {error}"))
 }
 
 fn reveal_primary_instance(app: &AppHandle) {
   if let Some(splash_window) = app.get_webview_window("splashscreen") {
-    let _ = splash_window.close();
+    if let Err(error) = splash_window.close() {
+      log::warn!("failed to close splashscreen while revealing primary instance: {error}");
+    }
   }
 
   if let Some(main_window) = app.get_webview_window("main") {
-    show_main_window(&main_window);
+    if let Err(error) = show_main_window(&main_window) {
+      log::warn!("failed to reveal primary main window: {error}");
+    }
   }
 }
 
 #[tauri::command]
-fn desktop_boot_ready(app: AppHandle) -> Result<bool, String> {
+fn desktop_boot_ready(app: AppHandle) -> Result<DesktopBootReadyResult, String> {
   let main_window = app
     .get_webview_window("main")
     .ok_or_else(|| "main window is unavailable".to_string())?;
 
-  if let Some(splash_window) = app.get_webview_window("splashscreen") {
-    let _ = splash_window.close();
+  let mut errors = Vec::new();
+  let mut warnings = Vec::new();
+
+  if let Err(error) = main_window.unminimize() {
+    errors.push(format!("failed to unminimize main window: {error}"));
+  }
+  if let Err(error) = main_window.show() {
+    errors.push(format!("failed to show main window: {error}"));
   }
 
-  show_main_window(&main_window);
-  main_window
+  let main_visible = match main_window
     .is_visible()
-    .map_err(|error| format!("failed to confirm main window visibility: {error}"))
+  {
+    Ok(visible) => visible,
+    Err(error) => {
+      errors.push(format!("failed to confirm main window visibility: {error}"));
+      false
+    }
+  };
+
+  let splash_closed = match app.get_webview_window("splashscreen") {
+    Some(splash_window) => match splash_window.close() {
+      Ok(()) => true,
+      Err(error) => {
+        errors.push(format!("failed to close splashscreen: {error}"));
+        false
+      }
+    },
+    None => true,
+  };
+
+  if main_visible {
+    if let Err(error) = main_window.set_focus() {
+      warnings.push(format!("failed to focus main window: {error}"));
+    }
+  }
+
+  Ok(DesktopBootReadyResult {
+    revealed: errors.is_empty() && main_visible && splash_closed,
+    main_visible,
+    splash_closed,
+    errors,
+    warnings,
+  })
 }
 
 #[tauri::command]
@@ -336,7 +394,9 @@ pub fn run() {
         .on_menu_event(|app, event| match event.id().as_ref() {
           "show" => {
             if let Some(window) = app.get_webview_window("main") {
-              show_main_window(&window);
+              if let Err(error) = show_main_window(&window) {
+                log::warn!("failed to reveal main window from tray menu: {error}");
+              }
             }
           }
           "quit" => {
@@ -353,14 +413,18 @@ pub fn run() {
           {
             let app = tray.app_handle();
             if let Some(window) = app.get_webview_window("main") {
-              show_main_window(&window);
+              if let Err(error) = show_main_window(&window) {
+                log::warn!("failed to reveal main window from tray icon: {error}");
+              }
             }
           }
         })
         .build(app)?;
 
       if let Some(window) = app.get_webview_window("main") {
-        hide_main_window(&window);
+        if let Err(error) = hide_main_window(&window) {
+          log::warn!("failed to hide main window during setup: {error}");
+        }
       }
 
       Ok(())
@@ -469,7 +533,9 @@ pub fn run() {
     .on_window_event(|window, event| {
       if let WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
-        let _ = window.hide();
+        if let Err(error) = window.hide() {
+          log::warn!("failed to hide main window on close request: {error}");
+        }
       }
     })
     .invoke_handler(tauri::generate_handler![

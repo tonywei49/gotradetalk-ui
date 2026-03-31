@@ -10,32 +10,22 @@ import {
     PuzzlePieceIcon,
     SparklesIcon,
     CommandLineIcon,
-    SunIcon,
-    MoonIcon,
 } from "@heroicons/react/24/outline";
 import type { MatrixEvent, Room } from "matrix-js-sdk";
 import { useTranslation } from "react-i18next";
-import { useThemeStore } from "../stores/ThemeStore";
 import { useAuthStore } from "../stores/AuthStore";
 import type { ContactSummary } from "../features/rooms/RoomList";
-import {
-    createChatSummaryJob,
-    deleteChatSummaryJob,
-    downloadChatSummaryJob,
-    getChatSummaryJob,
-    hubGetMe,
-    hubMeUpdateLocale,
-    hubMeUpdateTranslationLocale,
-    listChatSummaryJobs,
-    retryChatSummaryJob,
-    type ChatSummaryJobDetail,
-    type ChatSummaryJobItem,
-} from "../api/hub";
+// Dynamically imported to keep hub API calls out of workspace-layout chunk:
+// createChatSummaryJob, deleteChatSummaryJob, downloadChatSummaryJob,
+// getChatSummaryJob, hubGetMe, hubMeUpdateLocale, hubMeUpdateTranslationLocale,
+// listChatSummaryJobs, retryChatSummaryJob -> ../api/hub
+// ChatSummaryJobDetail, ChatSummaryJobItem moved to NotebookPanel
 import { HUB_SESSION_REVOKED_EVENT, HubApiError, type HubSessionRevokedDetail } from "../api/session";
 import type { HubProfileSummary, HubSupabaseSession } from "../api/types";
-import { removeContact } from "../api/contacts";
-import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
-import { prepareMatrixClient } from "../matrix/client";
+// Dynamically imported to avoid pulling matrix-js-sdk into workspace-layout chunk:
+// removeContact -> ../api/contacts
+// getOrCreateDirectRoom, hideDirectRoom -> ../matrix/direct
+// prepareMatrixClient -> ../matrix/client
 // RoomDetailsPanel 將在 ChatRoom 中整合使用
 // import { RoomDetailsPanel, isRoomWithMultipleMembers } from "../features/groups/RoomDetailsPanel";
 import { translationLanguageOptions } from "../constants/translationLanguages";
@@ -43,49 +33,29 @@ import { displayLanguageOptions, isSupportedDisplayLanguage } from "../constants
 import {
     ensureNotificationSoundEnabled,
     isNotificationSoundSupported,
-    playNotificationSound,
     type NotificationSoundMode,
 } from "../utils/notificationSound";
-import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
-import { getSupabaseClient } from "../api/supabase";
-import { setLanguage } from "../i18n";
+// Dynamically imported: updateStaffLanguage, updateStaffTranslationLanguage -> ../api/profile
+// Dynamically imported: getSupabaseClient -> ../api/supabase
+import { setLanguage } from "../i18n/language";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
 import { traceEvent } from "../utils/debugTrace";
-import { mapActionErrorToMessage } from "../utils/errorMessages";
+
 import {
-    filesByRoom,
-    filterRoomFiles,
-    filterRoomSummaries,
-    paginateRoomFiles,
-    summarizeFileRooms,
-    type FileLibraryItem,
-    type FileLibraryRoomSummary,
-} from "../features/files/fileCenterRepository";
-import {
-    chatSearchGlobal,
     ChatSearchError,
-    type ChatSearchGlobalResponse,
-    type ChatSearchMessageHit,
-    type ChatSearchPersonHit,
 } from "../features/chat/chatSearchApi";
 import {
-    type SummaryDirectionPayload,
-    resolveNotebookCapabilities,
-    type SummarySearchPersonItem,
-    type SummarySearchRoomItem,
-    type SummarySearchTarget,
-} from "../features/notebook";
-import {
-    getCompanyNotebookAiSettings,
-    getNotebookCapabilities,
     NotebookServiceError,
 } from "../services/notebookApi";
+import { resolveNotebookCapabilities } from "../features/notebook/capabilities";
 import { buildNotebookAuth } from "../features/notebook/utils/buildNotebookAuth";
 import { isNotebookTerminalAuthFailure, type NotebookTerminalAuthFailureSignal } from "../features/notebook/utils/isNotebookTerminalAuthFailure";
+// Dynamically imported to keep notebook API calls out of workspace-layout chunk:
+// getCompanyNotebookAiSettings, getNotebookCapabilities -> ../services/notebookApi
 import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
 import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from "../desktop/useDesktopUpdater";
 import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
-import { fetchWithDesktopSupport } from "../desktop/fetchWithDesktopSupport";
+
 import { useToastStore } from "../stores/ToastStore";
 import { isTauriMobile, resolveRuntimePlatform } from "../runtime/appRuntime";
 import { notebookApiBaseUrl as configuredNotebookApiBaseUrl } from "../config";
@@ -94,15 +64,11 @@ import {
     MATRIX_CLIENT_EVENT_ROOM,
     MATRIX_CLIENT_EVENT_SYNC,
     MATRIX_EVENT_TYPE_DIRECT,
-    MATRIX_EVENT_TYPE_ROOM_CREATE,
     MATRIX_EVENT_TYPE_ROOM_MEMBER,
-    MATRIX_EVENT_TYPE_ROOM_MESSAGE,
     MATRIX_EVENT_TYPE_ROOM_NAME,
-    MATRIX_PRESET_PRIVATE_CHAT,
     MATRIX_ROOM_EVENT_MY_MEMBERSHIP,
     MATRIX_ROOM_EVENT_TIMELINE,
     MATRIX_ROOM_EVENT_TIMELINE_RESET,
-    MATRIX_TIMELINE_BACKWARDS,
 } from "../matrix/matrixEventConstants";
 
 const RoomList = lazy(async () => {
@@ -115,19 +81,18 @@ const CreateRoomModal = lazy(async () => {
     return { default: module.CreateRoomModal };
 });
 
-const NotebookSummaryMarkdown = lazy(async () => {
-    const module = await import("../features/notebook/components/NotebookSummaryMarkdown");
-    return { default: module.NotebookSummaryMarkdown };
-});
-const NotebookWorkspaceDesktop = lazy(async () => {
-    const module = await import("../features/notebook/components/NotebookWorkspaceDesktop");
-    return { default: module.NotebookWorkspaceDesktop };
-});
+const NotebookPanel = lazy(() => import("./NotebookPanel").then((m) => ({ default: m.NotebookPanel })));
+const ChatSearchBar = lazy(() => import("./ChatSearchBar").then((m) => ({ default: m.ChatSearchBar })));
 
 const TaskWorkspaceDesktop = lazy(async () => {
     const module = await import("../features/tasks/components/TaskWorkspaceDesktop");
     return { default: module.TaskWorkspaceDesktop };
 });
+
+const FileCenterPanel = lazy(() => import("./FileCenterPanel"));
+const ContactsPanel = lazy(() => import("./ContactsPanel"));
+const SettingsAccountSidebar = lazy(() => import("./SettingsAccountPanel").then(m => ({ default: m.SettingsAccountSidebar })));
+const SettingsAccountDetail = lazy(() => import("./SettingsAccountPanel").then(m => ({ default: m.SettingsAccountDetail })));
 
 const bindMatrixRuntimeEvent = (client: any, event: string, listener: (...args: any[]) => void): void => {
     client.on(event, listener);
@@ -163,13 +128,6 @@ type AppShellNavItem = {
     label: string;
     badgeCount?: number;
     onClick: () => void;
-};
-
-type SharedContactRoomEntry = {
-    roomId: string;
-    displayName: string;
-    memberCount: number;
-    lastActive: number;
 };
 
 const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "", label }: NavBarItemProps) => (
@@ -239,123 +197,7 @@ function resolvePluginNavIcon(icon?: PluginIconKey): React.ComponentType<React.S
     }
 }
 
-function parseMxcUri(mxcUrl: string): { serverName: string; mediaId: string } | null {
-    const match = /^mxc:\/\/([^/]+)\/(.+)$/.exec(mxcUrl);
-    if (!match) return null;
-    return { serverName: match[1], mediaId: match[2] };
-}
 
-async function cleanupUploadedMedia(
-    hsUrl: string,
-    accessToken: string,
-    mxcUrl: string,
-): Promise<boolean> {
-    const parsed = parseMxcUri(mxcUrl);
-    if (!parsed) return false;
-    const encodedServerName = encodeURIComponent(parsed.serverName);
-    const encodedMediaId = encodeURIComponent(parsed.mediaId);
-    const paths = [
-        `/_matrix/client/v3/media/delete/${encodedServerName}/${encodedMediaId}`,
-        `/_matrix/client/v1/media/delete/${encodedServerName}/${encodedMediaId}`,
-        `/_matrix/media/v3/delete/${encodedServerName}/${encodedMediaId}`,
-    ];
-    for (const path of paths) {
-        try {
-            const endpoint = new URL(path, hsUrl);
-            const response = await fetch(endpoint.toString(), {
-                method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                },
-            });
-            if (response.ok || response.status === 404) return true;
-        } catch {
-            // ignore and continue with next endpoint
-        }
-    }
-    return false;
-}
-
-function mapMediaActionError(error: unknown): "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" {
-    const maybeObj = error as { errcode?: string; statusCode?: number; message?: string } | null;
-    const message = typeof maybeObj?.message === "string" ? maybeObj.message : String(error ?? "");
-    const errcode = typeof maybeObj?.errcode === "string" ? maybeObj.errcode : "";
-    const statusCode = typeof maybeObj?.statusCode === "number" ? maybeObj.statusCode : null;
-    const normalized = `${errcode} ${message}`.toUpperCase();
-
-    if (
-        normalized.includes("M_LIMIT_EXCEEDED") ||
-        normalized.includes("QUOTA") ||
-        normalized.includes("STORAGE") ||
-        statusCode === 413
-    ) {
-        return "STORAGE_QUOTA_EXCEEDED";
-    }
-    if (normalized.includes("M_FORBIDDEN") || statusCode === 401 || statusCode === 403) {
-        return "NO_PERMISSION";
-    }
-    return "GENERIC";
-}
-
-function getFileTypeGroup(item: { msgtype: string; mimeType?: string }): "image" | "video" | "audio" | "pdf" | "other" {
-    if (item.msgtype === "m.image") return "image";
-    if (item.msgtype === "m.video") return "video";
-    if (item.msgtype === "m.audio") return "audio";
-    if ((item.mimeType || "").toLowerCase().includes("pdf")) return "pdf";
-    return "other";
-}
-
-function getFilePreviewType(item: { msgtype: string; mimeType?: string }): "image" | "video" | "audio" | "pdf" | null {
-    const type = getFileTypeGroup(item);
-    if (type === "image" || type === "video" || type === "audio" || type === "pdf") return type;
-    return null;
-}
-
-const FILE_BATCH_DELETE_CONCURRENCY = 4;
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            if (typeof reader.result === "string") {
-                resolve(reader.result);
-                return;
-            }
-            reject(new Error("INVALID_FILE_READER_RESULT"));
-        };
-        reader.onerror = () => reject(reader.error ?? new Error("FILE_READER_FAILED"));
-        reader.readAsDataURL(blob);
-    });
-}
-
-async function fetchMediaBlob(url: string, accessToken?: string | null): Promise<Blob> {
-    const response = await fetchWithDesktopSupport(url, {
-        headers: accessToken
-            ? {
-                Authorization: `Bearer ${accessToken}`,
-            }
-            : undefined,
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP_${response.status}`);
-    }
-    return response.blob();
-}
-
-function formatBytesToMb(value: number): string {
-    const mb = value / (1024 * 1024);
-    return mb >= 100 ? mb.toFixed(0) : mb.toFixed(2);
-}
-
-function getFileExtension(fileName: string, mimeType?: string): string {
-    const idx = fileName.lastIndexOf(".");
-    if (idx >= 0 && idx < fileName.length - 1) {
-        return fileName.slice(idx + 1).toUpperCase();
-    }
-    if (!mimeType) return "FILE";
-    const simplified = mimeType.split("/")[1] || "file";
-    return simplified.toUpperCase();
-}
 
 function formatMatrixUserLocalId(matrixUserId: string | null | undefined): string {
     const raw = String(matrixUserId || "").trim();
@@ -434,134 +276,7 @@ function resolveRoomListDisplayName(room: Room, myUserId: string | null): string
     return fallback;
 }
 
-function resolveRoomCreatedAt(room: Room): number | null {
-    const createEvent = room.currentState.getStateEvents(MATRIX_EVENT_TYPE_ROOM_CREATE, "");
-    if (!createEvent) return null;
-    const ts = createEvent.getTs();
-    return Number.isFinite(ts) && ts > 0 ? ts : null;
-}
-
-function parseDateTimeInputToIso(value: string): string | null {
-    const trimmed = String(value || "").trim();
-    if (!trimmed) return null;
-    const date = new Date(trimmed);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function mapChatSummaryErrorMessage(
-    message: string,
-    t: (key: string, defaultValue: string, options?: Record<string, unknown>) => string,
-): string {
-    const raw = String(message || "").trim();
-    const normalized = raw.toLowerCase();
-    const extractLimit = (input: string): string | null => {
-        const match = input.match(/\((\d+)(?:\/day)?\)/i);
-        return match?.[1] || null;
-    };
-
-    if (normalized.includes("daily summary limit reached")) {
-        const limit = extractLimit(raw);
-        return t(
-            "layout.notebook.summaryDailyLimitReached",
-            "Daily summary limit reached ({{limit}}/day).",
-            { limit: limit || "0" },
-        );
-    }
-    if (normalized.includes("too many running summary jobs")) {
-        const limit = extractLimit(raw);
-        return t(
-            "layout.notebook.summaryProcessingLimitReached",
-            "Too many running summary jobs (max {{limit}}).",
-            { limit: limit || "1" },
-        );
-    }
-    if (normalized.includes("date range cannot exceed 3 days")) {
-        return t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days.");
-    }
-    if (normalized.includes("no valid chat content for summary after filtering")) {
-        return t(
-            "layout.notebook.summaryNoValidChatContent",
-            "No valid chat content after filtering. Please widen the time range and try again.",
-        );
-    }
-    if (normalized.includes("only room members can generate summary")) {
-        return t("layout.notebook.summaryOnlyRoomMembers", "Only room members can generate summary.");
-    }
-    if (normalized.includes("missing hs_url") || normalized.includes("matrix access token")) {
-        return t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching.");
-    }
-    if (normalized === "unauthorized" || normalized.includes("missing auth token") || normalized.includes("invalid auth token")) {
-        return t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again.");
-    }
-    if (normalized.includes("m_unknown_token") || normalized.includes("unknown access token")) {
-        return t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again.");
-    }
-    if (normalized.includes("failed to load summary jobs")) {
-        return t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
-    }
-    if (normalized.includes("failed to delete summary job")) {
-        return t("layout.notebook.summaryDeleteFailed", "Failed to delete summary.");
-    }
-    if (normalized.includes("failed to download summary")) {
-        return t("layout.notebook.summaryDownloadFailed", "Failed to download summary.");
-    }
-    if (normalized.includes("failed to load summary detail")) {
-        return t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview.");
-    }
-    if (normalized.includes("summary job not found")) {
-        return t("layout.notebook.summaryJobNotFound", "Summary record not found.");
-    }
-    if (normalized.includes("summary is not ready")) {
-        return t("layout.notebook.summaryNotReady", "Summary is still generating. Please try again later.");
-    }
-    if (normalized.includes("failed to create summary job")) {
-        return t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.");
-    }
-    return raw || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.");
-}
-
-const SUMMARY_MAX_RANGE_MS = 72 * 60 * 60 * 1000;
-
-function isSummaryRangeExceeded(startValue: string, endValue: string): boolean {
-    const startIso = parseDateTimeInputToIso(startValue);
-    const endIso = parseDateTimeInputToIso(endValue);
-    if (!startIso || !endIso) return false;
-    const startMs = Date.parse(startIso);
-    const endMs = Date.parse(endIso);
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
-    if (endMs < startMs) return false;
-    return endMs - startMs > SUMMARY_MAX_RANGE_MS;
-}
-
-function toCompactDateTime(value: string): string {
-    const iso = parseDateTimeInputToIso(value);
-    if (!iso) return "";
-    return iso.slice(0, 16).replace(/[-:T]/g, "");
-}
-
-function formatSummaryDisplayDateTime(value: string | null | undefined): string {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return raw;
-    const year = parsed.getFullYear();
-    const month = parsed.getMonth() + 1;
-    const day = parsed.getDate();
-    const hour = String(parsed.getHours()).padStart(2, "0");
-    const minute = String(parsed.getMinutes()).padStart(2, "0");
-    return `${year}/${month}/${day} ${hour}:${minute}`;
-}
-
-function formatSummaryDisplayDate(value: string | null | undefined): string {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return raw;
-    const year = parsed.getFullYear();
-    const month = parsed.getMonth() + 1;
-    const day = parsed.getDate();
-    return `${year}/${month}/${day}`;
-}
+// Summary helper functions moved to NotebookPanel.tsx
 
 function parseJwtSub(token: string | null | undefined): string | null {
     const raw = String(token || "").trim();
@@ -616,31 +331,10 @@ function isNotebookAuthFailure(error: unknown): boolean {
         );
 }
 
-function getLoadedRoomEvents(room: Room, maxEvents = 4000): MatrixEvent[] {
-    const out: MatrixEvent[] = [];
-    const seen = new Set<string>();
-    let timeline: ReturnType<Room["getLiveTimeline"]> | null = room.getLiveTimeline();
-    while (timeline && out.length < maxEvents) {
-        const events = timeline.getEvents();
-        for (const event of events) {
-            const key = event.getId() || `${event.getTs()}:${event.getSender()}:${event.getType()}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            out.push(event);
-            if (out.length >= maxEvents) break;
-        }
-        timeline = timeline.getNeighbouringTimeline(MATRIX_TIMELINE_BACKWARDS as never) ?? null;
-    }
-    return out;
-}
 
-const FILE_ROOM_SEARCH_DEBOUNCE_MS = 250;
-const FILE_LIST_SEARCH_DEBOUNCE_MS = 250;
-const CHAT_GLOBAL_SEARCH_DEBOUNCE_MS = 350;
-const FILE_LIST_PAGE_SIZE = 80;
-const FILE_HISTORY_TARGET_EVENTS = 260;
-const FILE_HISTORY_SCROLLBACK_LIMIT = 50;
-const FILE_HISTORY_MAX_ROUNDS = 6;
+
+
+// CHAT_GLOBAL_SEARCH_DEBOUNCE_MS moved to ChatSearchBar.tsx / NotebookPanel.tsx
 const TASKS_WARMUP_DELAY_MS = 600;
 const FILES_WARMUP_DELAY_MS = 1400;
 const NOTEBOOK_WARMUP_DELAY_MS = 2600;
@@ -727,7 +421,7 @@ function DeferredModulePanel({ title, description }: { title: string; descriptio
 
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
-    const { runtimeContext, platformState, tools } = usePluginHost();
+    const { platformState, tools } = usePluginHost();
     const isMobileApp = isTauriMobile();
     const runtimePlatform = useMemo(() => resolveRuntimePlatform(), []);
     const isWindowsDesktop = useMemo(() => isTauriDesktop() && runtimePlatform === "windows", [runtimePlatform]);
@@ -753,56 +447,27 @@ export const MainLayout: React.FC = () => {
     const [contactsRefreshToken, setContactsRefreshToken] = useState(0);
     const [notebookRefreshToken, setNotebookRefreshToken] = useState(0);
     const [fileLibraryTick, setFileLibraryTick] = useState(0);
-    const [fileRoomSearch] = useState("");
-    const [debouncedFileRoomSearch, setDebouncedFileRoomSearch] = useState("");
     const [selectedFileRoomId, setSelectedFileRoomId] = useState<string | null>(null);
-    const [fileListSearch, setFileListSearch] = useState("");
-    const [debouncedFileListSearch, setDebouncedFileListSearch] = useState("");
-    const [fileListTypeFilter, setFileListTypeFilter] = useState<"all" | "image" | "video" | "audio" | "pdf" | "other">("all");
-    const [fileListPage, setFileListPage] = useState(1);
-    const [fileBatchMode, setFileBatchMode] = useState(false);
-    const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
-    const [activeFileMenuEventId, setActiveFileMenuEventId] = useState<string | null>(null);
-    const [showFileToolbarMenu, setShowFileToolbarMenu] = useState(false);
-    const [fileActionError, setFileActionError] = useState<string | null>(null);
-    const [fileDeletingEventId, setFileDeletingEventId] = useState<string | null>(null);
-    const [fileBatchDeleting, setFileBatchDeleting] = useState(false);
-    const [fileBatchDeleteProgress, setFileBatchDeleteProgress] = useState({ done: 0, total: 0 });
-    const [fileHistoryLoadingRoomId, setFileHistoryLoadingRoomId] = useState<string | null>(null);
+    const [jumpToEventId, setJumpToEventId] = useState<string | null>(null);
+    const [selectedSharedRoomId, setSelectedSharedRoomId] = useState<string | null>(null);
+    const [creatingContactRoom, setCreatingContactRoom] = useState(false);
+    const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
+    const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+    const [settingsDetail, setSettingsDetail] = useState<
+        "none" | "chat-language" | "translation-default" | `plugin:${string}:${string}`
+    >("none");
+    // Shared preview overlay state (used by notebook onOpenPreview)
     const [filePreview, setFilePreview] = useState<{
         url: string;
         type: "image" | "video" | "audio" | "pdf";
         name: string;
         revokeOnClose?: boolean;
     } | null>(null);
-    const [fileThumbnailUrls, setFileThumbnailUrls] = useState<Record<string, string>>({});
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
-    const fileThumbnailUrlsRef = useRef<Record<string, string>>({});
     const previewDraggingRef = useRef(false);
     const previewDragStartRef = useRef({ x: 0, y: 0 });
     const previewDragOriginRef = useRef({ x: 0, y: 0 });
-    const [jumpToEventId, setJumpToEventId] = useState<string | null>(null);
-    const [chatGlobalSearchQuery, setChatGlobalSearchQuery] = useState("");
-    const [debouncedChatGlobalSearchQuery, setDebouncedChatGlobalSearchQuery] = useState("");
-    const [chatGlobalSearchOpen, setChatGlobalSearchOpen] = useState(false);
-    const [chatGlobalSearchLoading, setChatGlobalSearchLoading] = useState(false);
-    const [chatGlobalSearchError, setChatGlobalSearchError] = useState<string | null>(null);
-    const [chatGlobalSearchResult, setChatGlobalSearchResult] = useState<ChatSearchGlobalResponse | null>(null);
-    const [chatGlobalSearchCursor, setChatGlobalSearchCursor] = useState<string | null>(null);
-    const [summarySearchQuery, setSummarySearchQuery] = useState("");
-    const [debouncedSummarySearchQuery, setDebouncedSummarySearchQuery] = useState("");
-    const [summarySearchLoading, setSummarySearchLoading] = useState(false);
-    const [summarySearchError, setSummarySearchError] = useState<string | null>(null);
-    const [summaryPeopleResults, setSummaryPeopleResults] = useState<SummarySearchPersonItem[]>([]);
-    const [summaryRoomResults, setSummaryRoomResults] = useState<SummarySearchRoomItem[]>([]);
-    const [summarySelectedTarget, setSummarySelectedTarget] = useState<SummarySearchTarget | null>(null);
-    const [summaryStartDate, setSummaryStartDate] = useState("");
-    const [summaryEndDate, setSummaryEndDate] = useState("");
-    const [summaryContentLoading, setSummaryContentLoading] = useState(false);
-    const [summaryJobs, setSummaryJobs] = useState<ChatSummaryJobItem[]>([]);
-    const [summaryJobsLoading, setSummaryJobsLoading] = useState(false);
-    const [summaryJobsRefreshing, setSummaryJobsRefreshing] = useState(false);
 
     useEffect(() => {
         return () => {
@@ -811,37 +476,16 @@ export const MainLayout: React.FC = () => {
             }
         };
     }, [filePreview]);
-    useEffect(() => {
-        fileThumbnailUrlsRef.current = fileThumbnailUrls;
-    }, [fileThumbnailUrls]);
-    useEffect(() => {
-        return () => {
-            Object.values(fileThumbnailUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
-        };
-    }, []);
+
     const closeFilePreview = useCallback(() => {
-        setFilePreview((current) => {
-            if (current?.revokeOnClose) {
-                URL.revokeObjectURL(current.url);
-            }
+        setFilePreview((prev) => {
+            if (prev?.revokeOnClose) URL.revokeObjectURL(prev.url);
             return null;
         });
+        setPreviewZoom(1);
+        setPreviewOffset({ x: 0, y: 0 });
     }, []);
-    const [summaryJobsError, setSummaryJobsError] = useState<string | null>(null);
-    const [summaryJobActionBusy, setSummaryJobActionBusy] = useState(false);
-    const [summaryGenerationNotice, setSummaryGenerationNotice] = useState<string | null>(null);
-    const [summaryGenerationNoticeTone, setSummaryGenerationNoticeTone] = useState<"info" | "error">("info");
-    const [summaryPreviewJob, setSummaryPreviewJob] = useState<ChatSummaryJobDetail | null>(null);
-    const [summaryPreviewLoading, setSummaryPreviewLoading] = useState(false);
-    const [summaryPreviewError, setSummaryPreviewError] = useState<string | null>(null);
-    const [selectedSharedRoomId, setSelectedSharedRoomId] = useState<string | null>(null);
-    const [creatingContactRoom, setCreatingContactRoom] = useState(false);
-    const [contactRoomActionError, setContactRoomActionError] = useState<string | null>(null);
-    const [mobileView, setMobileView] = useState<"list" | "detail">("list");
-    const [settingsDetail, setSettingsDetail] = useState<
-        "none" | "chat-language" | "translation-default" | `plugin:${string}:${string}`
-    >("none");
-    const [notebookSidebarMode, setNotebookSidebarMode] = useState<"notebook" | "chatSummary">("notebook");
+
     const [displayLanguage, setDisplayLanguage] = useState<string>("en");
     const activePluginSettingsSection = useMemo(() => {
         if (!settingsDetail.startsWith("plugin:")) return null;
@@ -852,11 +496,6 @@ export const MainLayout: React.FC = () => {
     const [translationDefaultView, setTranslationDefaultView] = useState<"translated" | "original" | "bilingual">("translated");
     const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
     const [removedFromRoomNotice, setRemovedFromRoomNotice] = useState<{ roomName: string } | null>(null);
-    const chatGlobalSearchPanelRef = useRef<HTMLDivElement | null>(null);
-    const contactMenuRef = useRef<HTMLDivElement | null>(null);
-    const contactMenuButtonRef = useRef<HTMLButtonElement | null>(null);
-    const themeMode = useThemeStore((state) => state.mode);
-    const setThemeMode = useThemeStore((state) => state.setMode);
     const matrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const matrixClient = useAuthStore((state) => state.matrixClient);
     const hubSession = useAuthStore((state) => state.hubSession);
@@ -872,7 +511,6 @@ export const MainLayout: React.FC = () => {
     const [showAccountMenu, setShowAccountMenu] = useState(false);
     const accountMenuRef = useRef<HTMLDivElement | null>(null);
     const accountButtonRef = useRef<HTMLButtonElement | null>(null);
-    const avatarUploadInputRef = useRef<HTMLInputElement | null>(null);
     const [meProfile, setMeProfile] = useState<HubProfileSummary | null>(null);
     const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
     const [avatarUploading, setAvatarUploading] = useState(false);
@@ -925,7 +563,6 @@ export const MainLayout: React.FC = () => {
         hasHubSession: Boolean(hubSession?.access_token),
         platformManaged: true,
     }), [hubSession?.access_token, matrixCredentials?.hs_url, matrixCredentials?.user_id, userType]);
-    const displayLangOptions = displayLanguageOptions;
     const localeTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const translationDefaultStorageKey = useMemo(
         () => `gtt_translation_default_view:${matrixCredentials?.user_id ?? "guest"}`,
@@ -1192,11 +829,13 @@ export const MainLayout: React.FC = () => {
 
     const clearLocalAuthSession = useCallback((): void => {
         clearSession();
-        void getSupabaseClient()
-            .auth.signOut({ scope: "local" })
-            .catch(() => {
-                // ignore local sign-out failures during session cleanup
-            });
+        void import("../api/supabase").then(({ getSupabaseClient }) =>
+            getSupabaseClient()
+                .auth.signOut({ scope: "local" })
+                .catch(() => {
+                    // ignore local sign-out failures during session cleanup
+                }),
+        );
     }, [clearSession]);
 
     const onLogout = useCallback((): void => {
@@ -1227,8 +866,8 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!userType || !matrixCredentials) return;
 
-        const supabase = getSupabaseClient();
         let active = true;
+        let unsubscribe: (() => void) | undefined;
 
         const syncStoreFromSession = (
             nextSession: {
@@ -1250,28 +889,34 @@ export const MainLayout: React.FC = () => {
             setHubSession(normalized);
         };
 
-        void supabase.auth.getSession().then(({ data, error }) => {
-            if (!active || error) return;
-            if (data.session?.access_token) {
-                syncStoreFromSession(data.session);
-                return;
-            }
-            if (!hubSession?.access_token || !hubSession.refresh_token) return;
-            void supabase.auth.setSession({
-                access_token: hubSession.access_token,
-                refresh_token: hubSession.refresh_token,
-            }).catch(() => {
-                // ignore bootstrap sync failures; request-level refresh handles recovery
-            });
-        });
+        void import("../api/supabase").then(({ getSupabaseClient }) => {
+            if (!active) return;
+            const supabase = getSupabaseClient();
 
-        const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-            syncStoreFromSession(nextSession);
+            void supabase.auth.getSession().then(({ data, error }) => {
+                if (!active || error) return;
+                if (data.session?.access_token) {
+                    syncStoreFromSession(data.session);
+                    return;
+                }
+                if (!hubSession?.access_token || !hubSession.refresh_token) return;
+                void supabase.auth.setSession({
+                    access_token: hubSession.access_token,
+                    refresh_token: hubSession.refresh_token,
+                }).catch(() => {
+                    // ignore bootstrap sync failures; request-level refresh handles recovery
+                });
+            });
+
+            const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+                syncStoreFromSession(nextSession);
+            });
+            unsubscribe = () => data.subscription.unsubscribe();
         });
 
         return () => {
             active = false;
-            data.subscription.unsubscribe();
+            unsubscribe?.();
         };
     }, [
         hubSession?.access_token,
@@ -1290,6 +935,7 @@ export const MainLayout: React.FC = () => {
         const flight = (async (): Promise<string | null> => {
             setRefreshingNotebookToken(true);
             try {
+                const { getSupabaseClient } = await import("../api/supabase");
                 const supabase = getSupabaseClient();
                 const { data, error } = await supabase.auth.refreshSession({
                     refresh_token: hubSession.refresh_token,
@@ -1490,8 +1136,10 @@ export const MainLayout: React.FC = () => {
         }
         try {
             if (userType === "client" && meUpdateToken) {
+                const { hubMeUpdateLocale } = await import("../api/hub");
                 await hubMeUpdateLocale(meUpdateToken, value, meUpdateOptions);
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
+                const { updateStaffLanguage } = await import("../api/profile");
                 await updateStaffLanguage(matrixAccessToken, matrixHsUrl, value);
             }
         } catch {
@@ -1508,9 +1156,11 @@ export const MainLayout: React.FC = () => {
         setChatReceiveLanguage(value);
         try {
             if (userType === "client" && meUpdateToken) {
+                const { hubMeUpdateTranslationLocale } = await import("../api/hub");
                 await hubMeUpdateTranslationLocale(meUpdateToken, value, meUpdateOptions);
                 setMeProfile((prev) => (prev ? { ...prev, translation_locale: value } : prev));
             } else if (userType === "staff" && matrixAccessToken && matrixHsUrl) {
+                const { updateStaffTranslationLanguage } = await import("../api/profile");
                 await updateStaffTranslationLanguage(matrixAccessToken, matrixHsUrl, value);
             }
         } catch {
@@ -1602,13 +1252,15 @@ export const MainLayout: React.FC = () => {
         if (!shellReady || !matrixClient) return undefined;
         let cancelled = false;
 
-        void prepareMatrixClient(matrixClient).finally(() => {
-            if (cancelled) return;
-            matrixClient.startClient({
-                initialSyncLimit: MATRIX_INITIAL_SYNC_LIMIT,
-                lazyLoadMembers: true,
-            });
-        });
+        void import("../matrix/client").then(({ prepareMatrixClient }) =>
+            prepareMatrixClient(matrixClient).finally(() => {
+                if (cancelled) return;
+                matrixClient.startClient({
+                    initialSyncLimit: MATRIX_INITIAL_SYNC_LIMIT,
+                    lazyLoadMembers: true,
+                });
+            }),
+        );
 
         return () => {
             cancelled = true;
@@ -1738,6 +1390,7 @@ export const MainLayout: React.FC = () => {
         setHubMeResolved(false);
         void (async () => {
             try {
+                const { hubGetMe } = await import("../api/hub");
                 const response = await runHubSessionRequest((accessToken) => hubGetMe({
                     accessToken,
                     hsUrl: matrixHsUrl,
@@ -1783,7 +1436,8 @@ export const MainLayout: React.FC = () => {
             return;
         }
         let alive = true;
-        void runNotebookAuthedRequest((auth) => getCompanyNotebookAiSettings(auth))
+        void import("../services/notebookApi").then(({ getCompanyNotebookAiSettings }) =>
+            runNotebookAuthedRequest((auth) => getCompanyNotebookAiSettings(auth)))
             .then((response) => {
                 if (!alive) return;
                 const raw = Number(response?.notebook_upload_max_mb ?? 20);
@@ -1855,12 +1509,13 @@ export const MainLayout: React.FC = () => {
         let alive = true;
         setCapabilityLoaded(false);
         setCapabilityError(null);
-        void runNotebookAuthedRequest((auth) => getNotebookCapabilities({
-            accessToken: auth.accessToken,
-            apiBaseUrl: auth.apiBaseUrl,
-            hsUrl: auth.hsUrl,
-            matrixUserId: auth.matrixUserId,
-        })).then((result) => {
+        void import("../services/notebookApi").then(({ getNotebookCapabilities }) =>
+            runNotebookAuthedRequest((auth) => getNotebookCapabilities({
+                accessToken: auth.accessToken,
+                apiBaseUrl: auth.apiBaseUrl,
+                hsUrl: auth.hsUrl,
+                matrixUserId: auth.matrixUserId,
+            }))).then((result) => {
             if (!alive) return;
             const values = Array.isArray(result.capabilities)
                 ? result.capabilities.filter((value): value is string => typeof value === "string")
@@ -1993,45 +1648,12 @@ export const MainLayout: React.FC = () => {
         localStorage.setItem(notificationSoundStorageKey, notificationSoundMode);
     }, [notificationSoundHydrated, notificationSoundMode, notificationSoundStorageKey]);
 
-    useEffect(() => {
-        const timer = window.setTimeout(() => {
-            setDebouncedFileRoomSearch(fileRoomSearch);
-        }, FILE_ROOM_SEARCH_DEBOUNCE_MS);
-        return () => window.clearTimeout(timer);
-    }, [fileRoomSearch]);
 
-    useEffect(() => {
-        const timer = window.setTimeout(() => {
-            setDebouncedFileListSearch(fileListSearch);
-        }, FILE_LIST_SEARCH_DEBOUNCE_MS);
-        return () => window.clearTimeout(timer);
-    }, [fileListSearch]);
-
-    useEffect(() => {
-        const timer = window.setTimeout(() => {
-            setDebouncedChatGlobalSearchQuery(chatGlobalSearchQuery.trim());
-        }, CHAT_GLOBAL_SEARCH_DEBOUNCE_MS);
-        return () => window.clearTimeout(timer);
-    }, [chatGlobalSearchQuery]);
-
-    useEffect(() => {
-        const timer = window.setTimeout(() => {
-            setDebouncedSummarySearchQuery(summarySearchQuery.trim());
-        }, CHAT_GLOBAL_SEARCH_DEBOUNCE_MS);
-        return () => window.clearTimeout(timer);
-    }, [summarySearchQuery]);
 
     useEffect(() => {
         if (activeTab !== "contacts") {
             setActiveContact(null);
             setShowContactMenu(false);
-        }
-        if (activeTab !== "files") {
-            setActiveFileMenuEventId(null);
-            setShowFileToolbarMenu(false);
-            setFileBatchMode(false);
-            setSelectedFileIds([]);
-            setFileActionError(null);
         }
         setSettingsDetail("none");
     }, [activeTab]);
@@ -2077,11 +1699,6 @@ export const MainLayout: React.FC = () => {
             panel.removeEventListener("touchend", onTouchEnd);
         };
     }, [mobileView, returnToMobileList]);
-
-    useEffect(() => {
-        setSummaryPreviewJob(null);
-        setSummaryPreviewError(null);
-    }, [summarySelectedTarget, summaryStartDate, summaryEndDate]);
 
     useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) {
@@ -2177,34 +1794,6 @@ export const MainLayout: React.FC = () => {
     }, [matrixClient]);
 
     useEffect(() => {
-        const onClickOutside = (event: MouseEvent): void => {
-            const target = event.target as Node;
-            if (contactMenuRef.current?.contains(target) || contactMenuButtonRef.current?.contains(target)) return;
-            setShowContactMenu(false);
-        };
-        if (showContactMenu) {
-            document.addEventListener("click", onClickOutside);
-        }
-        return () => {
-            document.removeEventListener("click", onClickOutside);
-        };
-    }, [showContactMenu]);
-
-    useEffect(() => {
-        const onClickOutside = (event: MouseEvent): void => {
-            const target = event.target as Node;
-            if (chatGlobalSearchPanelRef.current?.contains(target)) return;
-            setChatGlobalSearchOpen(false);
-        };
-        if (chatGlobalSearchOpen) {
-            document.addEventListener("click", onClickOutside);
-        }
-        return () => {
-            document.removeEventListener("click", onClickOutside);
-        };
-    }, [chatGlobalSearchOpen]);
-
-    useEffect(() => {
         if (!isNotificationSoundSupported()) return;
         const unlock = (): void => {
             ensureNotificationSoundEnabled({ userInitiated: true });
@@ -2284,617 +1873,7 @@ export const MainLayout: React.FC = () => {
         return resolveAvatarUrl(user?.avatarUrl);
     }, [matrixClient, resolveAvatarUrl]);
 
-    const runChatGlobalSearch = useCallback(async (params?: { forceQuery?: string; cursor?: string; append?: boolean }) => {
-        const q = (params?.forceQuery ?? debouncedChatGlobalSearchQuery).trim();
-        if (!q) {
-            setChatGlobalSearchResult(null);
-            setChatGlobalSearchCursor(null);
-            setChatGlobalSearchError(null);
-            return;
-        }
-        if (!hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
-            setChatGlobalSearchError("NO_VALID_HUB_TOKEN：請重新登入後再使用聊天搜尋");
-            return;
-        }
-        setChatGlobalSearchLoading(true);
-        setChatGlobalSearchError(null);
-        try {
-            const response = await runHubSessionRequest((accessToken) => chatSearchGlobal({
-                accessToken,
-                matrixAccessToken,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials.user_id,
-            }, {
-                q,
-                limit: 20,
-                cursor: params?.cursor,
-            }));
-            if (params?.append) {
-                setChatGlobalSearchResult((prev) => {
-                    if (!prev) return response;
-                    return {
-                        people_hits: [...prev.people_hits, ...response.people_hits],
-                        room_hits: [...prev.room_hits, ...response.room_hits],
-                        message_hits: [...prev.message_hits, ...response.message_hits],
-                        next_cursor: response.next_cursor,
-                    };
-                });
-            } else {
-                setChatGlobalSearchResult(response);
-            }
-            setChatGlobalSearchCursor(response.next_cursor ?? null);
-        } catch (error) {
-            if (error instanceof ChatSearchError) {
-                if (error.status === 401) {
-                    setChatGlobalSearchError("401：聊天搜尋驗證失敗，請重新登入");
-                } else if (error.status === 403) {
-                    setChatGlobalSearchError("403：目前無權限使用聊天搜尋");
-                } else {
-                    setChatGlobalSearchError(error.message || "聊天搜尋失敗");
-                }
-            } else {
-                setChatGlobalSearchError(error instanceof Error ? error.message : "聊天搜尋失敗");
-            }
-        } finally {
-            setChatGlobalSearchLoading(false);
-        }
-    }, [debouncedChatGlobalSearchQuery, hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest]);
-
-    useEffect(() => {
-        if (!chatGlobalSearchOpen) return;
-        if (!debouncedChatGlobalSearchQuery) return;
-        void runChatGlobalSearch();
-    }, [chatGlobalSearchOpen, debouncedChatGlobalSearchQuery, runChatGlobalSearch]);
-
-    const runSummarySearch = useCallback(async (params?: { forceQuery?: string }) => {
-        const q = (params?.forceQuery ?? debouncedSummarySearchQuery).trim();
-        if (!q) {
-            setSummaryPeopleResults([]);
-            setSummaryRoomResults([]);
-            setSummarySearchError(null);
-            setSummarySelectedTarget(null);
-            return;
-        }
-        if (!hubAccessToken || !matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
-            setSummarySearchError(t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching."));
-            setSummaryPeopleResults([]);
-            setSummaryRoomResults([]);
-            setSummarySelectedTarget(null);
-            return;
-        }
-
-        setSummarySearchLoading(true);
-        setSummarySearchError(null);
-        try {
-            const response = await runHubSessionRequest((accessToken) => chatSearchGlobal({
-                accessToken,
-                matrixAccessToken,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials.user_id,
-            }, {
-                q,
-                limit: 20,
-            }));
-            const normalizedQuery = q.trim().toLowerCase();
-            const normalizedQueryNoAt = normalizedQuery.startsWith("@") ? normalizedQuery.slice(1) : normalizedQuery;
-            const queryLocalId = normalizedQueryNoAt.split(":")[0] || normalizedQueryNoAt;
-
-            const scorePersonMatch = (candidate: {
-                id: string;
-                label?: string | null;
-                userLocalId?: string | null;
-                matrixUserId?: string | null;
-            }): number => {
-                const matrixUserId = String(candidate.matrixUserId || candidate.id || "").toLowerCase();
-                const matrixUserIdNoAt = matrixUserId.startsWith("@") ? matrixUserId.slice(1) : matrixUserId;
-                const localId = String(candidate.userLocalId || formatMatrixUserLocalId(candidate.matrixUserId || candidate.id) || "").toLowerCase();
-                const label = String(candidate.label || "").toLowerCase();
-
-                if (matrixUserId === normalizedQuery || matrixUserIdNoAt === normalizedQueryNoAt || localId === queryLocalId) {
-                    return 3;
-                }
-                if (label === normalizedQuery) return 2;
-                if (
-                    localId.includes(queryLocalId)
-                    || matrixUserId.includes(normalizedQuery)
-                    || matrixUserIdNoAt.includes(normalizedQueryNoAt)
-                    || label.includes(normalizedQuery)
-                ) {
-                    return 1;
-                }
-                return 0;
-            };
-
-            const apiPeopleHits: SummarySearchPersonItem[] = response.people_hits
-                .filter((hit) => Boolean(hit.matrix_user_id))
-                .map((hit) => {
-                    const matrixUserId = hit.matrix_user_id as string;
-                    return {
-                        id: matrixUserId,
-                        label: hit.display_name || hit.user_local_id || matrixUserId,
-                        meta: hit.company_name || matrixUserId,
-                    };
-                });
-
-            const mergedPeopleMap = new Map<string, SummarySearchPersonItem>();
-            for (const item of apiPeopleHits) {
-                mergedPeopleMap.set(item.id, item);
-            }
-
-            if (matrixClient) {
-                const myUserId = matrixCredentials?.user_id || null;
-                const rooms = matrixClient.getRooms().filter((room) => room.getMyMembership() === "join" && !room.isSpaceRoom());
-                for (const room of rooms) {
-                    const members = room.getMembers().filter((member) => member.membership === "join");
-                    for (const member of members) {
-                        const matrixUserId = String(member.userId || "").trim();
-                        if (!matrixUserId || (myUserId && matrixUserId === myUserId)) continue;
-                        const localId = formatMatrixUserLocalId(matrixUserId);
-                        const displayName = String(member.name || "").trim();
-                        const score = scorePersonMatch({
-                            id: matrixUserId,
-                            label: displayName || localId || matrixUserId,
-                            userLocalId: localId,
-                            matrixUserId,
-                        });
-                        if (score <= 0) continue;
-                        if (!mergedPeopleMap.has(matrixUserId)) {
-                            mergedPeopleMap.set(matrixUserId, {
-                                id: matrixUserId,
-                                label: displayName || localId || matrixUserId,
-                                meta: matrixUserId,
-                            });
-                        }
-                    }
-                }
-            }
-
-            const peopleHits = Array.from(mergedPeopleMap.values()).sort((a, b) => {
-                const aScore = scorePersonMatch({
-                    id: a.id,
-                    label: a.label,
-                    matrixUserId: a.id,
-                    userLocalId: formatMatrixUserLocalId(a.id),
-                });
-                const bScore = scorePersonMatch({
-                    id: b.id,
-                    label: b.label,
-                    matrixUserId: b.id,
-                    userLocalId: formatMatrixUserLocalId(b.id),
-                });
-                if (aScore !== bScore) return bScore - aScore;
-                return a.label.localeCompare(b.label);
-            });
-
-            let roomHits: SummarySearchRoomItem[] = [];
-            if (matrixClient) {
-                const allJoinedRooms = matrixClient
-                    .getRooms()
-                    .filter((room) => room.getMyMembership() === "join" && !room.isSpaceRoom())
-                    .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp());
-
-                const personIds = new Set(peopleHits.map((item) => item.id));
-                const sharedRooms = personIds.size > 0
-                    ? allJoinedRooms.filter((room) =>
-                        room
-                            .getMembers()
-                            .some((member) => member.membership === "join" && personIds.has(member.userId)),
-                    )
-                    : [];
-
-                const fuzzyNameRooms = allJoinedRooms.filter((room) => {
-                    const displayName = resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
-                    return displayName.toLowerCase().includes(normalizedQuery);
-                });
-
-                const dedupedRooms: Room[] = [];
-                const seen = new Set<string>();
-                for (const room of [...sharedRooms, ...fuzzyNameRooms]) {
-                    if (seen.has(room.roomId)) continue;
-                    seen.add(room.roomId);
-                    dedupedRooms.push(room);
-                }
-
-                roomHits = dedupedRooms.map((room) => {
-                    const createdAtTs = resolveRoomCreatedAt(room);
-                    const resolvedName = resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null).trim();
-                    return {
-                        id: room.roomId,
-                        label: resolvedName || room.roomId,
-                        meta: createdAtTs
-                            ? t("layout.notebook.summaryCreatedDate", {
-                                date: new Date(createdAtTs).toLocaleString(),
-                                defaultValue: "Created at: {{date}}",
-                            })
-                            : null,
-                    };
-                });
-            } else {
-                roomHits = response.room_hits.map((hit) => ({
-                    id: hit.room_id,
-                    label: hit.room_name || hit.room_id,
-                    meta: hit.last_ts
-                        ? t("layout.notebook.summaryCreatedDate", {
-                            date: new Date(hit.last_ts).toLocaleString(),
-                            defaultValue: "Created at: {{date}}",
-                        })
-                        : null,
-                }));
-            }
-
-            setSummaryPeopleResults(peopleHits);
-            setSummaryRoomResults(roomHits);
-            setSummarySelectedTarget((prev) => {
-                if (!prev) return null;
-                const stillExists = prev.type === "person"
-                    ? peopleHits.some((item) => item.id === prev.id)
-                    : roomHits.some((item) => item.id === prev.id);
-                return stillExists ? prev : null;
-            });
-        } catch (error) {
-            if (error instanceof ChatSearchError) {
-                if (error.status === 401) {
-                    setSummarySearchError(t("layout.notebook.summarySearchUnauthorized", "Authentication failed. Please sign in again."));
-                } else if (error.status === 403) {
-                    setSummarySearchError(t("layout.notebook.summarySearchForbidden", "You do not have permission to use chat search."));
-                } else {
-                    setSummarySearchError(error.message || t("layout.notebook.summarySearchFailed", "Chat search failed."));
-                }
-            } else {
-                setSummarySearchError(error instanceof Error ? error.message : t("layout.notebook.summarySearchFailed", "Chat search failed."));
-            }
-            setSummaryPeopleResults([]);
-            setSummaryRoomResults([]);
-            setSummarySelectedTarget(null);
-        } finally {
-            setSummarySearchLoading(false);
-        }
-    }, [
-        debouncedSummarySearchQuery,
-        hubAccessToken,
-        matrixAccessToken,
-        matrixClient,
-        matrixCredentials?.user_id,
-        matrixHsUrl,
-        runHubSessionRequest,
-        t,
-    ]);
-
-    useEffect(() => {
-        if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
-        if (!debouncedSummarySearchQuery) {
-            setSummaryPeopleResults([]);
-            setSummaryRoomResults([]);
-            setSummarySearchError(null);
-            setSummarySelectedTarget(null);
-            return;
-        }
-        void runSummarySearch();
-    }, [activeTab, notebookSidebarMode, debouncedSummarySearchQuery, runSummarySearch]);
-
-    const resolveSummaryTargetRoomId = useCallback((target: SummarySearchTarget): string | null => {
-        if (!matrixClient) return null;
-        if (target.type === "room") return target.id;
-        const candidates = matrixClient
-            .getRooms()
-            .filter((room) => {
-                if (room.getMyMembership() !== "join" || room.isSpaceRoom()) return false;
-                const member = room.getMember(target.id);
-                return member?.membership === "join";
-            })
-            .sort((a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp());
-        return candidates[0]?.roomId ?? null;
-    }, [matrixClient]);
-
-    const loadSummaryJobs = useCallback(async (options?: { background?: boolean }) => {
-        if (!hubAccessToken) return;
-        const background = Boolean(options?.background);
-        if (background) {
-            setSummaryJobsRefreshing(true);
-        } else {
-            setSummaryJobsLoading(true);
-            setSummaryJobsError(null);
-        }
-        try {
-            const response = await runHubSessionRequest((accessToken) => listChatSummaryJobs({
-                accessToken,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials?.user_id ?? null,
-                matrixAccessToken,
-            }));
-            setSummaryJobs(Array.isArray(response.items) ? response.items : []);
-        } catch (error) {
-            const message = error instanceof Error
-                ? mapChatSummaryErrorMessage(error.message, t)
-                : t("layout.notebook.summaryJobsLoadFailed", "Failed to load summary list.");
-            setSummaryJobsError(message);
-            if (!background) {
-                setSummaryJobs([]);
-            }
-        } finally {
-            if (background) {
-                setSummaryJobsRefreshing(false);
-            } else {
-                setSummaryJobsLoading(false);
-            }
-        }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
-
-    const hasProcessingSummaryJob = useMemo(
-        () => summaryJobs.some((job) => job.status === "processing"),
-        [summaryJobs],
-    );
-    useEffect(() => {
-        const generatingText = t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait.");
-        if (hasProcessingSummaryJob) return;
-        if (summaryGenerationNotice !== generatingText) return;
-        const timer = window.setTimeout(() => {
-            setSummaryGenerationNotice(null);
-            setSummaryGenerationNoticeTone("info");
-        }, 1500);
-        return () => window.clearTimeout(timer);
-    }, [hasProcessingSummaryJob, summaryGenerationNotice, t]);
-
-    const summaryConfirmHint = useMemo(() => {
-        if (!summarySelectedTarget) return t("layout.notebook.summaryHintSelectTarget", "Please select a person or room first.");
-        if (!summaryStartDate || !summaryEndDate) return t("layout.notebook.summaryHintSelectTimeRange", "Please select start and end time.");
-        if (summaryStartDate > summaryEndDate) return t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date.");
-        if (isSummaryRangeExceeded(summaryStartDate, summaryEndDate)) {
-            return t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days.");
-        }
-        return null;
-    }, [summaryEndDate, summarySelectedTarget, summaryStartDate, t]);
-
-    const onStartGenerateSummary = useCallback(async (directionPayload?: SummaryDirectionPayload) => {
-        if (!hubAccessToken || !summarySelectedTarget || !summaryStartDate || !summaryEndDate) return;
-        if (summaryStartDate > summaryEndDate) {
-            setSummaryGenerationNotice(t("layout.notebook.summaryDateRangeInvalid", "Start date must be earlier than or equal to end date."));
-            setSummaryGenerationNoticeTone("error");
-            return;
-        }
-        if (isSummaryRangeExceeded(summaryStartDate, summaryEndDate)) {
-            setSummaryGenerationNotice(t("layout.notebook.summaryRangeExceeded", "Time range cannot exceed 3 days."));
-            setSummaryGenerationNoticeTone("error");
-            return;
-        }
-        if (hasProcessingSummaryJob || summaryJobActionBusy) {
-            setSummaryGenerationNotice(t("layout.notebook.summaryAlreadyGenerating", "A summary is already generating. Please wait."));
-            setSummaryGenerationNoticeTone("error");
-            return;
-        }
-        const roomId = resolveSummaryTargetRoomId(summarySelectedTarget);
-        if (!roomId) {
-            setSummaryGenerationNotice(t("layout.notebook.summaryRoomResolveFailed", "No shared room found for this target."));
-            setSummaryGenerationNoticeTone("error");
-            return;
-        }
-        if (!matrixAccessToken || !matrixHsUrl || !matrixCredentials?.user_id) {
-            setSummaryGenerationNotice(t("layout.notebook.summarySearchAuthRequired", "Please sign in again before searching."));
-            setSummaryGenerationNoticeTone("error");
-            return;
-        }
-
-        setSummaryContentLoading(true);
-        setSummaryJobActionBusy(true);
-        setSummaryGenerationNotice(t("layout.notebook.summaryGeneratingNotice", "Summary generation started. Please wait."));
-        setSummaryGenerationNoticeTone("info");
-        try {
-            const safeTargetLabel = summarySelectedTarget.label.trim() || roomId;
-            await runHubSessionRequest((accessToken) => createChatSummaryJob({
-                accessToken,
-                targetLabel: safeTargetLabel,
-                roomId,
-                fromDate: summaryStartDate,
-                toDate: summaryEndDate,
-                summaryDirection: directionPayload?.summaryDirection || "meetingMinutes",
-                summaryCustomRequirement: directionPayload?.summaryCustomRequirement || null,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials?.user_id ?? null,
-                matrixAccessToken,
-            }));
-            await loadSummaryJobs();
-        } catch (error) {
-            const message = error instanceof Error
-                ? mapChatSummaryErrorMessage(error.message, t)
-                : t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.");
-            setSummaryGenerationNotice(message);
-            setSummaryGenerationNoticeTone("error");
-        } finally {
-            setSummaryContentLoading(false);
-            setSummaryJobActionBusy(false);
-        }
-    }, [
-        hubAccessToken,
-        summarySelectedTarget,
-        summaryStartDate,
-        summaryEndDate,
-        hasProcessingSummaryJob,
-        summaryJobActionBusy,
-        resolveSummaryTargetRoomId,
-        matrixAccessToken,
-        matrixHsUrl,
-        matrixCredentials?.user_id,
-        loadSummaryJobs,
-        runHubSessionRequest,
-        t,
-    ]);
-
-    const onDeleteSummaryJob = useCallback(async (id: string) => {
-        if (!hubAccessToken || !id) return;
-        setSummaryJobActionBusy(true);
-        try {
-            await runHubSessionRequest((accessToken) => deleteChatSummaryJob({
-                accessToken,
-                id,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials?.user_id ?? null,
-                matrixAccessToken,
-            }));
-            await loadSummaryJobs();
-        } catch (error) {
-            const message = error instanceof Error
-                ? mapChatSummaryErrorMessage(error.message, t)
-                : t("layout.notebook.summaryDeleteFailed", "Failed to delete summary.");
-            setSummaryJobsError(message);
-        } finally {
-            setSummaryJobActionBusy(false);
-        }
-    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
-
-    const onRetrySummaryJob = useCallback(async (id: string) => {
-        if (!hubAccessToken || !id) return;
-        setSummaryJobActionBusy(true);
-        try {
-            await runHubSessionRequest((accessToken) => retryChatSummaryJob({
-                accessToken,
-                id,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials?.user_id ?? null,
-                matrixAccessToken,
-            }));
-            setSummaryGenerationNotice(t("layout.notebook.summaryRetryStarted", "Retry started."));
-            setSummaryGenerationNoticeTone("info");
-            await loadSummaryJobs();
-        } catch (error) {
-            const message = error instanceof Error
-                ? mapChatSummaryErrorMessage(error.message, t)
-                : t("layout.notebook.summaryRetryFailed", "Failed to retry summary.");
-            setSummaryJobsError(message);
-        } finally {
-            setSummaryJobActionBusy(false);
-        }
-    }, [hubAccessToken, loadSummaryJobs, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
-
-    const onDownloadSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
-        if (!hubAccessToken) return;
-        setSummaryJobActionBusy(true);
-        try {
-            const blob = await runHubSessionRequest((accessToken) => downloadChatSummaryJob({
-                accessToken,
-                id: job.id,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials?.user_id ?? null,
-                matrixAccessToken,
-            }));
-            const compactStart = toCompactDateTime(job.from_date);
-            const compactEnd = toCompactDateTime(job.to_date);
-            const fileBase = `${job.target_label}聊天室总结${compactStart}${compactEnd}`.replace(/[\\/:*?"<>|]/g, "_");
-            const url = URL.createObjectURL(blob);
-            const anchor = document.createElement("a");
-            anchor.href = url;
-            anchor.download = `${fileBase || "chat-summary"}.docx`;
-            anchor.rel = "noopener noreferrer";
-            document.body.appendChild(anchor);
-            anchor.click();
-            document.body.removeChild(anchor);
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            const message = error instanceof Error
-                ? mapChatSummaryErrorMessage(error.message, t)
-                : t("layout.notebook.summaryDownloadFailed", "Failed to download summary.");
-            setSummaryJobsError(message);
-        } finally {
-            setSummaryJobActionBusy(false);
-        }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
-
-    const onPreviewSummaryJob = useCallback(async (job: ChatSummaryJobItem) => {
-        if (!hubAccessToken || !job?.id) return;
-        setSummaryPreviewLoading(true);
-        setSummaryPreviewError(null);
-        try {
-            const detail = await runHubSessionRequest((accessToken) => getChatSummaryJob({
-                accessToken,
-                id: job.id,
-                hsUrl: matrixHsUrl,
-                matrixUserId: matrixCredentials?.user_id ?? null,
-                matrixAccessToken,
-            }));
-            setSummaryPreviewJob(detail);
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "";
-            const shouldFallbackToDownload = /Cannot GET \/chat\/summary\/jobs\//i.test(message)
-                || /404/.test(message);
-            if (shouldFallbackToDownload) {
-                try {
-                    const blob = await runHubSessionRequest((accessToken) => downloadChatSummaryJob({
-                        accessToken,
-                        id: job.id,
-                        hsUrl: matrixHsUrl,
-                        matrixUserId: matrixCredentials?.user_id ?? null,
-                        matrixAccessToken,
-                    }));
-                    const summaryText = await blob.text();
-                    setSummaryPreviewJob({
-                        id: job.id,
-                        target_label: job.target_label,
-                        room_id: job.room_id,
-                        from_date: job.from_date,
-                        to_date: job.to_date,
-                        status: job.status,
-                        created_at: job.created_at,
-                        updated_at: job.updated_at,
-                        summary_text: summaryText,
-                    });
-                } catch (fallbackError) {
-                    const fallbackMessage = fallbackError instanceof Error
-                        ? mapChatSummaryErrorMessage(fallbackError.message, t)
-                        : t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview.");
-                    setSummaryPreviewError(fallbackMessage);
-                    setSummaryPreviewJob(null);
-                }
-            } else {
-                setSummaryPreviewError(
-                    mapChatSummaryErrorMessage(
-                        message || t("layout.notebook.summaryPreviewFailed", "Failed to load summary preview."),
-                        t,
-                    ),
-                );
-                setSummaryPreviewJob(null);
-            }
-        } finally {
-            setSummaryPreviewLoading(false);
-        }
-    }, [hubAccessToken, matrixAccessToken, matrixCredentials?.user_id, matrixHsUrl, runHubSessionRequest, t]);
-
-    useEffect(() => {
-        if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
-        void loadSummaryJobs();
-    }, [activeTab, notebookSidebarMode, loadSummaryJobs]);
-
-    useEffect(() => {
-        if (activeTab !== "notebook" || notebookSidebarMode !== "chatSummary") return;
-        if (!hasProcessingSummaryJob) return;
-        const timer = window.setInterval(() => {
-            void loadSummaryJobs({ background: true });
-        }, 2500);
-        return () => window.clearInterval(timer);
-    }, [activeTab, hasProcessingSummaryJob, loadSummaryJobs, notebookSidebarMode]);
-
-    const openRoomWithOptionalJump = useCallback((roomId: string, eventId?: string | null) => {
-        setActiveTab("chat");
-        setActiveRoomId(roomId);
-        setMobileView("detail");
-        setChatGlobalSearchOpen(false);
-        if (eventId) setJumpToEventId(eventId);
-    }, []);
-
-    const onSelectSearchPerson = useCallback(async (hit: ChatSearchPersonHit) => {
-        if (!matrixClient || !hit.matrix_user_id) {
-            setChatGlobalSearchError("無法定位該使用者聊天室");
-            return;
-        }
-        try {
-            const roomId = await getOrCreateDirectRoom(matrixClient, hit.matrix_user_id);
-            openRoomWithOptionalJump(roomId);
-        } catch (error) {
-            setChatGlobalSearchError(error instanceof Error ? error.message : "無法打開聊天室");
-        }
-    }, [matrixClient, openRoomWithOptionalJump]);
-
-    const onSelectSearchMessage = useCallback((hit: ChatSearchMessageHit) => {
-        openRoomWithOptionalJump(hit.room_id, hit.event_id);
-    }, [openRoomWithOptionalJump]);
+    // runChatGlobalSearch moved to ChatSearchBar
 
     const onHideActiveRoom = async (): Promise<void> => {
         if (!matrixClient || !activeRoomId) return;
@@ -2916,6 +1895,7 @@ export const MainLayout: React.FC = () => {
                     Object.entries(directContent).find(([, roomIds]) => roomIds.includes(activeRoomId))?.[0] ??
                     null;
                 if (!directPartnerId) return;
+                const { hideDirectRoom } = await import("../matrix/direct");
                 await hideDirectRoom(matrixClient, directPartnerId, activeRoomId);
                 if (room.name?.startsWith(DEPRECATED_DM_PREFIX)) {
                     await matrixClient.leave(activeRoomId);
@@ -2972,20 +1952,6 @@ export const MainLayout: React.FC = () => {
         return localpart || contact.displayName || t("layout.contactFallback");
     };
 
-    const getGenderLabel = (value: string | null): string => {
-        if (!value) return t("common.placeholder");
-        if (value === "male") return t("profile.gender.male");
-        if (value === "female") return t("profile.gender.female");
-        return value;
-    };
-
-    const getLanguageLabel = (contact: ContactSummary | null): string => {
-        if (!contact) return t("common.placeholder");
-        const locale = contact.translationLocale || contact.locale;
-        if (!locale) return t("common.placeholder");
-        const match = translationLanguageOptions.find((option) => option.value === locale);
-        return match?.label ?? locale;
-    };
     const getDisplayLanguageLabel = (locale: string | null | undefined): string => {
         const normalized = String(locale || "").trim();
         if (!normalized) return t("common.placeholder");
@@ -2999,201 +1965,6 @@ export const MainLayout: React.FC = () => {
         return match?.label ?? normalized;
     };
 
-    const hubTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 < Date.now() : false;
-    const useHubToken = Boolean(hubAccessToken) && !hubTokenExpired;
-    const actionToken = useHubToken ? hubAccessToken : matrixAccessToken;
-    const actionHsUrl = useHubToken ? null : matrixHsUrl;
-    const matrixHost = (() => {
-        if (!matrixHsUrl) return null;
-        try {
-            return new URL(matrixHsUrl).host;
-        } catch {
-            return null;
-        }
-    })();
-
-    const resolveActiveContactMatrixUserId = useCallback((): string | null => {
-        if (!activeContact) return null;
-        return activeContact.matrixUserId ||
-            (activeContact.userLocalId && matrixHost ? `@${activeContact.userLocalId}:${matrixHost}` : null);
-    }, [activeContact, matrixHost]);
-
-    const sharedContactRooms = useMemo<SharedContactRoomEntry[]>(() => {
-        if (!matrixClient || !activeContact) return [];
-        const matrixUserId = resolveActiveContactMatrixUserId();
-        if (!matrixUserId) return [];
-        return matrixClient
-            .getRooms()
-            .filter((room) => {
-                if (room.getMyMembership() !== "join") return false;
-                if (room.isSpaceRoom()) return false;
-                if (room.name?.startsWith(DEPRECATED_DM_PREFIX)) return false;
-                const membership = room.getMember(matrixUserId)?.membership;
-                return membership === "join" || membership === "invite";
-            })
-            .map((room) => {
-                const memberCount = new Set(
-                    room
-                        .getMembers()
-                        .filter((member) => member.membership === "join" || member.membership === "invite")
-                        .map((member) => member.userId),
-                ).size;
-                return {
-                    roomId: room.roomId,
-                    displayName: room.name || room.roomId,
-                    memberCount: memberCount || room.getJoinedMembers().length || 2,
-                    lastActive: room.getLastActiveTimestamp(),
-                };
-            })
-            .sort((a, b) => b.lastActive - a.lastActive);
-    }, [activeContact, matrixClient, resolveActiveContactMatrixUserId]);
-
-    useEffect(() => {
-        if (sharedContactRooms.length === 0) {
-            setSelectedSharedRoomId(null);
-            return;
-        }
-        setSelectedSharedRoomId((prev) => {
-            if (prev && sharedContactRooms.some((room) => room.roomId === prev)) return prev;
-            return sharedContactRooms[0].roomId;
-        });
-    }, [sharedContactRooms]);
-
-    const onStartContactChat = async (): Promise<void> => {
-        if (!selectedSharedRoomId) {
-            setContactRoomActionError(t("layout.sharedRoomsSelectFirst"));
-            return;
-        }
-        setContactRoomActionError(null);
-        setActiveRoomId(selectedSharedRoomId);
-        setActiveTab("chat");
-        setMobileView("detail");
-    };
-
-    const onCreateContactRoom = async (): Promise<void> => {
-        if (!matrixClient || !activeContact) return;
-        const currentUserId = matrixClient.getUserId();
-        if (!currentUserId) {
-            setContactRoomActionError(t("layout.sharedRoomsCreateFailed"));
-            return;
-        }
-        const matrixUserId = resolveActiveContactMatrixUserId();
-        if (!matrixUserId) {
-            setContactRoomActionError(t("layout.sharedRoomsNoMatrixId"));
-            return;
-        }
-        setContactRoomActionError(null);
-        setCreatingContactRoom(true);
-        try {
-            const result = await matrixClient.createRoom({
-                invite: [matrixUserId],
-                preset: MATRIX_PRESET_PRIVATE_CHAT as never,
-                power_level_content_override: {
-                    users: {
-                        [currentUserId]: 100,
-                        [matrixUserId]: 100,
-                    },
-                    users_default: 0,
-                    events_default: 0,
-                    state_default: 50,
-                    ban: 50,
-                    kick: 50,
-                    redact: 50,
-                    invite: 50,
-                },
-            });
-            setSelectedSharedRoomId(result.room_id);
-            setActiveRoomId(result.room_id);
-            setActiveTab("chat");
-            setMobileView("detail");
-        } catch (error) {
-            setContactRoomActionError(error instanceof Error ? error.message : t("layout.sharedRoomsCreateFailed"));
-        } finally {
-            setCreatingContactRoom(false);
-        }
-    };
-
-    const onRemoveActiveContact = async (): Promise<void> => {
-        if (!actionToken || !activeContact) return;
-        try {
-            await removeContact(actionToken, activeContact.id, actionHsUrl);
-            setActiveContact(null);
-            setSelectedSharedRoomId(null);
-            setShowContactMenu(false);
-            setShowRemoveContactConfirm(false);
-            setContactsRefreshToken((prev) => prev + 1);
-        } catch {
-            setShowContactMenu(false);
-            setShowRemoveContactConfirm(false);
-        }
-    };
-
-    const myFileLibrary = useMemo<FileLibraryItem[]>(() => {
-        if (!filesReady || !matrixClient || !matrixCredentials?.user_id) return [];
-        void fileLibraryTick;
-        const me = matrixCredentials.user_id;
-        const rows: FileLibraryItem[] = [];
-        matrixClient.getRooms().forEach((room) => {
-            if (room.getMyMembership() !== "join" || room.isSpaceRoom()) return;
-            const events = getLoadedRoomEvents(room);
-            events.forEach((event) => {
-                if (event.getType() !== MATRIX_EVENT_TYPE_ROOM_MESSAGE) return;
-                if (event.isRedacted()) return;
-                if (event.getSender() !== me) return;
-                const eventId = event.getId();
-                if (!eventId) return;
-                const content = event.getContent() as {
-                    msgtype?: string;
-                    body?: string;
-                    url?: string;
-                    info?: { mimetype?: string; size?: number };
-                } | null;
-                if (!content?.url) return;
-                const msgtype = content.msgtype || "";
-                if (
-                    msgtype !== "m.file" &&
-                    msgtype !== "m.image" &&
-                    msgtype !== "m.video" &&
-                    msgtype !== "m.audio"
-                ) {
-                    return;
-                }
-                rows.push({
-                    eventId,
-                    roomId: room.roomId,
-                    roomName: room.name || room.roomId,
-                    body: content.body || eventId,
-                    ts: event.getTs(),
-                    msgtype,
-                    mxcUrl: content.url,
-                    mimeType: content.info?.mimetype,
-                    sizeBytes: typeof content.info?.size === "number" ? content.info.size : null,
-                });
-            });
-        });
-        rows.sort((a, b) => b.ts - a.ts);
-        return rows;
-    }, [fileLibraryTick, filesReady, matrixClient, matrixCredentials?.user_id]);
-
-    const roomSummaryList = useMemo<FileLibraryRoomSummary[]>(
-        () => summarizeFileRooms(myFileLibrary),
-        [myFileLibrary],
-    );
-
-    const filteredRoomSummaryList = useMemo(
-        () => filterRoomSummaries(roomSummaryList, debouncedFileRoomSearch),
-        [roomSummaryList, debouncedFileRoomSearch],
-    );
-
-    const selectedRoomFiles = useMemo(
-        () => filesByRoom(myFileLibrary, selectedFileRoomId),
-        [myFileLibrary, selectedFileRoomId],
-    );
-
-    const selectedRoomSummary = useMemo(
-        () => roomSummaryList.find((item) => item.roomId === selectedFileRoomId) ?? null,
-        [roomSummaryList, selectedFileRoomId],
-    );
     const mobileNavItems = useMemo<AppShellNavItem[]>(() => {
         const items: AppShellNavItem[] = [
             {
@@ -3258,537 +2029,6 @@ export const MainLayout: React.FC = () => {
 
         return items;
     }, [activeTab, inviteBadgeCount, notebookWorkspaceVisible, openPrimaryTab, pluginNavItems, pluginRuntimeContextValue, t, unreadBadgeCount]);
-
-    const visibleSelectedRoomFiles = useMemo(
-        () =>
-            filterRoomFiles({
-                roomFiles: selectedRoomFiles,
-                keyword: debouncedFileListSearch,
-                typeFilter: fileListTypeFilter,
-                getFileTypeGroup,
-            }),
-        [selectedRoomFiles, debouncedFileListSearch, fileListTypeFilter],
-    );
-
-    const pagedVisibleSelectedRoomFiles = useMemo(
-        () => paginateRoomFiles(visibleSelectedRoomFiles, fileListPage, FILE_LIST_PAGE_SIZE),
-        [visibleSelectedRoomFiles, fileListPage],
-    );
-
-    const canLoadMoreFiles = pagedVisibleSelectedRoomFiles.length < visibleSelectedRoomFiles.length;
-
-    useEffect(() => {
-        if (activeTab !== "files") return;
-        if (selectedFileRoomId && filteredRoomSummaryList.some((item) => item.roomId === selectedFileRoomId)) return;
-        setSelectedFileRoomId(filteredRoomSummaryList[0]?.roomId ?? null);
-    }, [activeTab, filteredRoomSummaryList, selectedFileRoomId]);
-
-    useEffect(() => {
-        if (activeTab !== "files") return;
-        traceEvent("files.room_filter_changed", {
-            roomSearch: debouncedFileRoomSearch,
-            selectedRoomId: selectedFileRoomId,
-            roomCount: filteredRoomSummaryList.length,
-        });
-    }, [activeTab, debouncedFileRoomSearch, selectedFileRoomId, filteredRoomSummaryList.length]);
-
-    useEffect(() => {
-        if (activeTab !== "files" || !selectedFileRoomId) return;
-        traceEvent("files.list_filter_changed", {
-            roomId: selectedFileRoomId,
-            keyword: debouncedFileListSearch,
-            typeFilter: fileListTypeFilter,
-            visibleCount: visibleSelectedRoomFiles.length,
-        });
-    }, [activeTab, selectedFileRoomId, debouncedFileListSearch, fileListTypeFilter, visibleSelectedRoomFiles.length]);
-
-    useEffect(() => {
-        setFileListPage(1);
-    }, [selectedFileRoomId, debouncedFileListSearch, fileListTypeFilter]);
-
-    useEffect(() => {
-        if (!matrixClient || activeTab !== "files" || !selectedFileRoomId) return;
-        const room = matrixClient.getRoom(selectedFileRoomId);
-        if (!room) return;
-        let cancelled = false;
-        void (async () => {
-            setFileHistoryLoadingRoomId(selectedFileRoomId);
-            let lastCount = room.getLiveTimeline().getEvents().length;
-            for (let round = 0; round < FILE_HISTORY_MAX_ROUNDS; round += 1) {
-                if (cancelled) return;
-                if (lastCount >= FILE_HISTORY_TARGET_EVENTS) break;
-                await matrixClient.scrollback(room, FILE_HISTORY_SCROLLBACK_LIMIT);
-                const currentCount = room.getLiveTimeline().getEvents().length;
-                if (currentCount <= lastCount) break;
-                lastCount = currentCount;
-            }
-            if (!cancelled) {
-                setFileLibraryTick((prev) => prev + 1);
-                setFileHistoryLoadingRoomId((prev) => (prev === selectedFileRoomId ? null : prev));
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [activeTab, matrixClient, selectedFileRoomId]);
-
-    useEffect(() => {
-        setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
-    }, [selectedRoomFiles]);
-
-    useEffect(() => {
-        if (activeTab !== "files") return;
-        const previewableItems = pagedVisibleSelectedRoomFiles.filter((item) => {
-            const previewType = getFilePreviewType(item);
-            return previewType === "image" || previewType === "video";
-        });
-        const previewableIds = new Set(previewableItems.map((item) => item.eventId));
-
-        setFileThumbnailUrls((prev) => {
-            const next: Record<string, string> = {};
-            Object.entries(prev).forEach(([eventId, url]) => {
-                if (previewableIds.has(eventId)) {
-                    next[eventId] = url;
-                } else {
-                    URL.revokeObjectURL(url);
-                }
-            });
-            return next;
-        });
-
-        let cancelled = false;
-        previewableItems.forEach((item) => {
-            const httpUrl = getHttpFileUrl(item);
-            if (!httpUrl) return;
-            if (fileThumbnailUrls[item.eventId]) return;
-            void (async () => {
-                try {
-                    const blob = await fetchMediaBlob(httpUrl, matrixCredentials?.access_token);
-                    const objectUrl = URL.createObjectURL(blob);
-                    if (cancelled) {
-                        URL.revokeObjectURL(objectUrl);
-                        return;
-                    }
-                    setFileThumbnailUrls((prev) => {
-                        const existing = prev[item.eventId];
-                        if (existing) {
-                            URL.revokeObjectURL(objectUrl);
-                            return prev;
-                        }
-                        return { ...prev, [item.eventId]: objectUrl };
-                    });
-                } catch {
-                    // Keep the card usable even if the preview thumbnail cannot be prefetched.
-                }
-            })();
-        });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [activeTab, pagedVisibleSelectedRoomFiles, matrixCredentials?.access_token, fileThumbnailUrls]);
-
-    const getHttpFileUrl = (item: FileLibraryItem): string | null => {
-        if (!matrixClient) return null;
-        return matrixClient.mxcUrlToHttp(item.mxcUrl);
-    };
-
-    const isFileSelected = (eventId: string): boolean => selectedFileIds.includes(eventId);
-
-    const allVisibleFilesSelected =
-        visibleSelectedRoomFiles.length > 0
-        && visibleSelectedRoomFiles.every((item) => selectedFileIds.includes(item.eventId));
-
-    const toggleFileSelection = (eventId: string): void => {
-        setSelectedFileIds((prev) => (prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId]));
-    };
-
-    const toggleSelectAllVisibleFiles = (): void => {
-        const visibleIds = visibleSelectedRoomFiles.map((item) => item.eventId);
-        if (visibleIds.length === 0) return;
-        setSelectedFileIds((prev) => {
-            if (visibleIds.every((id) => prev.includes(id))) {
-                return prev.filter((id) => !visibleIds.includes(id));
-            }
-            return Array.from(new Set([...prev, ...visibleIds]));
-        });
-    };
-
-    const onOpenFileItem = (item: FileLibraryItem): void => {
-        const url = getHttpFileUrl(item);
-        if (!url) return;
-        traceEvent("files.download", {
-            roomId: item.roomId,
-            eventId: item.eventId,
-            fileName: item.body,
-        });
-        void (async () => {
-            try {
-                const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
-                const blobUrl = URL.createObjectURL(blob);
-                const anchor = document.createElement("a");
-                anchor.href = blobUrl;
-                anchor.download = item.body || "file";
-                anchor.rel = "noopener noreferrer";
-                document.body.appendChild(anchor);
-                anchor.click();
-                document.body.removeChild(anchor);
-                URL.revokeObjectURL(blobUrl);
-            } catch {
-                setFileActionError(t("layout.fileDownloadFailed", "File download failed."));
-            }
-        })();
-    };
-
-    const onPreviewFileItem = (item: FileLibraryItem): void => {
-        const previewType = getFilePreviewType(item);
-        const url = getHttpFileUrl(item);
-        if (!previewType || !url) return;
-        traceEvent("files.preview_open", {
-            roomId: item.roomId,
-            eventId: item.eventId,
-            type: previewType,
-            fileName: item.body,
-        });
-        setFileActionError(null);
-        void (async () => {
-            try {
-                const blob = await fetchMediaBlob(url, matrixCredentials?.access_token);
-                const previewUrl = previewType === "pdf"
-                    ? await blobToDataUrl(blob)
-                    : URL.createObjectURL(blob);
-                setPreviewZoom(1);
-                setPreviewOffset({ x: 0, y: 0 });
-                setFilePreview({
-                    url: previewUrl,
-                    type: previewType,
-                    name: item.body,
-                    revokeOnClose: previewType !== "pdf",
-                });
-            } catch {
-                setFileActionError(t("layout.filePreviewFailed", "File preview failed."));
-            }
-        })();
-    };
-
-    const onJumpToFileMessage = (item: FileLibraryItem): void => {
-        traceEvent("files.jump_to_message", {
-            roomId: item.roomId,
-            eventId: item.eventId,
-            fileName: item.body,
-        });
-        setActiveRoomId(item.roomId);
-        setJumpToEventId(item.eventId);
-        setActiveTab("chat");
-        setMobileView("detail");
-    };
-
-    const onDeleteFileItem = async (item: FileLibraryItem): Promise<void> => {
-        if (!matrixClient || !matrixCredentials?.user_id) return;
-        setFileActionError(null);
-        setFileDeletingEventId(item.eventId);
-        traceEvent("files.delete_start", {
-            roomId: item.roomId,
-            eventId: item.eventId,
-            fileName: item.body,
-        });
-        try {
-            await matrixClient.redactEvent(item.roomId, item.eventId);
-            if (matrixCredentials.hs_url && matrixCredentials.access_token) {
-                await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
-            }
-            const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
-            await matrixClient.sendEvent(item.roomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
-                msgtype: "m.notice",
-                body: t("chat.fileRevokedNotice", { name: selfLabel }),
-            } as never);
-            setActiveFileMenuEventId(null);
-            setSelectedFileIds((prev) => prev.filter((id) => id !== item.eventId));
-            setFileLibraryTick((prev) => prev + 1);
-            traceEvent("files.delete_success", {
-                roomId: item.roomId,
-                eventId: item.eventId,
-            });
-        } catch (error) {
-            const mapped = mapMediaActionError(error);
-            setFileActionError(mapActionErrorToMessage(t, error, "layout.fileDeleteFailed"));
-            traceEvent("files.delete_failed", {
-                roomId: item.roomId,
-                eventId: item.eventId,
-                reason: mapped,
-            });
-        } finally {
-            setFileDeletingEventId(null);
-        }
-    };
-
-    const deleteFileRecord = async (
-        item: FileLibraryItem,
-        options?: { sendNotice?: boolean },
-    ): Promise<void> => {
-        if (!matrixClient || !matrixCredentials?.user_id) {
-            throw new Error("MATRIX_CLIENT_UNAVAILABLE");
-        }
-        await matrixClient.redactEvent(item.roomId, item.eventId);
-        if (matrixCredentials.hs_url && matrixCredentials.access_token) {
-            await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
-        }
-        if (options?.sendNotice === false) {
-            return;
-        }
-        const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
-        await matrixClient.sendEvent(item.roomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
-            msgtype: "m.notice",
-            body: t("chat.fileRevokedNotice", { name: selfLabel }),
-        } as never);
-    };
-
-    const onDeleteBatchFiles = async (): Promise<void> => {
-        if (fileBatchDeleting || !matrixClient) return;
-        if (selectedFileIds.length === 0) return;
-        const targets = selectedRoomFiles.filter((item) => selectedFileIds.includes(item.eventId));
-        if (targets.length === 0) return;
-        setFileBatchDeleting(true);
-        setFileBatchDeleteProgress({ done: 0, total: targets.length });
-        traceEvent("files.batch_delete_start", {
-            roomId: selectedFileRoomId,
-            selectedCount: selectedFileIds.length,
-            targetCount: targets.length,
-        });
-        let failed = 0;
-        let succeeded = 0;
-        let mappedError: "STORAGE_QUOTA_EXCEEDED" | "NO_PERMISSION" | "GENERIC" | null = null;
-
-        const queue = [...targets];
-        let completed = 0;
-        const workerCount = Math.min(FILE_BATCH_DELETE_CONCURRENCY, queue.length);
-
-        const runWorker = async (): Promise<void> => {
-            while (queue.length > 0) {
-                const item = queue.shift();
-                if (!item) return;
-                try {
-                    await deleteFileRecord(item, { sendNotice: false });
-                    succeeded += 1;
-                } catch (error) {
-                    failed += 1;
-                    if (!mappedError) {
-                        mappedError = mapMediaActionError(error);
-                    }
-                } finally {
-                    completed += 1;
-                    setFileBatchDeleteProgress({ done: completed, total: targets.length });
-                }
-            }
-        };
-
-        await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
-
-        if (succeeded > 0 && selectedFileRoomId) {
-            const selfLabel = getLocalPart(matrixCredentials?.user_id) || matrixCredentials?.user_id || "user";
-            try {
-                await matrixClient.sendEvent(selectedFileRoomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
-                    msgtype: "m.notice",
-                    body: t("layout.fileBatchRevokedNotice", {
-                        name: selfLabel,
-                        count: succeeded,
-                        defaultValue: `${selfLabel} revoked ${succeeded} files`,
-                    }),
-                } as never);
-            } catch {
-                // Keep batch delete fast; file redactions already succeeded.
-            }
-        }
-        setSelectedFileIds([]);
-        setFileBatchMode(false);
-        setShowFileToolbarMenu(false);
-        setFileLibraryTick((prev) => prev + 1);
-        if (failed > 0) {
-            setFileActionError(
-                mapActionErrorToMessage(t, { errcode: mappedError ?? "GENERIC" }, "layout.fileDeleteFailed"),
-            );
-            traceEvent("files.batch_delete_partial_failed", {
-                roomId: selectedFileRoomId,
-                failed,
-                success: targets.length - failed,
-                reason: mappedError ?? "GENERIC",
-            });
-        } else {
-            setFileActionError(null);
-            traceEvent("files.batch_delete_success", {
-                roomId: selectedFileRoomId,
-                success: targets.length,
-            });
-        }
-        setFileBatchDeleting(false);
-        setFileBatchDeleteProgress({ done: 0, total: 0 });
-    };
-
-    const summaryWorkspacePanel = (
-        <div className="mx-auto w-full min-w-0 max-w-none">
-            <div className="mb-4 text-base font-semibold text-slate-800 dark:text-slate-100">
-                {t("layout.notebook.summaryWorkspaceTitle", "AI Chat Summary")}
-                {summaryJobsRefreshing ? (
-                    <span className="ml-2 text-xs font-medium text-slate-400 dark:text-slate-500">
-                        {t("layout.notebook.summaryRefreshing", "Refreshing...")}
-                    </span>
-                ) : null}
-            </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-6 dark:border-slate-700 dark:bg-slate-950">
-                {summaryGenerationNotice ? (
-                    <div className={`mb-3 rounded-lg px-3 py-2 text-xs ${
-                        summaryGenerationNoticeTone === "error"
-                            ? "border border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200"
-                            : "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200"
-                    }`}>
-                        {summaryGenerationNotice}
-                    </div>
-                ) : null}
-                {summaryJobsError ? (
-                    <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-                        {summaryJobsError}
-                    </div>
-                ) : null}
-                {summaryPreviewJob ? (
-                    <div className="space-y-2">
-                        <button
-                            type="button"
-                            onClick={() => setSummaryPreviewJob(null)}
-                            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
-                        >
-                            {t("layout.notebook.summaryBackToList", "Back to summary list")}
-                        </button>
-                        <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
-                            <div className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {`${summaryPreviewJob.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
-                            </div>
-                            <div className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-                                {`${formatSummaryDisplayDateTime(summaryPreviewJob.from_date)} ~ ${formatSummaryDisplayDateTime(summaryPreviewJob.to_date)}`}
-                            </div>
-                            <div className="max-h-[56vh] max-w-full overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                                <Suspense fallback={<div className="text-sm text-slate-500 dark:text-slate-400">Loading summary preview...</div>}>
-                                    <NotebookSummaryMarkdown content={summaryPreviewJob.summary_text || ""} />
-                                </Suspense>
-                            </div>
-                        </div>
-                    </div>
-                ) : summaryJobsLoading && summaryJobs.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                        {t("layout.notebook.summaryJobsLoading", "Loading summary list...")}
-                    </div>
-                ) : summaryJobs.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                        {t("layout.notebook.summaryJobsEmpty", "No generated summary yet.")}
-                    </div>
-                ) : (
-                    <div className="space-y-2">
-                        {summaryPreviewError ? (
-                            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-500 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-                                {summaryPreviewError}
-                            </div>
-                        ) : null}
-                        {summaryJobs.map((job) => (
-                            <div
-                                key={job.id}
-                                className="rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900"
-                            >
-                                <div className="mb-1 flex items-center justify-between gap-3">
-                                        <div className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            {`${job.target_label}${t("layout.notebook.summaryJobNameSuffix", "聊天室总结")}`}
-                                        </div>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                        job.status === "completed"
-                                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                            : job.status === "failed"
-                                                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
-                                                : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                                    }`}>
-                                        {job.status === "completed"
-                                            ? t("layout.notebook.summaryStatusCompleted", "Completed")
-                                            : job.status === "failed"
-                                                ? t("layout.notebook.summaryStatusFailed", "Failed")
-                                                : t("layout.notebook.summaryStatusProcessing", "Processing")}
-                                    </span>
-                                </div>
-                                <div className="text-xs text-slate-500 dark:text-slate-400">
-                                    {`${formatSummaryDisplayDateTime(job.from_date)} ~ ${formatSummaryDisplayDateTime(job.to_date)}`}
-                                </div>
-                                {job.status === "processing" ? (
-                                    <div className="mt-2 space-y-1">
-                                        <div className="break-words text-xs text-slate-600 dark:text-slate-300">
-                                            {job.progress_message || t("layout.notebook.summaryStatusProcessing", "Processing")}
-                                            {Number.isFinite(Number(job.progress_current)) && Number.isFinite(Number(job.progress_total)) && Number(job.progress_total) > 0
-                                                ? ` (${Number(job.progress_current)}/${Number(job.progress_total)})`
-                                                : ""}
-                                        </div>
-                                        <div className="h-1.5 w-full overflow-hidden rounded bg-slate-200 dark:bg-slate-700">
-                                            <div
-                                                className="h-full bg-emerald-500 transition-all"
-                                                style={{
-                                                    width: (() => {
-                                                        const current = Number(job.progress_current);
-                                                        const total = Number(job.progress_total);
-                                                        if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) return "18%";
-                                                        const percent = Math.max(4, Math.min(100, Math.round((current / total) * 100)));
-                                                        return `${percent}%`;
-                                                    })(),
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                ) : null}
-                                {job.status === "failed" ? (
-                                    <div className="mt-1 break-words text-xs text-rose-500 dark:text-rose-300">
-                                        {job.progress_message || job.error_message || t("layout.notebook.summaryGenerateFailed", "Failed to start summary generation.")}
-                                    </div>
-                                ) : null}
-                                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("layout.notebook.summaryGeneratedDate", {
-                                        date: formatSummaryDisplayDate(job.created_at),
-                                        defaultValue: "Generated on: {{date}}",
-                                    })}
-                                </div>
-                                <div className="mt-2 flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        disabled={summaryPreviewLoading || job.status !== "completed" || !job.has_content}
-                                        onClick={() => void onPreviewSummaryJob(job)}
-                                        className="rounded-md border border-slate-400 px-2 py-1 text-xs font-semibold text-slate-600 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-500 dark:text-slate-200 dark:enabled:hover:bg-slate-800"
-                                    >
-                                        {t("layout.notebook.summaryPreview", "Preview")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={summaryJobActionBusy || job.status !== "completed" || !job.has_content}
-                                        onClick={() => void onDownloadSummaryJob(job)}
-                                        className="rounded-md border border-emerald-500 px-2 py-1 text-xs font-semibold text-emerald-700 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400 dark:text-emerald-300 dark:enabled:hover:bg-emerald-900/20"
-                                    >
-                                        {t("layout.notebook.summaryDownload", "Download")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={summaryJobActionBusy || hasProcessingSummaryJob || job.status !== "failed"}
-                                        onClick={() => void onRetrySummaryJob(job.id)}
-                                        className="rounded-md border border-amber-400 px-2 py-1 text-xs font-semibold text-amber-600 enabled:hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-400 dark:text-amber-300 dark:enabled:hover:bg-amber-900/20"
-                                    >
-                                        {t("layout.notebook.summaryRetry", "Retry")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={summaryJobActionBusy}
-                                        onClick={() => void onDeleteSummaryJob(job.id)}
-                                        className="rounded-md border border-rose-400 px-2 py-1 text-xs font-semibold text-rose-600 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400 dark:text-rose-300 dark:enabled:hover:bg-rose-900/20"
-                                    >
-                                        {t("layout.notebook.summaryDelete", "Delete")}
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
 
     return (
         <div
@@ -3984,549 +2224,76 @@ export const MainLayout: React.FC = () => {
                     activeTab === "tasks" || activeTab === "notebook" ? "hidden lg:hidden" : mobileView === "detail" ? "hidden lg:flex" : "flex"
                     }`}
             >
-                {activeTab === "settings" ? (
-                    <>
-                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {t("layout.settings")}
-                            </div>
-                        </div>
-                        <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar p-4 space-y-3">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSettingsDetail("none");
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.tickets")}
-                            </button>
-                            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-sm text-slate-700 dark:text-slate-100">
-                                        {t("layout.appearance")}
-                                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                                            {themeMode === "dark" ? t("layout.dark") : t("layout.light")}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center rounded-full border border-gray-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                                        <button
-                                            type="button"
-                                            onClick={() => setThemeMode("light")}
-                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${themeMode === "light"
-                                                ? "bg-emerald-500 text-white"
-                                                : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                                }`}
-                                            aria-label={t("layout.light")}
-                                        >
-                                            <SunIcon className="h-4 w-4" />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setThemeMode("dark")}
-                                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${themeMode === "dark"
-                                                ? "bg-emerald-500 text-white"
-                                                : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                                }`}
-                                            aria-label={t("layout.dark")}
-                                        >
-                                            <MoonIcon className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
-                                <div className="text-sm text-slate-700 dark:text-slate-100 mb-2">
-                                    {t("layout.displayLanguage")}
-                                </div>
-                                <select
-                                    value={displayLanguage}
-                                    onChange={(event) => void handleDisplayLanguageChange(event.target.value)}
-                                    className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                >
-                                    {displayLangOptions.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSettingsDetail("chat-language");
-                                    setMobileView("detail");
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.chatReceiveLanguage")}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSettingsDetail("translation-default");
-                                    setMobileView("detail");
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.translationDefaultContent")}
-                            </button>
-                            {false && pluginSettingsSections.length > 0 && (
-                                <div className="space-y-2 rounded-lg border border-dashed border-emerald-200 px-3 py-3 dark:border-emerald-900/60">
-                                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                                        Plugins
-                                    </div>
-                                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                                        Source: {platformState.source} · State: {platformState.syncState}
-                                    </div>
-                                    {pluginSettingsSections.map((section) => (
-                                        <button
-                                            key={`${section.pluginId}:${section.id}`}
-                                            type="button"
-                                            onClick={() => {
-                                                setSettingsDetail(`plugin:${section.pluginId}:${section.id}`);
-                                                setMobileView("detail");
-                                            }}
-                                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                        >
-                                            <div className="font-medium">{section.label}</div>
-                                            {section.description && (
-                                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                    {section.description}
-                                                </div>
-                                            )}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                            <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
-                                <div className="mb-2 text-sm text-slate-700 dark:text-slate-100">
-                                    {t("layout.notificationSound")}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={notificationSoundMode}
-                                        onChange={(event) => {
-                                            const next = event.target.value as NotificationSoundMode;
-                                            setNotificationSoundMode(next);
-                                            if (next !== "off") {
-                                                ensureNotificationSoundEnabled({ userInitiated: true });
-                                                playNotificationSound(next);
-                                            }
-                                        }}
-                                        className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                    >
-                                        <option value="off">{t("layout.notificationSoundOff")}</option>
-                                        <option value="classic">{t("layout.notificationSoundClassic")}</option>
-                                        <option value="soft">{t("layout.notificationSoundSoft")}</option>
-                                        <option value="chime">{t("layout.notificationSoundChime")}</option>
-                                    </select>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (notificationSoundMode === "off") return;
-                                            ensureNotificationSoundEnabled({ userInitiated: true });
-                                            playNotificationSound(notificationSoundMode);
-                                        }}
-                                        disabled={notificationSoundMode === "off"}
-                                        className="rounded-md border border-gray-200 px-3 py-1 text-xs text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-                                    >
-                                        {t("layout.notificationSoundPreview")}
-                                    </button>
-                                </div>
-                            </div>
-                            {desktopUpdaterAvailable && (
-                                <div className="rounded-lg border border-gray-200 px-3 py-2 dark:border-slate-800">
-                                    <div className="mb-2 text-sm text-slate-700 dark:text-slate-100">
-                                        Desktop Updates
-                                    </div>
-                                    {desktopUpdaterVersion && (
-                                        <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                                            Current version: {desktopUpdaterVersion}
-                                        </div>
-                                    )}
-                                    <button
-                                        type="button"
-                                        disabled={checkingDesktopUpdate}
-                                        onClick={() => {
-                                            if (checkingDesktopUpdate) return;
-                                            setCheckingDesktopUpdate(true);
-                                            void checkDesktopUpdaterOnce(pushToast)
-                                                .catch((error) => {
-                                                    console.warn("Manual desktop updater check failed:", error);
-                                                    pushToast("error", "Failed to check for desktop updates.", 4000);
-                                                })
-                                                .finally(() => {
-                                                    setCheckingDesktopUpdate(false);
-                                                });
-                                        }}
-                                        className="rounded-md border border-gray-200 px-3 py-1 text-xs text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-                                    >
-                                        {checkingDesktopUpdate ? "Checking..." : "Check for updates"}
-                                    </button>
-                                </div>
-                            )}
-                            <button
-                                type="button"
-                                onClick={onLogout}
-                                className="w-full text-left rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.logoutAccount")}
-                            </button>
-                        </div>
-                    </>
-                ) : activeTab === "account" ? (
-                    <>
-                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
-                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {t("layout.accountSettings")}
-                            </div>
-                        </div>
-                        <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar p-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] space-y-3">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
-                                <div className="flex items-center gap-3">
-                                    {accountAvatarUrl ? (
-                                        <img src={accountAvatarUrl} alt={accountId} className="h-14 w-14 rounded-2xl object-cover" />
-                                    ) : (
-                                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-200 text-lg font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-100">
-                                            {accountInitial}
-                                        </div>
-                                    )}
-                                    <div className="min-w-0">
-                                        <div className="truncate text-base font-semibold text-slate-900 dark:text-slate-50">
-                                            {meProfile?.display_name || accountId}
-                                        </div>
-                                    <div className="truncate text-sm text-slate-500 dark:text-slate-400">
-                                        {accountId}
-                                    </div>
-                                    <div className="truncate text-xs text-slate-400 dark:text-slate-500">
-                                        {accountSubtitle}
-                                    </div>
-                                </div>
-                            </div>
-                                <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Company</div>
-                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.company_name || t("common.placeholder")}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Title</div>
-                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.job_title || t("common.placeholder")}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Country</div>
-                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{meProfile?.country || t("common.placeholder")}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Matrix ID</div>
-                                        <div className="mt-1 break-all text-slate-700 dark:text-slate-100">{meProfile?.matrix_user_id || matrixCredentials?.user_id || t("common.placeholder")}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Display Language</div>
-                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{getDisplayLanguageLabel(meProfile?.locale || displayLanguage)}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Chat Language</div>
-                                        <div className="mt-1 text-slate-700 dark:text-slate-100">{getTranslationLanguageLabel(meProfile?.translation_locale || chatReceiveLanguage)}</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => avatarUploadInputRef.current?.click()}
-                                disabled={avatarUploading}
-                                className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm text-slate-700 hover:bg-gray-50 disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {avatarUploading ? t("common.loading") : t("layout.uploadAvatar")}
-                            </button>
-                            {avatarUploadFeedback && (
-                                <div
-                                    className={`text-xs ${avatarUploadFeedback.includes("failed")
-                                        ? "text-rose-500"
-                                        : "text-emerald-600 dark:text-emerald-300"
-                                        }`}
-                                >
-                                    {avatarUploadFeedback}
-                                </div>
-                            )}
-                            <input
-                                ref={avatarUploadInputRef}
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(event) => {
-                                    void onUploadAvatar(event);
-                                }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setAccountEditorMode((prev) => (prev === "password" ? "none" : "password"));
-                                    setAccountEditorError(null);
-                                    setAccountEditorSuccess(null);
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.changePassword")}
-                            </button>
-                            {accountEditorMode === "password" && (
-                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-                                    <div className="grid gap-3">
-                                        <input
-                                            type="password"
-                                            value={currentPasswordDraft}
-                                            onChange={(event) => setCurrentPasswordDraft(event.target.value)}
-                                            placeholder={t("auth.fields.currentPasswordLabel")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            autoComplete="current-password"
-                                        />
-                                        <input
-                                            type="password"
-                                            value={newPasswordDraft}
-                                            onChange={(event) => setNewPasswordDraft(event.target.value)}
-                                            placeholder={t("auth.fields.newPasswordLabel")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            autoComplete="new-password"
-                                        />
-                                        <input
-                                            type="password"
-                                            value={confirmPasswordDraft}
-                                            onChange={(event) => setConfirmPasswordDraft(event.target.value)}
-                                            placeholder={t("auth.fields.confirmPasswordLabel")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                            autoComplete="new-password"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => void handleSubmitPassword()}
-                                            disabled={accountEditorBusy}
-                                            className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
-                                        >
-                                            {accountEditorBusy ? t("common.loading") : t("common.confirm")}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setAccountEditorMode((prev) => (prev === "name" ? "none" : "name"));
-                                    setAccountEditorError(null);
-                                    setAccountEditorSuccess(null);
-                                }}
-                                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                            >
-                                {t("layout.changeName")}
-                            </button>
-                            {accountEditorMode === "name" && (
-                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-                                    <div className="grid gap-3">
-                                        <input
-                                            type="text"
-                                            value={displayNameDraft}
-                                            onChange={(event) => setDisplayNameDraft(event.target.value)}
-                                            placeholder={t("layout.changeName")}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => void handleSubmitDisplayName()}
-                                            disabled={accountEditorBusy}
-                                            className="rounded-lg bg-[#2F5C56] px-3 py-2 text-sm font-semibold text-white hover:bg-[#244a45] disabled:opacity-60"
-                                        >
-                                            {accountEditorBusy ? t("common.loading") : t("common.confirm")}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                            {accountEditorError && (
-                                <div className="text-xs text-rose-600 dark:text-rose-300">{accountEditorError}</div>
-                            )}
-                            {accountEditorSuccess && (
-                                <div className="text-xs text-emerald-600 dark:text-emerald-300">{accountEditorSuccess}</div>
-                            )}
-                        </div>
-                    </>
-                ) : activeTab === "notebook" ? (
-                    !notebookReady ? (
-                        <DeferredModulePanel
-                            title="Preparing notebook"
-                            description="Local notebook cache is loading first, then recent changes will sync in the background."
+                {activeTab === "settings" || activeTab === "account" ? (
+                    <Suspense fallback={null}>
+                        <SettingsAccountSidebar
+                            activeTab={activeTab}
+                            displayLanguage={displayLanguage}
+                            handleDisplayLanguageChange={handleDisplayLanguageChange}
+                            setSettingsDetail={setSettingsDetail}
+                            setMobileView={setMobileView}
+                            notificationSoundMode={notificationSoundMode}
+                            setNotificationSoundMode={setNotificationSoundMode}
+                            pluginSettingsSections={pluginSettingsSections}
+                            platformState={platformState}
+                            desktopUpdaterAvailable={desktopUpdaterAvailable}
+                            desktopUpdaterVersion={desktopUpdaterVersion}
+                            checkingDesktopUpdate={checkingDesktopUpdate}
+                            setCheckingDesktopUpdate={setCheckingDesktopUpdate}
+                            checkDesktopUpdaterOnce={checkDesktopUpdaterOnce}
+                            onLogout={onLogout}
+                            accountAvatarUrl={accountAvatarUrl}
+                            accountId={accountId}
+                            accountInitial={accountInitial}
+                            accountSubtitle={accountSubtitle}
+                            meProfile={meProfile}
+                            avatarUploading={avatarUploading}
+                            avatarUploadFeedback={avatarUploadFeedback}
+                            onUploadAvatar={onUploadAvatar}
+                            accountEditorMode={accountEditorMode}
+                            setAccountEditorMode={setAccountEditorMode}
+                            displayNameDraft={displayNameDraft}
+                            setDisplayNameDraft={setDisplayNameDraft}
+                            currentPasswordDraft={currentPasswordDraft}
+                            setCurrentPasswordDraft={setCurrentPasswordDraft}
+                            newPasswordDraft={newPasswordDraft}
+                            setNewPasswordDraft={setNewPasswordDraft}
+                            confirmPasswordDraft={confirmPasswordDraft}
+                            setConfirmPasswordDraft={setConfirmPasswordDraft}
+                            accountEditorBusy={accountEditorBusy}
+                            accountEditorError={accountEditorError}
+                            setAccountEditorError={setAccountEditorError}
+                            accountEditorSuccess={accountEditorSuccess}
+                            setAccountEditorSuccess={setAccountEditorSuccess}
+                            handleSubmitPassword={handleSubmitPassword}
+                            handleSubmitDisplayName={handleSubmitDisplayName}
+                            matrixCredentials={matrixCredentials}
+                            getDisplayLanguageLabel={getDisplayLanguageLabel}
+                            getTranslationLanguageLabel={getTranslationLanguageLabel}
                         />
-                    ) : (
-                        <Suspense fallback={<DeferredModulePanel
-                            title="Preparing notebook"
-                            description="Local notebook cache is loading first, then recent changes will sync in the background."
-                        />}>
-                            <NotebookWorkspaceDesktop
-                                auth={notebookWorkspaceAuth}
-                                enabled={notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved)}
-                                refreshToken={notebookRefreshToken}
-                                onAuthFailure={async () => refreshNotebookToken({ force: true })}
-                                onTerminalAuthFailure={triggerNotebookTerminalLogout}
-                                workspaceAvailable={notebookWorkspaceAvailable}
-                                userType={userType}
-                                sidebarMode={notebookSidebarMode}
-                                onSidebarModeChange={setNotebookSidebarMode}
-                                summaryQuery={summarySearchQuery}
-                                onSummaryQueryChange={setSummarySearchQuery}
-                                onSummarySearchNow={setDebouncedSummarySearchQuery}
-                                summaryLoading={summarySearchLoading}
-                                summaryError={summarySearchError}
-                                summaryPeopleResults={summaryPeopleResults}
-                                summaryRoomResults={summaryRoomResults}
-                                summarySelectedTarget={summarySelectedTarget}
-                                onSummarySelectTarget={setSummarySelectedTarget}
-                                summaryStartDate={summaryStartDate}
-                                summaryEndDate={summaryEndDate}
-                                onSummaryStartDateChange={setSummaryStartDate}
-                                onSummaryEndDateChange={setSummaryEndDate}
-                                onSummaryConfirm={onStartGenerateSummary}
-                                summaryConfirmLoading={summaryContentLoading}
-                                summaryConfirmHint={summaryConfirmHint}
-                                summaryWorkspacePanel={summaryWorkspacePanel}
-                                matrixClient={matrixClient}
-                                matrixAccessToken={matrixCredentials?.access_token ?? null}
-                                uploadLimitMb={notebookUploadLimitMb}
-                                pushToast={pushToast}
-                                onOpenPreview={(payload) => {
-                                    setPreviewZoom(1);
-                                    setPreviewOffset({ x: 0, y: 0 });
-                                    setFilePreview(payload);
-                                }}
-                            />
-                        </Suspense>
-                    )
+                    </Suspense>
+                ) : activeTab === "notebook" ? (
+                    null
                 ) : activeTab === "tasks" ? (
-                    <DeferredModulePanel
-                        title="Preparing tasks"
-                        description="The task workspace now loads as an isolated page to keep startup memory under control."
-                    />
+                    null
                 ) : (
                     <>
-                        {/* Search Bar */}
-                        <div ref={chatGlobalSearchPanelRef} className="relative p-3">
-                            <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 dark:bg-slate-800">
-                                <svg
-                                    className="w-5 h-5 text-gray-400 dark:text-slate-400"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                                    />
-                                </svg>
-                                <input
-                                    type="text"
-                                    value={chatGlobalSearchQuery}
-                                    onFocus={() => setChatGlobalSearchOpen(true)}
-                                    onChange={(event) => {
-                                        setChatGlobalSearchQuery(event.target.value);
-                                        setChatGlobalSearchOpen(true);
-                                        if (!event.target.value.trim()) {
-                                            setChatGlobalSearchResult(null);
-                                            setChatGlobalSearchCursor(null);
-                                            setChatGlobalSearchError(null);
-                                        }
-                                    }}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Enter") {
-                                            event.preventDefault();
-                                            void runChatGlobalSearch({ forceQuery: chatGlobalSearchQuery });
-                                        }
-                                        if (event.key === "Escape") {
-                                            setChatGlobalSearchOpen(false);
-                                        }
-                                    }}
-                                    placeholder={t("layout.searchPlaceholder")}
-                                    className="bg-transparent border-none outline-none text-sm w-full text-slate-700 placeholder-gray-400 dark:text-slate-200 dark:placeholder-slate-500"
-                                />
-                                {activeTab === "chat" && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowCreateRoomModal(true)}
-                                        className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
-                                    >
-                                        {t("layout.createRoomLabel", t("layout.groupChat", "New room"))}
-                                    </button>
-                                )}
-                            </div>
-                            {chatGlobalSearchOpen && (
-                                <div className="absolute left-3 right-3 top-[58px] z-30 max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                                    {chatGlobalSearchLoading && (
-                                        <div className="px-3 py-3 text-xs text-slate-500 dark:text-slate-300">搜尋中...</div>
-                                    )}
-                                    {chatGlobalSearchError && (
-                                        <div className="px-3 py-3 text-xs text-rose-600 dark:text-rose-300">{chatGlobalSearchError}</div>
-                                    )}
-                                    {!chatGlobalSearchLoading && !chatGlobalSearchError && chatGlobalSearchQuery.trim() && (
-                                        <>
-                                            {chatGlobalSearchResult?.people_hits?.length ? (
-                                                <div className="border-b border-gray-100 px-3 py-2 dark:border-slate-800">
-                                                    <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">人員</div>
-                                                    <div className="space-y-1">
-                                                        {chatGlobalSearchResult.people_hits.map((hit) => (
-                                                            <button
-                                                                key={`${hit.profile_id}-${hit.matrix_user_id || ""}`}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    void onSelectSearchPerson(hit);
-                                                                }}
-                                                                className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
-                                                            >
-                                                                <div className="font-semibold text-slate-700 dark:text-slate-100">{hit.display_name || hit.user_local_id || hit.matrix_user_id || "Unknown"}</div>
-                                                                <div className="text-slate-500 dark:text-slate-400">
-                                                                    {formatMatrixUserLocalId(hit.matrix_user_id) || hit.company_name || ""}
-                                                                </div>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : null}
-                                            {chatGlobalSearchResult?.message_hits?.length ? (
-                                                <div className="px-3 py-2">
-                                                    <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">消息</div>
-                                                    <div className="space-y-1">
-                                                        {chatGlobalSearchResult.message_hits.map((hit) => (
-                                                            <button
-                                                                key={`${hit.room_id}-${hit.event_id}`}
-                                                                type="button"
-                                                                onClick={() => onSelectSearchMessage(hit)}
-                                                                className="w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
-                                                            >
-                                                                <div className="line-clamp-2 font-semibold text-slate-700 dark:text-slate-100">{hit.preview || "(no preview)"}</div>
-                                                                <div className="text-slate-500 dark:text-slate-400">
-                                                                    {`${formatMatrixUserLocalId(hit.sender) || ""}${hit.ts ? ` · ${new Date(hit.ts).toLocaleString()}` : ""}`}
-                                                                </div>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : null}
-                                            {!chatGlobalSearchResult?.people_hits?.length && !chatGlobalSearchResult?.message_hits?.length && (
-                                                <div className="px-3 py-3 text-xs text-slate-500 dark:text-slate-300">沒有搜尋結果</div>
-                                            )}
-                                            {chatGlobalSearchCursor && (
-                                                <div className="border-t border-gray-100 px-3 py-2 dark:border-slate-800">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => void runChatGlobalSearch({ forceQuery: chatGlobalSearchQuery, cursor: chatGlobalSearchCursor, append: true })}
-                                                        disabled={chatGlobalSearchLoading}
-                                                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
-                                                    >
-                                                        載入更多
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                        <Suspense fallback={<div className="p-3" />}>
+                            <ChatSearchBar
+                                hubAccessToken={hubAccessToken}
+                                matrixAccessToken={matrixAccessToken}
+                                matrixHsUrl={matrixHsUrl}
+                                matrixCredentials={matrixCredentials}
+                                matrixClient={matrixClient}
+                                runHubSessionRequest={runHubSessionRequest}
+                                setActiveTab={(tab) => setActiveTab(tab as typeof activeTab)}
+                                setActiveRoomId={setActiveRoomId}
+                                setMobileView={setMobileView}
+                                setJumpToEventId={setJumpToEventId}
+                                activeTab={activeTab}
+                                setShowCreateRoomModal={setShowCreateRoomModal}
+                            />
+                        </Suspense>
 
                         {/* Room List Content (Placeholder) */}
                         {roomListMounted ? (
@@ -4573,512 +2340,51 @@ export const MainLayout: React.FC = () => {
             >
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
-                    <div className="flex-1 min-h-0 overflow-hidden gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
-                        {activeContact ? (
-                            <div className="flex-1 min-h-0 flex flex-col">
-                                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-slate-800 sm:px-8 sm:py-6">
-                                    <div className="flex items-center gap-3 sm:gap-4">
-                                        <button
-                                            type="button"
-                                            onClick={returnToMobileList}
-                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label={t("layout.backToList")}
-                                        >
-                                            &lt;
-                                        </button>
-                                        {(() => {
-                                            const contactAvatarUrl = getContactAvatarUrl(activeContact.matrixUserId);
-                                            if (contactAvatarUrl) {
-                                                return (
-                                                    <img
-                                                        src={contactAvatarUrl}
-                                                        alt={getContactLabel(activeContact)}
-                                                        className="w-16 h-16 rounded-full object-cover"
-                                                    />
-                                                );
-                                            }
-                                            return (
-                                                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-semibold dark:bg-emerald-900/40 dark:text-emerald-200">
-                                                    {getContactLabel(activeContact).charAt(0).toUpperCase()}
-                                                </div>
-                                            );
-                                        })()}
-                                        <div>
-                                            <div className="text-xl font-semibold text-slate-800 dark:text-slate-100">
-                                                {getContactLabel(activeContact)}
-                                            </div>
-                                            <div className="text-sm text-slate-500 dark:text-slate-400">
-                                                {activeContact.companyName || t("common.placeholder")}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="relative">
-                                        <button
-                                            ref={contactMenuButtonRef}
-                                            type="button"
-                                            onClick={() => setShowContactMenu((prev) => !prev)}
-                                            className="h-10 w-10 rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                            aria-label={t("layout.contactActions")}
-                                        >
-                                            ...
-                                        </button>
-                                        {showContactMenu && (
-                                            <div
-                                                ref={contactMenuRef}
-                                                className="absolute right-0 mt-2 w-40 rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-xl dark:border-slate-800 dark:bg-slate-900"
-                                            >
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setShowContactMenu(false);
-                                                        setShowRemoveContactConfirm(true);
-                                                    }}
-                                                    className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-slate-800"
-                                                >
-                                                    {t("layout.removeContact")}
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                {showRemoveContactConfirm && (
-                                    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
-                                        <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
-                                            <div className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-3">
-                                                {t("layout.removeContactConfirm")}
-                                            </div>
-                                            <div className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                                                {getContactLabel(activeContact)}
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowRemoveContactConfirm(false)}
-                                                    className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                >
-                                                    {t("common.cancel")}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => void onRemoveActiveContact()}
-                                                    className="flex-1 rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600"
-                                                >
-                                                    {t("common.confirm")}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="flex-1 px-6 py-4 sm:px-8">
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                                                    {t("layout.details.id")}
-                                                </div>
-                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                    {activeContact.userLocalId || getLocalPart(activeContact.matrixUserId) || t("common.placeholder")}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                                                    {t("layout.details.name")}
-                                                </div>
-                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                    {activeContact.displayName || t("common.placeholder")}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                                                    {t("layout.details.gender")}
-                                                </div>
-                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                    {getGenderLabel(activeContact.gender)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                                                    {t("layout.details.country")}
-                                                </div>
-                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                    {activeContact.country || t("common.placeholder")}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                                                    {t("layout.details.language")}
-                                                </div>
-                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                    {getLanguageLabel(activeContact)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950">
-                                        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                                            {t("layout.sharedRoomsTitle")}
-                                        </div>
-                                        <div className="mt-2 space-y-1.5">
-                                            {sharedContactRooms.length > 0 ? (
-                                                sharedContactRooms.map((room) => {
-                                                    const selected = room.roomId === selectedSharedRoomId;
-                                                    return (
-                                                        <button
-                                                            key={room.roomId}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedSharedRoomId(room.roomId);
-                                                                setContactRoomActionError(null);
-                                                            }}
-                                                            className={`w-full rounded-lg border px-3 py-1.5 text-left transition ${selected
-                                                                ? "border-emerald-400 bg-emerald-50 text-emerald-900 dark:border-emerald-500/60 dark:bg-emerald-900/30 dark:text-emerald-100"
-                                                                : "border-gray-200 bg-white text-slate-700 hover:border-emerald-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                                                }`}
-                                                        >
-                                                            <div className="text-sm font-semibold leading-5">{`${room.displayName} (${room.memberCount})`}</div>
-                                                        </button>
-                                                    );
-                                                })
-                                            ) : (
-                                                <div className="rounded-lg border border-dashed border-gray-200 px-3 py-2 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                                    {t("layout.sharedRoomsEmpty")}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="sticky bottom-0 px-6 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3 sm:px-8 lg:static lg:pt-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-gray-100 dark:border-slate-800 lg:border-t-0">
-                                    {contactRoomActionError ? (
-                                        <div className="mb-2 text-xs text-rose-500 dark:text-rose-300">{contactRoomActionError}</div>
-                                    ) : null}
-                                    <div className="flex gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => void onStartContactChat()}
-                                            disabled={!selectedSharedRoomId}
-                                            className="inline-flex items-center justify-center rounded-xl bg-[#2F5C56] px-6 py-3 text-sm font-semibold text-white shadow-md enabled:hover:bg-[#244a45] disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-emerald-500 dark:enabled:hover:bg-emerald-400 dark:disabled:bg-slate-700"
-                                        >
-                                            {t("layout.chatAction")}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => void onCreateContactRoom()}
-                                            disabled={creatingContactRoom}
-                                            className="inline-flex items-center justify-center rounded-xl border border-emerald-500 px-6 py-3 text-sm font-semibold text-emerald-700 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400 dark:text-emerald-300 dark:enabled:hover:bg-emerald-900/20"
-                                        >
-                                            {creatingContactRoom ? t("layout.creatingRoomAction") : t("layout.createRoomAction")}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                                {t("layout.selectContact")}
-                            </div>
-                        )}
-                    </div>
-                ) : activeTab === "files" ? (
-                    !filesReady ? (
-                        <DeferredModulePanel
-                            title="Preparing files"
-                            description="The local file index is being restored first so room navigation stays smooth."
+                    <Suspense fallback={null}>
+                        <ContactsPanel
+                            matrixClient={matrixClient}
+                            matrixCredentials={matrixCredentials}
+                            activeContact={activeContact}
+                            setActiveContact={setActiveContact}
+                            showContactMenu={showContactMenu}
+                            setShowContactMenu={setShowContactMenu}
+                            showRemoveContactConfirm={showRemoveContactConfirm}
+                            setShowRemoveContactConfirm={setShowRemoveContactConfirm}
+                            setContactsRefreshToken={setContactsRefreshToken}
+                            selectedSharedRoomId={selectedSharedRoomId}
+                            setSelectedSharedRoomId={setSelectedSharedRoomId}
+                            creatingContactRoom={creatingContactRoom}
+                            setCreatingContactRoom={setCreatingContactRoom}
+                            contactRoomActionError={contactRoomActionError}
+                            setContactRoomActionError={setContactRoomActionError}
+                            setActiveRoomId={setActiveRoomId}
+                            setActiveTab={setActiveTab}
+                            setMobileView={setMobileView}
+                            getContactLabel={getContactLabel}
+                            getContactAvatarUrl={getContactAvatarUrl}
+                            returnToMobileList={returnToMobileList}
+                            hubAccessToken={hubAccessToken}
+                            hubSessionExpiresAt={hubSessionExpiresAt}
                         />
-                    ) : (
-                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white dark:bg-slate-900">
-                        {!selectedRoomSummary ? (
-                            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                                {t("layout.fileNoRoomSelected")}
-                            </div>
-                        ) : (
-                            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-                                <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-100 dark:border-slate-800">
-                                    <button
-                                        type="button"
-                                        onClick={() => setMobileView("list")}
-                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                        aria-label={t("layout.backToList")}
-                                    >
-                                        &lt;
-                                    </button>
-                                    <div className="min-w-0">
-                                        <div className="text-[18px] font-semibold leading-7 text-slate-800 truncate dark:text-slate-100">
-                                            {selectedRoomSummary.roomName}
-                                        </div>
-                                        <div className="text-[14px] leading-5 text-slate-500 dark:text-slate-400">
-                                            {t("layout.filesCountLabel", { count: selectedRoomSummary.attachmentCount })}
-                                        </div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowFileToolbarMenu((prev) => !prev)}
-                                        className="h-10 rounded-xl border border-gray-200 px-3 text-sm text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
-                                    >
-                                        ...
-                                    </button>
-                                </div>
-                                {showFileToolbarMenu && (
-                                    <div className="mx-6 mt-2 w-40 rounded-xl border border-gray-200 bg-white py-1.5 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                                        <button
-                                            type="button"
-                                            disabled={fileBatchDeleting}
-                                            className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                            onClick={() => {
-                                                if (fileBatchDeleting) return;
-                                                setFileBatchMode((prev) => !prev);
-                                                setSelectedFileIds([]);
-                                                setShowFileToolbarMenu(false);
-                                            }}
-                                        >
-                                            {fileBatchMode ? t("layout.fileBatchCancel") : t("layout.fileBatchSelect")}
-                                        </button>
-                                    </div>
-                                )}
-                                {fileBatchMode && (
-                                    <div className="mx-6 mt-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300">
-                                        <span>
-                                            {fileBatchDeleting
-                                                ? t("layout.fileBatchDeletingProgress", {
-                                                    done: fileBatchDeleteProgress.done,
-                                                    total: fileBatchDeleteProgress.total,
-                                                })
-                                                : t("layout.fileBatchSelectedCount", { count: selectedFileIds.length })}
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={toggleSelectAllVisibleFiles}
-                                                disabled={fileBatchDeleting || visibleSelectedRoomFiles.length === 0}
-                                                className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:border-emerald-400 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300 dark:hover:border-emerald-500 dark:hover:bg-emerald-900/30"
-                                            >
-                                                {allVisibleFilesSelected
-                                                    ? t("layout.fileBatchDeselectAll", "取消全选")
-                                                    : t("layout.fileBatchSelectAll", "全选")}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => void onDeleteBatchFiles()}
-                                                disabled={fileBatchDeleting || selectedFileIds.length === 0}
-                                                className="rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                            >
-                                                {fileBatchDeleting ? t("layout.fileDeletingBusy") : t("layout.fileBatchDelete")}
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="px-6 pt-4">
-                                    {fileHistoryLoadingRoomId === selectedFileRoomId && (
-                                        <div className="mb-2 text-sm text-slate-500 dark:text-slate-400">
-                                            {t("common.loading")}
-                                        </div>
-                                    )}
-                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px]">
-                                        <input
-                                            type="text"
-                                            value={fileListSearch}
-                                            onChange={(event) => setFileListSearch(event.target.value)}
-                                            placeholder={t("layout.filesListSearchPlaceholder")}
-                                            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                        />
-                                        <select
-                                            value={fileListTypeFilter}
-                                            onChange={(event) =>
-                                                setFileListTypeFilter(
-                                                    event.target.value as "all" | "image" | "video" | "audio" | "pdf" | "other",
-                                                )
-                                            }
-                                            className="rounded-xl border border-gray-200 bg-white px-3 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                        >
-                                            <option value="all">{t("layout.fileFilterTypeAll")}</option>
-                                            <option value="image">{t("layout.fileFilterTypeImage")}</option>
-                                            <option value="video">{t("layout.fileFilterTypeVideo")}</option>
-                                            <option value="audio">{t("layout.fileFilterTypeAudio")}</option>
-                                            <option value="pdf">{t("layout.fileFilterTypePdf")}</option>
-                                            <option value="other">{t("layout.fileFilterTypeOther")}</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="hidden px-6 pt-3 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400 sm:block">
-                                    <div className="grid grid-cols-[32px_84px_90px_90px_1fr] gap-2">
-                                        <span />
-                                        <span>{t("layout.fileColumnPreview")}</span>
-                                        <span>{t("layout.fileColumnType")}</span>
-                                        <span>{t("layout.fileColumnSize")}</span>
-                                        <span>{t("layout.fileColumnActions")}</span>
-                                    </div>
-                                </div>
-                                <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] space-y-2 touch-pan-y">
-                                    {visibleSelectedRoomFiles.length === 0 ? (
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-base text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
-                                            {t("layout.fileListEmptyInRoom")}
-                                        </div>
-                                    ) : (
-                                        pagedVisibleSelectedRoomFiles.map((item) => {
-                                            const fileType = getFileTypeGroup(item);
-                                            const ext = getFileExtension(item.body, item.mimeType);
-                                            return (
-                                                <div
-                                                    key={item.eventId}
-                                                    onClick={fileBatchMode ? () => toggleFileSelection(item.eventId) : undefined}
-                                                    className={`flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950 sm:grid sm:grid-cols-[32px_84px_90px_90px_1fr] sm:items-center sm:gap-3 sm:px-3 sm:py-3 ${
-                                                        fileBatchMode ? "cursor-pointer" : ""
-                                                    }`}
-                                                >
-                                                    <div className={fileBatchMode ? "flex w-6 shrink-0 items-center justify-center" : "hidden items-center justify-center sm:flex"}>
-                                                        {fileBatchMode ? (
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isFileSelected(item.eventId)}
-                                                                onChange={() => toggleFileSelection(item.eventId)}
-                                                                onClick={(event) => event.stopPropagation()}
-                                                                className="h-4 w-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900"
-                                                            />
-                                                        ) : <span />}
-                                                    </div>
-                                                    <div className="h-14 w-20 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-                                                        {fileType === "image" && fileThumbnailUrls[item.eventId] ? (
-                                                            <button
-                                                                type="button"
-                                                                disabled={fileBatchMode}
-                                                                onClick={(event) => {
-                                                                    event.stopPropagation();
-                                                                    if (fileBatchMode) return;
-                                                                    onPreviewFileItem(item);
-                                                                }}
-                                                                className="h-full w-full disabled:cursor-default"
-                                                            >
-                                                                <img src={fileThumbnailUrls[item.eventId]} alt={item.body} className="h-full w-full object-cover" />
-                                                            </button>
-                                                        ) : fileType === "video" && fileThumbnailUrls[item.eventId] ? (
-                                                            <button
-                                                                type="button"
-                                                                disabled={fileBatchMode}
-                                                                onClick={(event) => {
-                                                                    event.stopPropagation();
-                                                                    if (fileBatchMode) return;
-                                                                    onPreviewFileItem(item);
-                                                                }}
-                                                                className="h-full w-full disabled:cursor-default"
-                                                            >
-                                                                <video src={fileThumbnailUrls[item.eventId]} className="h-full w-full object-cover" muted preload="metadata" />
-                                                            </button>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={(event) => {
-                                                                    event.stopPropagation();
-                                                                    if (fileBatchMode || fileType === "other") return;
-                                                                    onPreviewFileItem(item);
-                                                                }}
-                                                                disabled={fileBatchMode || fileType === "other"}
-                                                                className="flex h-full w-full items-center justify-center text-sm font-semibold text-slate-500 disabled:cursor-default dark:text-slate-300"
-                                                            >
-                                                                {ext}
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <div className="min-w-0 flex-1 sm:contents">
-                                                        <div className="truncate text-base font-semibold text-slate-700 dark:text-slate-200 sm:hidden">
-                                                            {item.body || "file"}
-                                                        </div>
-                                                        <div className="text-base text-slate-700 dark:text-slate-200 sm:block">{ext}</div>
-                                                        <div className="text-sm text-slate-500 dark:text-slate-400 sm:text-base sm:text-slate-700 sm:dark:text-slate-200">
-                                                            {item.sizeBytes == null ? "--" : `${formatBytesToMb(item.sizeBytes)} MB`}
-                                                        </div>
-                                                    </div>
-                                                    <div className="relative ml-auto flex items-center justify-between gap-2 sm:ml-0">
-                                                        <div className="hidden min-w-0 flex-1 truncate text-sm text-slate-500 dark:text-slate-400 sm:block">
-                                                            {new Date(item.ts).toLocaleString()}
-                                                        </div>
-                                                        {!fileBatchMode && (
-                                                            <button
-                                                                type="button"
-                                                                disabled={fileDeletingEventId === item.eventId || fileBatchDeleting}
-                                                                onClick={() => setActiveFileMenuEventId((prev) => (prev === item.eventId ? null : item.eventId))}
-                                                                className="rounded-full px-2 text-slate-400 hover:bg-gray-200 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-                                                            >
-                                                                ...
-                                                            </button>
-                                                        )}
-                                                        {!fileBatchMode && activeFileMenuEventId === item.eventId && (
-                                                            <div className="absolute right-0 top-8 z-20 w-32 rounded-xl border border-gray-200 bg-white py-1.5 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                                                                {getFilePreviewType(item) && (
-                                                                    <button
-                                                                        type="button"
-                                                                        className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                                        onClick={() => {
-                                                                            setActiveFileMenuEventId(null);
-                                                                            onPreviewFileItem(item);
-                                                                        }}
-                                                                    >
-                                                                        {t("layout.fileActionPreview")}
-                                                                    </button>
-                                                                )}
-                                                                <button
-                                                                    type="button"
-                                                                    className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                                    onClick={() => {
-                                                                        setActiveFileMenuEventId(null);
-                                                                        onOpenFileItem(item);
-                                                                    }}
-                                                                >
-                                                                    {t("layout.fileActionDownload")}
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    className="w-full px-3 py-2 text-left text-slate-600 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                                                                    onClick={() => {
-                                                                        setActiveFileMenuEventId(null);
-                                                                        onJumpToFileMessage(item);
-                                                                    }}
-                                                                >
-                                                                    {t("layout.fileActionJump")}
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={fileDeletingEventId === item.eventId || fileBatchDeleting}
-                                                                    className="w-full px-3 py-2 text-left text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-slate-800"
-                                                                    onClick={() => void onDeleteFileItem(item)}
-                                                                >
-                                                                    {fileDeletingEventId === item.eventId
-                                                                        ? t("layout.fileDeletingBusy")
-                                                                        : t("layout.fileActionDelete")}
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                    {canLoadMoreFiles && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setFileListPage((prev) => prev + 1)}
-                                            className="mx-auto block rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-slate-600 hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
-                                        >
-                                            {t("layout.fileLoadMore", {
-                                                shown: pagedVisibleSelectedRoomFiles.length,
-                                                total: visibleSelectedRoomFiles.length,
-                                            })}
-                                        </button>
-                                    )}
-                                </div>
-                                {fileActionError && (
-                                    <div className="px-6 pb-4 text-sm text-rose-500">{fileActionError}</div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                    )
+                    </Suspense>
+                ) : activeTab === "files" ? (
+                    <Suspense fallback={null}>
+                        <FileCenterPanel
+                            matrixClient={matrixClient}
+                            matrixCredentials={matrixCredentials}
+                            matrixAccessToken={matrixAccessToken}
+                            selectedFileRoomId={selectedFileRoomId}
+                            setSelectedFileRoomId={setSelectedFileRoomId}
+                            setActiveRoomId={setActiveRoomId}
+                            setActiveTab={setActiveTab}
+                            setJumpToEventId={setJumpToEventId}
+                            setMobileView={setMobileView}
+                            fileLibraryTick={fileLibraryTick}
+                            setFileLibraryTick={setFileLibraryTick}
+                            filesReady={filesReady}
+                            isMobileApp={isMobileApp}
+                        />
+                    </Suspense>
                 ) : activeTab === "notebook" ? (
                     !notebookReady ? (
                         <DeferredModulePanel
@@ -5090,7 +2396,7 @@ export const MainLayout: React.FC = () => {
                             title="Preparing notebook"
                             description="Local notebook cache is loading first, then recent changes will sync in the background."
                         />}>
-                            <NotebookWorkspaceDesktop
+                            <NotebookPanel
                                 auth={notebookWorkspaceAuth}
                                 enabled={notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved)}
                                 refreshToken={notebookRefreshToken}
@@ -5098,29 +2404,19 @@ export const MainLayout: React.FC = () => {
                                 onTerminalAuthFailure={triggerNotebookTerminalLogout}
                                 workspaceAvailable={notebookWorkspaceAvailable}
                                 userType={userType}
-                                sidebarMode={notebookSidebarMode}
-                                onSidebarModeChange={setNotebookSidebarMode}
-                                summaryQuery={summarySearchQuery}
-                                onSummaryQueryChange={setSummarySearchQuery}
-                                onSummarySearchNow={setDebouncedSummarySearchQuery}
-                                summaryLoading={summarySearchLoading}
-                                summaryError={summarySearchError}
-                                summaryPeopleResults={summaryPeopleResults}
-                                summaryRoomResults={summaryRoomResults}
-                                summarySelectedTarget={summarySelectedTarget}
-                                onSummarySelectTarget={setSummarySelectedTarget}
-                                summaryStartDate={summaryStartDate}
-                                summaryEndDate={summaryEndDate}
-                                onSummaryStartDateChange={setSummaryStartDate}
-                                onSummaryEndDateChange={setSummaryEndDate}
-                                onSummaryConfirm={onStartGenerateSummary}
-                                summaryConfirmLoading={summaryContentLoading}
-                                summaryConfirmHint={summaryConfirmHint}
-                                summaryWorkspacePanel={summaryWorkspacePanel}
                                 matrixClient={matrixClient}
+                                matrixCredentials={matrixCredentials}
                                 matrixAccessToken={matrixCredentials?.access_token ?? null}
+                                matrixHsUrl={matrixHsUrl}
+                                hubAccessToken={hubAccessToken}
+                                runHubSessionRequest={runHubSessionRequest}
                                 uploadLimitMb={notebookUploadLimitMb}
                                 pushToast={pushToast}
+                                activeTab={activeTab}
+                                fallback={<DeferredModulePanel
+                                    title="Preparing notebook"
+                                    description="Local notebook cache is loading first, then recent changes will sync in the background."
+                                />}
                                 onOpenPreview={(payload) => {
                                     setPreviewZoom(1);
                                     setPreviewOffset({ x: 0, y: 0 });
@@ -5167,153 +2463,24 @@ export const MainLayout: React.FC = () => {
                         />
                     )
                 ) : activeTab === "settings" || activeTab === "account" ? (
-                    <div className="flex-1 min-h-0 overflow-y-scroll gt-visible-scrollbar flex flex-col bg-white dark:bg-slate-900">
-                        {activeTab === "settings" && settingsDetail === "chat-language" ? (
-                            <>
-                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    {t("layout.selectItem")}
-                                </div>
-                                <div className="px-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={returnToMobileList}
-                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label={t("layout.backToList")}
-                                        >
-                                            &lt;
-                                        </button>
-                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            {t("layout.chatReceiveLanguage")}
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                                        {translationLanguageOptions.map((option) => (
-                                            <button
-                                                key={option.value}
-                                                type="button"
-                                                disabled={chatReceiveLanguageSaving}
-                                                onClick={() => {
-                                                    if (chatReceiveLanguageSaving || chatReceiveLanguage === option.value) {
-                                                        return;
-                                                    }
-                                                    void handleChatReceiveLanguageChange(option.value);
-                                                }}
-                                                className={`rounded-lg border px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 ${chatReceiveLanguage === option.value
-                                                    ? "border-yellow-400 text-yellow-600 dark:text-yellow-300"
-                                                    : "border-gray-200"
-                                                    }`}
-                                            >
-                                                {option.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            </>
-                        ) : activeTab === "settings" && settingsDetail === "translation-default" ? (
-                            <>
-                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    {t("layout.selectItem")}
-                                </div>
-                                <div className="px-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMobileView("list")}
-                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label={t("layout.backToList")}
-                                        >
-                                            &lt;
-                                        </button>
-                                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                            {t("layout.translationDefaultContent")}
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setTranslationDefaultView("translated");
-                                                setSettingsDetail("none");
-                                                setMobileView("list");
-                                            }}
-                                            className={`rounded-lg border px-3 py-2 text-sm ${translationDefaultView === "translated"
-                                                    ? "border-emerald-400 text-emerald-600"
-                                                    : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                                }`}
-                                        >
-                                            {t("layout.translationDefaultTranslated")}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setTranslationDefaultView("bilingual");
-                                                setSettingsDetail("none");
-                                                setMobileView("list");
-                                            }}
-                                            className={`rounded-lg border px-3 py-2 text-sm ${translationDefaultView === "bilingual"
-                                                    ? "border-emerald-400 text-emerald-600"
-                                                    : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                                }`}
-                                        >
-                                            {t("layout.translationDefaultBilingual")}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setTranslationDefaultView("original");
-                                                setSettingsDetail("none");
-                                                setMobileView("list");
-                                            }}
-                                            className={`rounded-lg border px-3 py-2 text-sm ${translationDefaultView === "original"
-                                                    ? "border-emerald-400 text-emerald-600"
-                                                    : "border-gray-200 text-slate-700 hover:bg-gray-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-800"
-                                                }`}
-                                        >
-                                            {t("layout.translationDefaultOriginal")}
-                                        </button>
-                                    </div>
-                                </div>
-                            </>
-                        ) : activeTab === "settings" && activePluginSettingsSection ? (
-                            <>
-                                <div className="px-6 py-4 text-sm text-slate-400 dark:text-slate-500">
-                                    {activePluginSettingsSection.pluginName}
-                                </div>
-                                <div className="px-6 pb-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMobileView("list")}
-                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-emerald-400 dark:border-slate-700 dark:text-slate-300 dark:hover:text-slate-100 lg:hidden"
-                                            aria-label={t("layout.backToList")}
-                                        >
-                                            &lt;
-                                        </button>
-                                        <div>
-                                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                {activePluginSettingsSection.label}
-                                            </div>
-                                            {activePluginSettingsSection.description && (
-                                                <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                    {activePluginSettingsSection.description}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    {activePluginSettingsSection.render?.(runtimeContext, platformState, tools) ?? (
-                                        <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                            This plugin section has no UI yet.
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                                {t("layout.selectItem")}
-                            </div>
-                        )}
-                    </div>
+                    <Suspense fallback={null}>
+                        <SettingsAccountDetail
+                            activeTab={activeTab}
+                            settingsDetail={settingsDetail}
+                            setSettingsDetail={setSettingsDetail}
+                            setMobileView={setMobileView}
+                            chatReceiveLanguage={chatReceiveLanguage}
+                            chatReceiveLanguageSaving={chatReceiveLanguageSaving}
+                            translationDefaultView={translationDefaultView}
+                            setTranslationDefaultView={setTranslationDefaultView}
+                            handleChatReceiveLanguageChange={handleChatReceiveLanguageChange}
+                            activePluginSettingsSection={activePluginSettingsSection}
+                            runtimeContext={pluginRuntimeContextValue}
+                            platformState={platformState}
+                            tools={tools}
+                            returnToMobileList={returnToMobileList}
+                        />
+                    </Suspense>
                 ) : (
                     <Outlet
                         context={{
@@ -5381,6 +2548,7 @@ export const MainLayout: React.FC = () => {
                     </div>
                 </div>
             )}
+
             {filePreview && (
                 <div
                     className={`fixed inset-0 z-[60] flex items-center justify-center bg-black/80 px-4 ${
@@ -5498,6 +2666,7 @@ export const MainLayout: React.FC = () => {
                     )}
                 </div>
             )}
+
         </div>
     );
 };

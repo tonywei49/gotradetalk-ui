@@ -64,11 +64,13 @@ import {
 import { getMessageEventKey, type TranslationDisplayMode, useMessageTranslation } from "./hooks/useMessageTranslation";
 import { useNotebookAssist } from "./hooks/useNotebookAssist";
 import { MessageActionsMenu } from "./components/MessageActionsMenu";
-import { getNotebookAdapter } from "../notebook";
+import { getNotebookAdapter } from "../notebook/adapters";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
 import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
 import { isNotebookTerminalAuthFailure } from "../notebook/utils/isNotebookTerminalAuthFailure";
-import { TaskQuickCreate, TaskRoomBar, type TaskChatContext } from "../tasks";
+import { TaskQuickCreate } from "../tasks/components/TaskQuickCreate";
+import { TaskRoomBar } from "../tasks/components/TaskRoomBar";
+import type { TaskChatContext } from "../tasks/hooks/useTaskUI";
 import {
     chatSearchLocate,
     chatSearchRoom,
