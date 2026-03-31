@@ -2323,6 +2323,7 @@ export const MainLayout: React.FC = () => {
                                     pinnedRoomIds={pinnedRoomIds}
                                     enableContactPolling
                                     notificationSoundMode={notificationSoundMode}
+                                    autoSelectInitialRoom={!isWindowsDesktop}
                                 />
                             </Suspense>
                         ) : (

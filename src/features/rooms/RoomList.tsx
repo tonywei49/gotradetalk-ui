@@ -106,6 +106,7 @@ type RoomListProps = {
     pinnedRoomIds?: string[];
     enableContactPolling?: boolean;
     notificationSoundMode?: NotificationSoundMode;
+    autoSelectInitialRoom?: boolean;
 };
 
 const EMPTY_STATE: ChatRoomEntry[] = [];
@@ -367,6 +368,7 @@ export function RoomList({
     pinnedRoomIds = [],
     enableContactPolling = true,
     notificationSoundMode = "classic",
+    autoSelectInitialRoom = true,
 }: RoomListProps) {
     const { t } = useTranslation();
     const [rooms, setRooms] = useState<ChatRoomEntry[]>(EMPTY_STATE);
@@ -1287,12 +1289,13 @@ export function RoomList({
     const activeRooms = visibleRooms.filter((entry) => entry.myMembership !== "invite");
 
     useEffect(() => {
+        if (!autoSelectInitialRoom) return;
         if (view !== "chat") return;
         if (activeRoomId) return;
         const preferredRoom = activeRooms[0] ?? inviteRooms[0] ?? null;
         if (!preferredRoom) return;
         onSelectRoom(preferredRoom.roomId);
-    }, [activeRoomId, activeRooms, inviteRooms, onSelectRoom, view]);
+    }, [activeRoomId, activeRooms, autoSelectInitialRoom, inviteRooms, onSelectRoom, view]);
 
     useEffect(() => {
         if (view !== "contacts") return;
