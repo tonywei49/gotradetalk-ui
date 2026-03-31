@@ -338,6 +338,8 @@ function isNotebookAuthFailure(error: unknown): boolean {
 const TASKS_WARMUP_DELAY_MS = 600;
 const FILES_WARMUP_DELAY_MS = 1400;
 const NOTEBOOK_WARMUP_DELAY_MS = 2600;
+const WINDOWS_ROOM_LIST_MOUNT_DELAY_MS = 900;
+const WINDOWS_MATRIX_BOOT_DELAY_MS = 2600;
 const WORKSPACE_CACHE_PREFIX = "gtt_workspace_state_v1:";
 const WORKSPACE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const NOTEBOOK_API_BASE_URL_CACHE_PREFIX = "gtt_notebook_api_base_url_v1:";
@@ -426,8 +428,8 @@ export const MainLayout: React.FC = () => {
     const runtimePlatform = useMemo(() => resolveRuntimePlatform(), []);
     const isWindowsDesktop = useMemo(() => isTauriDesktop() && runtimePlatform === "windows", [runtimePlatform]);
     const shouldWarmDeferredModules = !(isTauriDesktop() && runtimePlatform === "windows");
-    const [shellReady, setShellReady] = useState(!isWindowsDesktop);
     const [roomListMounted, setRoomListMounted] = useState(!isWindowsDesktop);
+    const [matrixBootReady, setMatrixBootReady] = useState(!isWindowsDesktop);
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
@@ -724,18 +726,23 @@ export const MainLayout: React.FC = () => {
     useEffect(() => {
         if (!isWindowsDesktop) return;
         let cancelled = false;
-        const revealShell = (): void => {
+        setRoomListMounted(false);
+        setMatrixBootReady(false);
+
+        const roomListTimer = window.setTimeout(() => {
             if (cancelled) return;
-            setShellReady(true);
-            window.setTimeout(() => {
-                if (!cancelled) {
-                    setRoomListMounted(true);
-                }
-            }, 180);
-        };
-        revealShell();
+            setRoomListMounted(true);
+        }, WINDOWS_ROOM_LIST_MOUNT_DELAY_MS);
+
+        const matrixBootTimer = window.setTimeout(() => {
+            if (cancelled) return;
+            setMatrixBootReady(true);
+        }, WINDOWS_MATRIX_BOOT_DELAY_MS);
+
         return () => {
             cancelled = true;
+            window.clearTimeout(roomListTimer);
+            window.clearTimeout(matrixBootTimer);
         };
     }, [isWindowsDesktop]);
     const meUpdateToken = hubAccessToken && !localeTokenExpired ? hubAccessToken : null;
@@ -1244,12 +1251,12 @@ export const MainLayout: React.FC = () => {
     ]);
 
     useEffect(() => {
-        if (!shellReady || matrixClient || !matrixCredentials) return;
+        if (!matrixBootReady || matrixClient || !matrixCredentials) return;
         void ensureMatrixClient();
-    }, [ensureMatrixClient, matrixClient, matrixCredentials, shellReady]);
+    }, [ensureMatrixClient, matrixBootReady, matrixClient, matrixCredentials]);
 
     useEffect(() => {
-        if (!shellReady || !matrixClient) return undefined;
+        if (!matrixBootReady || !matrixClient) return undefined;
         let cancelled = false;
 
         void import("../matrix/client").then(({ prepareMatrixClient }) =>
@@ -1266,7 +1273,7 @@ export const MainLayout: React.FC = () => {
             cancelled = true;
             matrixClient.stopClient();
         };
-    }, [matrixClient, shellReady]);
+    }, [matrixBootReady, matrixClient]);
 
     useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) return undefined;

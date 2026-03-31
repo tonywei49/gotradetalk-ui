@@ -168,7 +168,6 @@ function DesktopChatRouteBootstrap() {
 }
 
 function DesktopWorkspaceBootstrap() {
-    const ensureMatrixClient = useAuthStore((state) => state.ensureMatrixClient);
     const [ready, setReady] = useState(false);
     const [LayoutComponent, setLayoutComponent] = useState<ComponentType | null>(null);
 
@@ -186,10 +185,6 @@ function DesktopWorkspaceBootstrap() {
                     const module = await loadMainLayout();
                     if (cancelled) return;
                     setLayoutComponent(() => module.default);
-                    window.setTimeout(() => {
-                        if (cancelled) return;
-                        void ensureMatrixClient();
-                    }, 120);
                 } catch (error) {
                     console.warn("Desktop workspace layout load failed:", error);
                 }
@@ -202,7 +197,7 @@ function DesktopWorkspaceBootstrap() {
             cancelled = true;
             window.clearTimeout(timer);
         };
-    }, [ensureMatrixClient]);
+    }, []);
 
     if (!ready) {
         return <RouteTransitionScreen />;
