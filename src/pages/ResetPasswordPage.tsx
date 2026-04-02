@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { hubClientLogin, hubClientResetPassword } from "../api/hub";
 import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
-import { getSupabaseClient } from "../api/supabase";
+import { getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { setLanguage } from "../i18n";
@@ -34,10 +34,17 @@ export function ResetPasswordPage() {
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
     const clientSessionMetadata = getClientLoginSessionMetadata();
+    const supabaseAvailable = useMemo(() => hasSupabaseConfig(), []);
+    const supabaseUnavailableMessage = "Supabase is unavailable in this desktop build.";
 
     const email = useMemo(() => session?.user?.email ?? "", [session]);
 
     useEffect(() => {
+        if (!supabaseAvailable) {
+            setLoading(false);
+            setError(supabaseUnavailableMessage);
+            return;
+        }
         const supabase = getSupabaseClient();
         void (async (): Promise<void> => {
             const { data } = await supabase.auth.getSession();
@@ -50,7 +57,7 @@ export function ResetPasswordPage() {
         return () => {
             data.subscription.unsubscribe();
         };
-    }, []);
+    }, [supabaseAvailable]);
 
     const isValidPassword = (value: string): boolean => {
         if (value.length < 10) return false;
@@ -137,7 +144,7 @@ export function ResetPasswordPage() {
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
                         <h2>{t("auth.client.resetTitle")}</h2>
-                        <p>{t("auth.client.resetInvalid")}</p>
+                        <p>{error ?? t("auth.client.resetInvalid")}</p>
                     </div>
                     <div className="gt_actions">
                         <button type="button" className="gt_primary" onClick={() => navigate("/")}>

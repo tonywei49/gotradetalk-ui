@@ -48,7 +48,6 @@ import {
     type NotificationSoundMode,
 } from "../utils/notificationSound";
 import { updateStaffLanguage, updateStaffTranslationLanguage } from "../api/profile";
-import { getSupabaseClient } from "../api/supabase";
 import { setLanguage } from "../i18n";
 import { DEPRECATED_DM_PREFIX } from "../constants/rooms";
 import { traceEvent } from "../utils/debugTrace";
@@ -1003,11 +1002,13 @@ export const MainLayout: React.FC = () => {
 
     const clearLocalAuthSession = useCallback((): void => {
         clearSession();
-        void getSupabaseClient()
-            .auth.signOut({ scope: "local" })
-            .catch(() => {
+        void import("../api/supabase").then(({ getOptionalSupabaseClient }) => {
+            const supabase = getOptionalSupabaseClient();
+            if (!supabase) return;
+            void supabase.auth.signOut({ scope: "local" }).catch(() => {
                 // ignore local sign-out failures during session cleanup
             });
+        });
     }, [clearSession]);
 
     const onLogout = useCallback((): void => {
@@ -1035,6 +1036,92 @@ export const MainLayout: React.FC = () => {
         notebookUserSubRef.current = parseJwtSub(hubSession?.access_token);
     }, [hubSession?.access_token]);
 
+    useEffect(() => {
+        if (!userType || !matrixCredentials) return;
+
+        let active = true;
+        let unsubscribe: (() => void) | undefined;
+        const currentHubSub = parseJwtSub(hubSession?.access_token);
+
+        type SupabaseSessionSyncClient = {
+            auth: {
+                setSession: (session: { access_token: string; refresh_token: string }) => Promise<unknown>;
+            };
+        };
+
+        const syncSupabaseFromCurrentSession = async (
+            supabase: SupabaseSessionSyncClient,
+        ): Promise<void> => {
+            if (!active) return;
+            if (!hubSession?.access_token || !hubSession.refresh_token) return;
+            try {
+                await supabase.auth.setSession({
+                    access_token: hubSession.access_token,
+                    refresh_token: hubSession.refresh_token,
+                });
+            } catch {
+                // ignore bootstrap sync failures; request-level refresh handles recovery
+            }
+        };
+
+        const syncStoreFromSession = async (
+            supabase: SupabaseSessionSyncClient,
+            nextSession: {
+                access_token?: string | null;
+                refresh_token?: string | null;
+                expires_at?: number | null;
+            } | null | undefined,
+        ): Promise<void> => {
+            if (!active) return;
+            const normalized = toStoredHubSession(nextSession, hubSession?.refresh_token);
+            if (!normalized) return;
+            const nextHubSub = parseJwtSub(normalized.access_token);
+            if (currentHubSub && nextHubSub && nextHubSub !== currentHubSub) {
+                await syncSupabaseFromCurrentSession(supabase);
+                return;
+            }
+            if (
+                normalized.access_token === hubSession?.access_token
+                && normalized.refresh_token === (hubSession?.refresh_token || "")
+                && normalized.expires_at === hubSession?.expires_at
+            ) {
+                return;
+            }
+            setHubSession(normalized);
+        };
+
+        void import("../api/supabase").then(({ getOptionalSupabaseClient }) => {
+            if (!active) return;
+            const supabase = getOptionalSupabaseClient();
+            if (!supabase) return;
+
+            void supabase.auth.getSession().then(({ data, error }) => {
+                if (!active || error) return;
+                if (data.session?.access_token) {
+                    void syncStoreFromSession(supabase, data.session);
+                    return;
+                }
+                void syncSupabaseFromCurrentSession(supabase);
+            });
+
+            const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+                void syncStoreFromSession(supabase, nextSession);
+            });
+            unsubscribe = () => data.subscription.unsubscribe();
+        });
+
+        return () => {
+            active = false;
+            unsubscribe?.();
+        };
+    }, [
+        hubSession?.access_token,
+        hubSession?.expires_at,
+        hubSession?.refresh_token,
+        matrixCredentials,
+        setHubSession,
+        userType,
+    ]);
     const refreshNotebookToken = useCallback(async (options?: { force?: boolean }): Promise<string | null> => {
         if (!hubSession?.refresh_token) return null;
         if (!options?.force && Date.now() < notebookRefreshBackoffUntilRef.current) return null;
@@ -1043,7 +1130,11 @@ export const MainLayout: React.FC = () => {
         const flight = (async (): Promise<string | null> => {
             setRefreshingNotebookToken(true);
             try {
-                const supabase = getSupabaseClient();
+                const { getOptionalSupabaseClient } = await import("../api/supabase");
+                const supabase = getOptionalSupabaseClient();
+                if (!supabase) {
+                    return null;
+                }
                 const { data, error } = await supabase.auth.refreshSession({
                     refresh_token: hubSession.refresh_token,
                 });
