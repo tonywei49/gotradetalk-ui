@@ -35,6 +35,25 @@ const ASSIST_CACHE_KEY_PREFIX = "gtt_chat_notebook_assist_v1";
 const ASSIST_CACHE_SCOPE = "chat-notebook-assist";
 const ASSIST_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
+function createEmptyAssistPayload(): AssistCachePayload {
+    return {
+        assistState: "idle",
+        assistError: null,
+        assistOutput: null,
+        assistDraft: "",
+        assistCitationsExpanded: false,
+        lastAssistTrigger: null,
+    };
+}
+
+function getAssistStorageKey(roomId: string | null): string {
+    return roomId ? `${ASSIST_CACHE_KEY_PREFIX}:${roomId}` : "";
+}
+
+function getAssistSqliteKey(matrixUserId: string | null | undefined, roomId: string | null): string | null {
+    return matrixUserId && roomId ? `${matrixUserId}:${roomId}` : null;
+}
+
 function readAssistCache(storageKey: string): AssistCachePayload | null {
     if (!storageKey || typeof window === "undefined") return null;
     try {
@@ -73,14 +92,16 @@ function writeAssistCache(storageKey: string, payload: AssistCachePayload): void
 
 export function useNotebookAssist(params: UseNotebookAssistParams) {
     const storageKey = useMemo(
-        () => (params.activeRoomId ? `${ASSIST_CACHE_KEY_PREFIX}:${params.activeRoomId}` : ""),
+        () => getAssistStorageKey(params.activeRoomId),
         [params.activeRoomId],
     );
     const sqliteKey = useMemo(
-        () => (params.notebookAuth?.matrixUserId && params.activeRoomId ? `${params.notebookAuth.matrixUserId}:${params.activeRoomId}` : null),
+        () => getAssistSqliteKey(params.notebookAuth?.matrixUserId, params.activeRoomId),
         [params.activeRoomId, params.notebookAuth?.matrixUserId],
     );
-    const resumeInFlightRef = useRef(false);
+    const activeRoomIdRef = useRef<string | null>(params.activeRoomId);
+    const activeMatrixUserIdRef = useRef<string | null>(params.notebookAuth?.matrixUserId ?? null);
+    const inFlightRequestByRoomRef = useRef<Map<string, symbol>>(new Map());
     const initialCache = readAssistCache(storageKey);
     const [assistState, setAssistState] = useState<"idle" | "loading" | "success" | "error">(initialCache?.assistState ?? "idle");
     const [assistError, setAssistError] = useState<string | null>(initialCache?.assistError ?? null);
@@ -90,28 +111,53 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
     const [lastAssistTrigger, setLastAssistTrigger] = useState<AssistTrigger | null>(initialCache?.lastAssistTrigger ?? null);
     const hydratedStorageKeyRef = useRef<string>(storageKey);
 
+    useEffect(() => {
+        activeRoomIdRef.current = params.activeRoomId;
+        activeMatrixUserIdRef.current = params.notebookAuth?.matrixUserId ?? null;
+    }, [params.activeRoomId, params.notebookAuth?.matrixUserId]);
+
+    const applyLocalPayload = useCallback((payload: AssistCachePayload): void => {
+        setAssistState(payload.assistState);
+        setAssistError(payload.assistError);
+        setAssistOutput(payload.assistOutput);
+        setAssistDraft(payload.assistDraft);
+        setAssistCitationsExpanded(payload.assistCitationsExpanded);
+        setLastAssistTrigger(payload.lastAssistTrigger);
+    }, []);
+
+    const persistPayloadForRoom = useCallback((
+        roomId: string | null,
+        matrixUserId: string | null | undefined,
+        payload: AssistCachePayload,
+    ): void => {
+        const nextStorageKey = getAssistStorageKey(roomId);
+        const nextSqliteKey = getAssistSqliteKey(matrixUserId, roomId);
+        writeAssistCache(nextStorageKey, payload);
+        void writeUiStateToSqlite(ASSIST_CACHE_SCOPE, nextSqliteKey, payload);
+        if (activeRoomIdRef.current === roomId && activeMatrixUserIdRef.current === (matrixUserId ?? null)) {
+            applyLocalPayload(payload);
+        }
+    }, [applyLocalPayload]);
+
+    const readCachedPayloadForRoom = useCallback((
+        roomId: string | null,
+        fallback: AssistCachePayload,
+    ): AssistCachePayload => {
+        const cached = readAssistCache(getAssistStorageKey(roomId));
+        return cached ?? fallback;
+    }, []);
+
     /* eslint-disable react-hooks/set-state-in-effect */
     useEffect(() => {
         if (!storageKey || hydratedStorageKeyRef.current === storageKey) return;
         hydratedStorageKeyRef.current = storageKey;
-        resumeInFlightRef.current = false;
         const cached = readAssistCache(storageKey);
         if (!cached) {
-            setAssistState("idle");
-            setAssistError(null);
-            setAssistOutput(null);
-            setAssistDraft("");
-            setAssistCitationsExpanded(false);
-            setLastAssistTrigger(null);
+            applyLocalPayload(createEmptyAssistPayload());
             return;
         }
-        setAssistState(cached.assistState);
-        setAssistError(cached.assistError);
-        setAssistOutput(cached.assistOutput);
-        setAssistDraft(cached.assistDraft);
-        setAssistCitationsExpanded(cached.assistCitationsExpanded);
-        setLastAssistTrigger(cached.lastAssistTrigger);
-    }, [storageKey]);
+        applyLocalPayload(cached);
+    }, [applyLocalPayload, storageKey]);
     /* eslint-enable react-hooks/set-state-in-effect */
 
     useEffect(() => {
@@ -120,34 +166,25 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
         void readUiStateFromSqlite<AssistCachePayload>(ASSIST_CACHE_SCOPE, sqliteKey, ASSIST_CACHE_TTL_MS)
             .then((cached) => {
                 if (disposed || !cached) return;
-                setAssistState(cached.assistState);
-                setAssistError(cached.assistError);
-                setAssistOutput(cached.assistOutput);
-                setAssistDraft(cached.assistDraft);
-                setAssistCitationsExpanded(cached.assistCitationsExpanded);
-                setLastAssistTrigger(cached.lastAssistTrigger);
+                applyLocalPayload(cached);
             })
             .catch(() => undefined);
         return () => {
             disposed = true;
         };
-    }, [sqliteKey, storageKey]);
+    }, [applyLocalPayload, sqliteKey, storageKey]);
 
-    const applyAssistOutput = useCallback((result: NotebookAssistResponse): void => {
-        setAssistOutput(result);
-        setAssistDraft((result.referenceAnswer || result.answer || result.summaryText || "").trim());
-        setAssistState("success");
-        setAssistError(null);
-    }, []);
-
-    const ensureKnowledgeBaseAvailable = useCallback(async (): Promise<boolean> => {
-        if (!params.notebookAuth) return false;
-        const list = await params.adapter.listItems(params.notebookAuth, {
+    const ensureKnowledgeBaseAvailable = useCallback(async (
+        notebookAuth: NotebookAuthContext | null,
+        knowledgeScope: "personal" | "company" | "both",
+    ): Promise<boolean> => {
+        if (!notebookAuth) return false;
+        const list = await params.adapter.listItems(notebookAuth, {
             filter: "knowledge",
-            scope: params.knowledgeScope || "both",
+            scope: knowledgeScope,
         });
         return list.length > 0;
-    }, [params.adapter, params.notebookAuth, params.knowledgeScope]);
+    }, [params.adapter]);
 
     const runAssistQuery = useCallback(async (query: string): Promise<void> => {
         if (!params.canUseNotebookAssist || !params.notebookAuth || !params.activeRoomId) return;
@@ -157,74 +194,163 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
             setAssistError(params.t("chat.notebook.errors.emptyQuery"));
             return;
         }
-        setAssistState("loading");
-        setAssistError(null);
+        const roomId = params.activeRoomId;
+        const notebookAuth = params.notebookAuth;
+        const matrixUserId = notebookAuth.matrixUserId;
+        const knowledgeScope = params.knowledgeScope || "both";
+        const responseLang = (params.responseLang || "").trim() || "zh-TW";
+        const trigger: AssistTrigger = { type: "query", query: trimmed };
+        const requestToken = Symbol(`assist-query:${roomId}`);
+        const loadingPayload: AssistCachePayload = {
+            assistState: "loading",
+            assistError: null,
+            assistOutput,
+            assistDraft,
+            assistCitationsExpanded,
+            lastAssistTrigger: trigger,
+        };
+        inFlightRequestByRoomRef.current.set(roomId, requestToken);
+        persistPayloadForRoom(roomId, matrixUserId, loadingPayload);
         try {
-            const hasKnowledgeBase = await ensureKnowledgeBaseAvailable();
+            const hasKnowledgeBase = await ensureKnowledgeBaseAvailable(notebookAuth, knowledgeScope);
+            if (inFlightRequestByRoomRef.current.get(roomId) !== requestToken) return;
             if (!hasKnowledgeBase) {
-                setAssistState("error");
-                setAssistError(params.t("chat.notebook.errors.noKnowledgeBaseItems"));
+                persistPayloadForRoom(roomId, matrixUserId, {
+                    ...readCachedPayloadForRoom(roomId, loadingPayload),
+                    assistState: "error",
+                    assistError: params.t("chat.notebook.errors.noKnowledgeBaseItems"),
+                });
                 return;
             }
-            const result = await params.adapter.assistQuery(params.notebookAuth, {
-                roomId: params.activeRoomId,
+            const result = await params.adapter.assistQuery(notebookAuth, {
+                roomId,
                 query: trimmed,
-                knowledgeScope: params.knowledgeScope || "both",
-                responseLang: (params.responseLang || "").trim() || "zh-TW",
+                knowledgeScope,
+                responseLang,
             });
-            applyAssistOutput(result);
-            setLastAssistTrigger({ type: "query", query: trimmed });
+            if (inFlightRequestByRoomRef.current.get(roomId) !== requestToken) return;
+            persistPayloadForRoom(roomId, matrixUserId, {
+                ...readCachedPayloadForRoom(roomId, loadingPayload),
+                assistState: "success",
+                assistError: null,
+                assistOutput: result,
+                assistDraft: (result.referenceAnswer || result.answer || result.summaryText || "").trim(),
+                lastAssistTrigger: trigger,
+            });
         } catch (error) {
+            if (inFlightRequestByRoomRef.current.get(roomId) !== requestToken) return;
             if (isNotebookTerminalAuthFailure(error)) {
                 params.onTerminalAuthFailure?.(error);
-                setAssistState("idle");
-                setAssistError(null);
+                persistPayloadForRoom(roomId, matrixUserId, {
+                    ...readCachedPayloadForRoom(roomId, loadingPayload),
+                    assistState: "idle",
+                    assistError: null,
+                });
                 return;
             }
-            setAssistState("error");
-            setAssistError(mapNotebookErrorToMessage(error, params.t));
+            persistPayloadForRoom(roomId, matrixUserId, {
+                ...readCachedPayloadForRoom(roomId, loadingPayload),
+                assistState: "error",
+                assistError: mapNotebookErrorToMessage(error, params.t),
+            });
+        } finally {
+            if (inFlightRequestByRoomRef.current.get(roomId) === requestToken) {
+                inFlightRequestByRoomRef.current.delete(roomId);
+            }
         }
-    }, [params, applyAssistOutput, ensureKnowledgeBaseAvailable]);
+    }, [
+        assistCitationsExpanded,
+        assistDraft,
+        assistOutput,
+        ensureKnowledgeBaseAvailable,
+        params,
+        persistPayloadForRoom,
+        readCachedPayloadForRoom,
+    ]);
 
     const runAssistFromContext = useCallback(async (anchorEventId: string): Promise<void> => {
         if (!params.canUseNotebookAssist || !params.notebookAuth || !params.activeRoomId) return;
-        setAssistState("loading");
-        setAssistError(null);
+        const roomId = params.activeRoomId;
+        const notebookAuth = params.notebookAuth;
+        const matrixUserId = notebookAuth.matrixUserId;
+        const knowledgeScope = params.knowledgeScope || "both";
+        const responseLang = (params.responseLang || "").trim() || "zh-TW";
+        const trigger: AssistTrigger = { type: "context", anchorEventId, windowSize: NOTEBOOK_ASSIST_CONTEXT_WINDOW_SIZE };
+        const requestToken = Symbol(`assist-context:${roomId}`);
+        const loadingPayload: AssistCachePayload = {
+            assistState: "loading",
+            assistError: null,
+            assistOutput,
+            assistDraft,
+            assistCitationsExpanded,
+            lastAssistTrigger: trigger,
+        };
+        inFlightRequestByRoomRef.current.set(roomId, requestToken);
+        persistPayloadForRoom(roomId, matrixUserId, loadingPayload);
         try {
-            const hasKnowledgeBase = await ensureKnowledgeBaseAvailable();
+            const hasKnowledgeBase = await ensureKnowledgeBaseAvailable(notebookAuth, knowledgeScope);
+            if (inFlightRequestByRoomRef.current.get(roomId) !== requestToken) return;
             if (!hasKnowledgeBase) {
-                setAssistState("error");
-                setAssistError(params.t("chat.notebook.errors.noKnowledgeBaseItems"));
+                persistPayloadForRoom(roomId, matrixUserId, {
+                    ...readCachedPayloadForRoom(roomId, loadingPayload),
+                    assistState: "error",
+                    assistError: params.t("chat.notebook.errors.noKnowledgeBaseItems"),
+                });
                 return;
             }
-            const result = await params.adapter.assistFromContext(params.notebookAuth, {
-                roomId: params.activeRoomId,
+            const result = await params.adapter.assistFromContext(notebookAuth, {
+                roomId,
                 anchorEventId,
                 windowSize: NOTEBOOK_ASSIST_CONTEXT_WINDOW_SIZE,
-                knowledgeScope: params.knowledgeScope || "both",
-                responseLang: (params.responseLang || "").trim() || "zh-TW",
+                knowledgeScope,
+                responseLang,
             });
-            applyAssistOutput(result);
-            setLastAssistTrigger({ type: "context", anchorEventId, windowSize: NOTEBOOK_ASSIST_CONTEXT_WINDOW_SIZE });
+            if (inFlightRequestByRoomRef.current.get(roomId) !== requestToken) return;
+            persistPayloadForRoom(roomId, matrixUserId, {
+                ...readCachedPayloadForRoom(roomId, loadingPayload),
+                assistState: "success",
+                assistError: null,
+                assistOutput: result,
+                assistDraft: (result.referenceAnswer || result.answer || result.summaryText || "").trim(),
+                lastAssistTrigger: trigger,
+            });
         } catch (error) {
+            if (inFlightRequestByRoomRef.current.get(roomId) !== requestToken) return;
             if (isNotebookTerminalAuthFailure(error)) {
                 params.onTerminalAuthFailure?.(error);
-                setAssistState("idle");
-                setAssistError(null);
+                persistPayloadForRoom(roomId, matrixUserId, {
+                    ...readCachedPayloadForRoom(roomId, loadingPayload),
+                    assistState: "idle",
+                    assistError: null,
+                });
                 return;
             }
-            setAssistState("error");
-            setAssistError(mapNotebookErrorToMessage(error, params.t));
+            persistPayloadForRoom(roomId, matrixUserId, {
+                ...readCachedPayloadForRoom(roomId, loadingPayload),
+                assistState: "error",
+                assistError: mapNotebookErrorToMessage(error, params.t),
+            });
+        } finally {
+            if (inFlightRequestByRoomRef.current.get(roomId) === requestToken) {
+                inFlightRequestByRoomRef.current.delete(roomId);
+            }
         }
-    }, [params, applyAssistOutput, ensureKnowledgeBaseAvailable]);
+    }, [
+        assistCitationsExpanded,
+        assistDraft,
+        assistOutput,
+        ensureKnowledgeBaseAvailable,
+        params,
+        persistPayloadForRoom,
+        readCachedPayloadForRoom,
+    ]);
 
     const resetAssist = useCallback(() => {
-        setAssistState("idle");
-        setAssistError(null);
-        setAssistOutput(null);
-        setAssistDraft("");
-        setAssistCitationsExpanded(false);
-    }, []);
+        if (params.activeRoomId) {
+            inFlightRequestByRoomRef.current.delete(params.activeRoomId);
+        }
+        persistPayloadForRoom(params.activeRoomId, params.notebookAuth?.matrixUserId, createEmptyAssistPayload());
+    }, [params.activeRoomId, params.notebookAuth?.matrixUserId, persistPayloadForRoom]);
 
     useEffect(() => {
         const payload = {
@@ -241,9 +367,8 @@ export function useNotebookAssist(params: UseNotebookAssistParams) {
 
     useEffect(() => {
         if (assistState !== "loading" || !lastAssistTrigger) return;
-        if (resumeInFlightRef.current) return;
         if (!params.canUseNotebookAssist || !params.notebookAuth || !params.activeRoomId) return;
-        resumeInFlightRef.current = true;
+        if (inFlightRequestByRoomRef.current.has(params.activeRoomId)) return;
         const resume = async (): Promise<void> => {
             if (lastAssistTrigger.type === "query") {
                 await runAssistQuery(lastAssistTrigger.query);
