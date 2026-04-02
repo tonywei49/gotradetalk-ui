@@ -1,10 +1,23 @@
 import Database from "@tauri-apps/plugin-sql";
 
 import { isTauriDesktop } from "./fetchWithDesktopSupport";
+import { resolveRuntimePlatform } from "../runtime/appRuntime";
 
 const DESKTOP_CACHE_DB = "sqlite:desktop-cache.db";
 
 let dbPromise: Promise<Database> | null = null;
+
+function isWindowsDesktop(): boolean {
+    if (typeof window === "undefined") return false;
+    return isTauriDesktop() && resolveRuntimePlatform() === "windows";
+}
+
+type DesktopCacheArea = "workspace" | "roomList" | "contacts" | "roomTimeline" | "uiState";
+
+function canUseDesktopCacheArea(area: DesktopCacheArea): boolean {
+    if (!isWindowsDesktop()) return true;
+    return area === "workspace" || area === "uiState";
+}
 
 async function getDesktopCacheDb(): Promise<Database | null> {
     if (!isTauriDesktop()) return null;
@@ -43,6 +56,7 @@ async function writePayload(query: string, bindValues: unknown[] = []): Promise<
 
 export async function readWorkspaceStateFromSqlite<T>(userId: string | null, maxAgeMs?: number): Promise<T | null> {
     if (!userId) return null;
+    if (!canUseDesktopCacheArea("workspace")) return null;
     return readPayload<T>(
         "SELECT payload_json, updated_at FROM workspace_state_cache WHERE user_id = ? LIMIT 1",
         [userId],
@@ -52,6 +66,7 @@ export async function readWorkspaceStateFromSqlite<T>(userId: string | null, max
 
 export async function writeWorkspaceStateToSqlite<T>(userId: string | null, payload: T): Promise<void> {
     if (!userId) return;
+    if (!canUseDesktopCacheArea("workspace")) return;
     await writePayload(
         `INSERT INTO workspace_state_cache (user_id, payload_json, updated_at)
          VALUES (?, ?, ?)
@@ -64,6 +79,7 @@ export async function writeWorkspaceStateToSqlite<T>(userId: string | null, payl
 
 export async function readRoomListCacheFromSqlite<T>(userId: string | null, maxAgeMs?: number): Promise<T | null> {
     if (!userId) return null;
+    if (!canUseDesktopCacheArea("roomList")) return null;
     return readPayload<T>(
         "SELECT payload_json, updated_at FROM room_list_cache WHERE user_id = ? LIMIT 1",
         [userId],
@@ -73,6 +89,7 @@ export async function readRoomListCacheFromSqlite<T>(userId: string | null, maxA
 
 export async function writeRoomListCacheToSqlite<T>(userId: string | null, payload: T): Promise<void> {
     if (!userId) return;
+    if (!canUseDesktopCacheArea("roomList")) return;
     await writePayload(
         `INSERT INTO room_list_cache (user_id, payload_json, updated_at)
          VALUES (?, ?, ?)
@@ -85,6 +102,7 @@ export async function writeRoomListCacheToSqlite<T>(userId: string | null, paylo
 
 export async function readContactsCacheFromSqlite<T>(userId: string | null, maxAgeMs?: number): Promise<T | null> {
     if (!userId) return null;
+    if (!canUseDesktopCacheArea("contacts")) return null;
     return readPayload<T>(
         "SELECT payload_json, updated_at FROM contacts_cache WHERE user_id = ? LIMIT 1",
         [userId],
@@ -94,6 +112,7 @@ export async function readContactsCacheFromSqlite<T>(userId: string | null, maxA
 
 export async function writeContactsCacheToSqlite<T>(userId: string | null, payload: T): Promise<void> {
     if (!userId) return;
+    if (!canUseDesktopCacheArea("contacts")) return;
     await writePayload(
         `INSERT INTO contacts_cache (user_id, payload_json, updated_at)
          VALUES (?, ?, ?)
@@ -106,6 +125,7 @@ export async function writeContactsCacheToSqlite<T>(userId: string | null, paylo
 
 export async function readRoomTimelineCacheFromSqlite<T>(userId: string | null, roomId: string | null, maxAgeMs?: number): Promise<T | null> {
     if (!userId || !roomId) return null;
+    if (!canUseDesktopCacheArea("roomTimeline")) return null;
     return readPayload<T>(
         "SELECT payload_json, updated_at FROM room_timeline_cache WHERE user_id = ? AND room_id = ? LIMIT 1",
         [userId, roomId],
@@ -115,6 +135,7 @@ export async function readRoomTimelineCacheFromSqlite<T>(userId: string | null, 
 
 export async function writeRoomTimelineCacheToSqlite<T>(userId: string | null, roomId: string | null, payload: T): Promise<void> {
     if (!userId || !roomId) return;
+    if (!canUseDesktopCacheArea("roomTimeline")) return;
     await writePayload(
         `INSERT INTO room_timeline_cache (user_id, room_id, payload_json, updated_at)
          VALUES (?, ?, ?, ?)
@@ -127,6 +148,7 @@ export async function writeRoomTimelineCacheToSqlite<T>(userId: string | null, r
 
 export async function readUiStateFromSqlite<T>(scope: string, itemKey: string | null, maxAgeMs?: number): Promise<T | null> {
     if (!itemKey) return null;
+    if (!canUseDesktopCacheArea("uiState")) return null;
     return readPayload<T>(
         "SELECT payload_json, updated_at FROM ui_state_cache WHERE scope = ? AND item_key = ? LIMIT 1",
         [scope, itemKey],
@@ -136,6 +158,7 @@ export async function readUiStateFromSqlite<T>(scope: string, itemKey: string | 
 
 export async function writeUiStateToSqlite<T>(scope: string, itemKey: string | null, payload: T): Promise<void> {
     if (!itemKey) return;
+    if (!canUseDesktopCacheArea("uiState")) return;
     await writePayload(
         `INSERT INTO ui_state_cache (scope, item_key, payload_json, updated_at)
          VALUES (?, ?, ?, ?)

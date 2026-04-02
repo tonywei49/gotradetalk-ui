@@ -33,6 +33,7 @@ export function useTaskUI({
     listProps: TaskListProps;
     detailProps: TaskDetailProps;
     reminderProps: TaskReminderBannerProps;
+    chatReminderProps: TaskReminderBannerProps;
     chatContext: TaskChatContext;
 } {
     const listProps = useMemo<TaskListProps>(() => ({
@@ -87,8 +88,14 @@ export function useTaskUI({
 
     const reminderProps = useMemo<TaskReminderBannerProps>(() => ({
         task: taskModule.currentReminder,
-        onSnooze: taskModule.snoozeReminder,
-        onDismiss: taskModule.dismissReminder,
+        onSnooze: () => taskModule.snoozeReminder(taskModule.currentReminder?.id ?? null),
+        onDismiss: () => taskModule.dismissReminder(taskModule.currentReminder?.id ?? null),
+    }), [taskModule]);
+
+    const chatReminderProps = useMemo<TaskReminderBannerProps>(() => ({
+        task: taskModule.currentRoomReminder,
+        onSnooze: () => taskModule.snoozeReminder(taskModule.currentRoomReminder?.id ?? null),
+        onDismiss: () => taskModule.dismissReminder(taskModule.currentRoomReminder?.id ?? null),
     }), [taskModule]);
 
     const chatContext = useMemo<TaskChatContext>(() => ({
@@ -101,5 +108,5 @@ export function useTaskUI({
         onUpdateRoomTaskStatus: taskModule.updateTaskStatus,
     }), [onOpenTasksTab, taskModule]);
 
-    return { listProps, detailProps, reminderProps, chatContext };
+    return { listProps, detailProps, reminderProps, chatReminderProps, chatContext };
 }

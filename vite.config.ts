@@ -28,14 +28,7 @@ export default defineConfig(({ mode }) => {
         base: mode === "development" ? "/" : "./",
         plugins: [react(), tailwindcss()],
         build: {
-            modulePreload: {
-                resolveDependencies(_filename, deps, context) {
-                    if (context.hostType === "html" && context.hostId.endsWith("bootstrap.html")) {
-                        return [];
-                    }
-                    return deps;
-                },
-            },
+            modulePreload: false,
             rollupOptions: {
                 input: {
                     main: resolve(process.cwd(), "index.html"),
@@ -63,23 +56,25 @@ export default defineConfig(({ mode }) => {
                             "/src/features/notebook/utils/",
                             "/src/services/notebook",
                         ];
+                        const taskRuntimePatterns = [
+                            "/src/features/tasks/hooks/useTaskModule",
+                            "/src/features/tasks/taskStorage",
+                            "/src/features/tasks/taskStatusConfig",
+                            "/src/features/tasks/types",
+                        ];
                         const taskWorkspacePatterns = [
                             "/src/features/tasks/components/TaskWorkspaceDesktop",
                             "/src/features/tasks/TaskWorkspace",
-                            "/src/features/tasks/hooks/useTaskModule",
                             "/src/features/tasks/components/TaskList",
                             "/src/features/tasks/components/TaskDetail",
                             "/src/features/tasks/components/TaskReminderBanner",
                             "/src/features/tasks/taskFilters",
-                            "/src/features/tasks/taskStorage",
                         ];
                         const taskBridgePatterns = [
                             "/src/features/tasks/components/TaskQuickCreate",
                             "/src/features/tasks/components/TaskRoomBar",
                             "/src/features/tasks/hooks/useTaskUI",
                             "/src/features/tasks/statusStyles",
-                            "/src/features/tasks/taskStatusConfig",
-                            "/src/features/tasks/types",
                         ];
 
                         if (id.includes("node_modules")) {
@@ -109,7 +104,16 @@ export default defineConfig(({ mode }) => {
                         if (id.includes("/src/runtime/appRuntime")) {
                             return "runtime-core";
                         }
-                        if (id.includes("/src/i18n/")) {
+                        if (
+                            id.includes("/src/stores/") ||
+                            id.includes("/src/components/ToastViewport") ||
+                            id.includes("/src/plugins/") ||
+                            id.includes("/src/desktop/useDesktopUpdater") ||
+                            id.includes("/src/desktop/useDesktopWindowLifecycle")
+                        ) {
+                            return "app-shell";
+                        }
+                        if (id.includes("/src/i18n/index") || id.includes("/src/i18n/en.json")) {
                             return "app-i18n";
                         }
                         if (id.includes("/src/constants/roomKinds") || id.includes("/src/constants/rooms")) {
@@ -129,6 +133,9 @@ export default defineConfig(({ mode }) => {
                         }
                         if (id.includes("/src/matrix/")) {
                             return "matrix-runtime";
+                        }
+                        if (matchesChunk(id, taskRuntimePatterns)) {
+                            return "task-runtime";
                         }
                         if (matchesChunk(id, notebookWorkspacePatterns)) {
                             return "notebook-workspace";

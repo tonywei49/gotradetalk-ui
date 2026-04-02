@@ -145,7 +145,9 @@ export function TaskList({
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {filteredTasks.map((task) => (
+                        {filteredTasks.map((task) => {
+                            const linkedRoomLabel = task.roomNameSnapshot || task.roomId || null;
+                            return (
                             <button
                                 key={task.id}
                                 type="button"
@@ -171,7 +173,7 @@ export function TaskList({
                                         </span>
                                     </div>
                                     <div className="ml-auto flex min-w-0 items-center gap-2">
-                                        {task.roomId && task.roomNameSnapshot && onOpenRoom ? (
+                                        {task.roomId && linkedRoomLabel && onOpenRoom ? (
                                             <button
                                                 type="button"
                                                 onClick={(event) => {
@@ -180,7 +182,7 @@ export function TaskList({
                                                 }}
                                                 className="truncate rounded-md border border-slate-200 px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:border-emerald-400 hover:text-emerald-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
                                             >
-                                                {t("tasks.linkedRoomShort", { roomName: task.roomNameSnapshot })}
+                                                {t("tasks.linkedRoomShort", { roomName: linkedRoomLabel })}
                                             </button>
                                         ) : null}
                                         <span className="shrink-0 text-slate-400 dark:text-slate-500">
@@ -189,7 +191,8 @@ export function TaskList({
                                     </div>
                                 </div>
                             </button>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

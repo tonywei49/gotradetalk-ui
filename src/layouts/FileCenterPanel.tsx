@@ -13,6 +13,11 @@ import {
     type FileLibraryRoomSummary,
 } from "../features/files/fileCenterRepository";
 import {
+    buildFileCenterStorageKey,
+    readStoredFileLibraryFromSqlite,
+    writeStoredFileLibraryToSqlite,
+} from "../features/files/fileCenterStorage";
+import {
     MATRIX_EVENT_TYPE_ROOM_MESSAGE,
     MATRIX_TIMELINE_BACKWARDS,
 } from "../matrix/matrixEventConstants";
@@ -30,6 +35,7 @@ interface FileCenterPanelProps {
     setActiveTab: React.Dispatch<React.SetStateAction<ActiveTabValue>>;
     setJumpToEventId: React.Dispatch<React.SetStateAction<string | null>>;
     setMobileView: (view: "list" | "detail") => void;
+    mobileView: "list" | "detail";
     fileLibraryTick: number;
     setFileLibraryTick: React.Dispatch<React.SetStateAction<number>>;
     filesReady: boolean;
@@ -41,6 +47,7 @@ const FILE_LIST_PAGE_SIZE = 80;
 const FILE_HISTORY_TARGET_EVENTS = 260;
 const FILE_HISTORY_SCROLLBACK_LIMIT = 50;
 const FILE_HISTORY_MAX_ROUNDS = 6;
+const FILE_THUMBNAIL_PREFETCH_CONCURRENCY = 3;
 
 function parseMxcUri(mxcUrl: string): { serverName: string; mediaId: string } | null {
     const match = /^mxc:\/\/([^/]+)\/(.+)$/.exec(mxcUrl);
@@ -187,14 +194,6 @@ function DeferredModulePanel({ title, description }: { title: string; descriptio
     );
 }
 
-const getLocalPart = (value: string | null | undefined): string => {
-    const str = String(value || "").trim();
-    if (!str) return "";
-    const withoutPrefix = str.startsWith("@") ? str.slice(1) : str;
-    const colonIndex = withoutPrefix.indexOf(":");
-    return colonIndex > 0 ? withoutPrefix.slice(0, colonIndex) : withoutPrefix;
-};
-
 const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
     matrixClient,
     matrixCredentials,
@@ -205,6 +204,7 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
     setActiveTab,
     setJumpToEventId,
     setMobileView,
+    mobileView,
     fileLibraryTick,
     setFileLibraryTick,
     filesReady,
@@ -212,8 +212,9 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
 }) => {
     const { t } = useTranslation();
 
+    const [fileRoomSearch, setFileRoomSearch] = useState("");
     const [fileListSearch, setFileListSearch] = useState("");
-    const debouncedFileRoomSearch = "";
+    const debouncedFileRoomSearch = fileRoomSearch;
     const debouncedFileListSearch = fileListSearch;
     const [fileListTypeFilter, setFileListTypeFilter] = useState<"all" | "image" | "video" | "audio" | "pdf" | "other">("all");
     const [fileListPage, setFileListPage] = useState(1);
@@ -233,6 +234,7 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
         revokeOnClose?: boolean;
     } | null>(null);
     const [fileThumbnailUrls, setFileThumbnailUrls] = useState<Record<string, string>>({});
+    const [cachedFileLibrary, setCachedFileLibrary] = useState<FileLibraryItem[]>([]);
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
     const fileThumbnailUrlsRef = useRef<Record<string, string>>({});
@@ -259,6 +261,24 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
         };
     }, []);
 
+    const fileCenterStorageKey = useMemo(
+        () => buildFileCenterStorageKey(matrixCredentials?.user_id ?? null),
+        [matrixCredentials?.user_id],
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+        void readStoredFileLibraryFromSqlite(fileCenterStorageKey)
+            .then((items) => {
+                if (cancelled || !Array.isArray(items)) return;
+                setCachedFileLibrary(items);
+            })
+            .catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+    }, [fileCenterStorageKey]);
+
     const closeFilePreview = useCallback(() => {
         setFilePreview((current) => {
             if (current?.revokeOnClose) {
@@ -269,7 +289,7 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
     }, []);
 
     // useMemo computations
-    const myFileLibrary = useMemo<FileLibraryItem[]>(() => {
+    const liveFileLibrary = useMemo<FileLibraryItem[]>(() => {
         if (!filesReady || !matrixClient || !matrixCredentials?.user_id) return [];
         void fileLibraryTick;
         const me = matrixCredentials.user_id;
@@ -316,6 +336,22 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
         return rows;
     }, [fileLibraryTick, filesReady, matrixClient, matrixCredentials?.user_id]);
 
+    useEffect(() => {
+        if (liveFileLibrary.length === 0) return;
+        setCachedFileLibrary((prev) => {
+            if (JSON.stringify(prev) === JSON.stringify(liveFileLibrary)) {
+                return prev;
+            }
+            return liveFileLibrary;
+        });
+        void writeStoredFileLibraryToSqlite(fileCenterStorageKey, liveFileLibrary);
+    }, [fileCenterStorageKey, liveFileLibrary]);
+
+    const myFileLibrary = useMemo<FileLibraryItem[]>(
+        () => (liveFileLibrary.length > 0 ? liveFileLibrary : cachedFileLibrary),
+        [cachedFileLibrary, liveFileLibrary],
+    );
+
     const roomSummaryList = useMemo<FileLibraryRoomSummary[]>(
         () => summarizeFileRooms(myFileLibrary),
         [myFileLibrary],
@@ -353,6 +389,8 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
     );
 
     const canLoadMoreFiles = pagedVisibleSelectedRoomFiles.length < visibleSelectedRoomFiles.length;
+    const showRoomSummaryPane = !isMobileApp || mobileView !== "detail";
+    const showFileDetailPane = !isMobileApp || mobileView !== "list";
 
     // More effects
     useEffect(() => {
@@ -389,8 +427,11 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
         const room = matrixClient.getRoom(selectedFileRoomId);
         if (!room) return;
         let cancelled = false;
+        const shouldShowLoading = selectedRoomFiles.length === 0;
         void (async () => {
-            setFileHistoryLoadingRoomId(selectedFileRoomId);
+            if (shouldShowLoading) {
+                setFileHistoryLoadingRoomId(selectedFileRoomId);
+            }
             let lastCount = room.getLiveTimeline().getEvents().length;
             for (let round = 0; round < FILE_HISTORY_MAX_ROUNDS; round += 1) {
                 if (cancelled) return;
@@ -402,13 +443,15 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
             }
             if (!cancelled) {
                 setFileLibraryTick((prev) => prev + 1);
-                setFileHistoryLoadingRoomId((prev) => (prev === selectedFileRoomId ? null : prev));
+                if (shouldShowLoading) {
+                    setFileHistoryLoadingRoomId((prev) => (prev === selectedFileRoomId ? null : prev));
+                }
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, [matrixClient, selectedFileRoomId, setFileLibraryTick]);
+    }, [matrixClient, selectedFileRoomId, selectedRoomFiles.length, setFileLibraryTick]);
 
     useEffect(() => {
         setSelectedFileIds((prev) => prev.filter((eventId) => selectedRoomFiles.some((item) => item.eventId === eventId)));
@@ -439,36 +482,42 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
         });
 
         let cancelled = false;
-        previewableItems.forEach((item) => {
-            const httpUrl = getHttpFileUrl(item);
-            if (!httpUrl) return;
-            if (fileThumbnailUrls[item.eventId]) return;
+        const missingPreviewableItems = previewableItems.filter((item) => !fileThumbnailUrlsRef.current[item.eventId]);
+        const workerCount = Math.min(FILE_THUMBNAIL_PREFETCH_CONCURRENCY, missingPreviewableItems.length);
+
+        for (let workerIndex = 0; workerIndex < workerCount; workerIndex += 1) {
             void (async () => {
-                try {
-                    const blob = await fetchMediaBlob(httpUrl, matrixAccessToken);
-                    const objectUrl = URL.createObjectURL(blob);
-                    if (cancelled) {
-                        URL.revokeObjectURL(objectUrl);
-                        return;
-                    }
-                    setFileThumbnailUrls((prev) => {
-                        const existing = prev[item.eventId];
-                        if (existing) {
+                for (let itemIndex = workerIndex; itemIndex < missingPreviewableItems.length; itemIndex += workerCount) {
+                    if (cancelled) return;
+                    const item = missingPreviewableItems[itemIndex];
+                    const httpUrl = getHttpFileUrl(item);
+                    if (!httpUrl) continue;
+                    try {
+                        const blob = await fetchMediaBlob(httpUrl, matrixAccessToken);
+                        const objectUrl = URL.createObjectURL(blob);
+                        if (cancelled) {
                             URL.revokeObjectURL(objectUrl);
-                            return prev;
+                            return;
                         }
-                        return { ...prev, [item.eventId]: objectUrl };
-                    });
-                } catch {
-                    // Keep the card usable even if the preview thumbnail cannot be prefetched.
+                        setFileThumbnailUrls((prev) => {
+                            const existing = prev[item.eventId];
+                            if (existing) {
+                                URL.revokeObjectURL(objectUrl);
+                                return prev;
+                            }
+                            return { ...prev, [item.eventId]: objectUrl };
+                        });
+                    } catch {
+                        // Keep the card usable even if the preview thumbnail cannot be prefetched.
+                    }
                 }
             })();
-        });
+        }
 
         return () => {
             cancelled = true;
         };
-    }, [pagedVisibleSelectedRoomFiles, matrixAccessToken, getHttpFileUrl, fileThumbnailUrls]);
+    }, [pagedVisibleSelectedRoomFiles, matrixAccessToken, getHttpFileUrl]);
 
     // Callbacks
     const isFileSelected = (eventId: string): boolean => selectedFileIds.includes(eventId);
@@ -561,6 +610,11 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
         setMobileView("detail");
     };
 
+    const onSelectFileRoom = useCallback((roomId: string) => {
+        setSelectedFileRoomId(roomId);
+        setMobileView("detail");
+    }, [setMobileView, setSelectedFileRoomId]);
+
     const onDeleteFileItem = async (item: FileLibraryItem): Promise<void> => {
         if (!matrixClient || !matrixCredentials?.user_id) return;
         setFileActionError(null);
@@ -575,11 +629,6 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
             if (matrixCredentials.hs_url && matrixCredentials.access_token) {
                 await cleanupUploadedMedia(matrixCredentials.hs_url, matrixCredentials.access_token, item.mxcUrl);
             }
-            const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
-            await matrixClient.sendEvent(item.roomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
-                msgtype: "m.notice",
-                body: t("chat.fileRevokedNotice", { name: selfLabel }),
-            } as never);
             setActiveFileMenuEventId(null);
             setSelectedFileIds((prev) => prev.filter((id) => id !== item.eventId));
             setFileLibraryTick((prev) => prev + 1);
@@ -613,11 +662,6 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
         if (options?.sendNotice === false) {
             return;
         }
-        const selfLabel = getLocalPart(matrixCredentials.user_id) || matrixCredentials.user_id;
-        await matrixClient.sendEvent(item.roomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
-            msgtype: "m.notice",
-            body: t("chat.fileRevokedNotice", { name: selfLabel }),
-        } as never);
     };
 
     const onDeleteBatchFiles = async (): Promise<void> => {
@@ -661,21 +705,6 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
 
         await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
 
-        if (succeeded > 0 && selectedFileRoomId) {
-            const selfLabel = getLocalPart(matrixCredentials?.user_id) || matrixCredentials?.user_id || "user";
-            try {
-                await matrixClient.sendEvent(selectedFileRoomId, MATRIX_EVENT_TYPE_ROOM_MESSAGE as never, {
-                    msgtype: "m.notice",
-                    body: t("layout.fileBatchRevokedNotice", {
-                        name: selfLabel,
-                        count: succeeded,
-                        defaultValue: `${selfLabel} revoked ${succeeded} files`,
-                    }),
-                } as never);
-            } catch {
-                // Keep batch delete fast; file redactions already succeeded.
-            }
-        }
         setSelectedFileIds([]);
         setFileBatchMode(false);
         setShowFileToolbarMenu(false);
@@ -711,7 +740,60 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
                 />
             ) : (
                 <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white dark:bg-slate-900">
-                    {!selectedRoomSummary ? (
+                    <div className="flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[320px_minmax(0,1fr)]">
+                        {showRoomSummaryPane && (
+                            <aside className="flex min-h-0 flex-col border-b border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:border-b-0 lg:border-r">
+                                <div className="border-b border-gray-100 px-4 py-4 dark:border-slate-800">
+                                    <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                                        {t("layout.fileLibraryTitle", "档案资料")}
+                                    </div>
+                                    <div className="mt-3">
+                                        <input
+                                            type="text"
+                                            value={fileRoomSearch}
+                                            onChange={(event) => setFileRoomSearch(event.target.value)}
+                                            placeholder={t("layout.filesRoomSearchPlaceholder", "搜索聊天室附件")}
+                                            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-h-0 overflow-y-auto gt-visible-scrollbar px-3 py-3">
+                                    {filteredRoomSummaryList.length === 0 ? (
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                                            {t("layout.fileNoRoomSelected")}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {filteredRoomSummaryList.map((roomSummary) => {
+                                                const isSelected = roomSummary.roomId === selectedFileRoomId;
+                                                return (
+                                                    <button
+                                                        key={roomSummary.roomId}
+                                                        type="button"
+                                                        onClick={() => onSelectFileRoom(roomSummary.roomId)}
+                                                        className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                                                            isSelected
+                                                                ? "border-emerald-300 bg-emerald-50 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30"
+                                                                : "border-gray-100 bg-gray-50 hover:border-emerald-200 hover:bg-white dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+                                                        }`}
+                                                    >
+                                                        <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                            {roomSummary.roomName}
+                                                        </div>
+                                                        <div className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+                                                            <span>{t("layout.filesCountLabel", { count: roomSummary.attachmentCount })}</span>
+                                                            <span>{formatBytesToMb(roomSummary.totalKnownBytes)} MB</span>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </aside>
+                        )}
+                        {showFileDetailPane ? (
+                            !selectedRoomSummary ? (
                         <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
                             {t("layout.fileNoRoomSelected")}
                         </div>
@@ -993,7 +1075,9 @@ const FileCenterPanel: React.FC<FileCenterPanelProps> = ({
                                 <div className="px-6 pb-4 text-sm text-rose-500">{fileActionError}</div>
                             )}
                         </div>
-                    )}
+                    )
+                        ) : null}
+                    </div>
                 </div>
             )}
 

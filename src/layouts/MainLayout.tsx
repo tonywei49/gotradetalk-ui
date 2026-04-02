@@ -44,6 +44,7 @@ import { traceEvent } from "../utils/debugTrace";
 import {
     ChatSearchError,
 } from "../features/chat/chatSearchApi";
+import { TaskReminderBanner, useTaskModule, useTaskUI } from "../features/tasks";
 import {
     NotebookServiceError,
 } from "../services/notebookApi";
@@ -340,12 +341,15 @@ const FILES_WARMUP_DELAY_MS = 1400;
 const NOTEBOOK_WARMUP_DELAY_MS = 2600;
 const WINDOWS_ROOM_LIST_MOUNT_DELAY_MS = 900;
 const WINDOWS_MATRIX_BOOT_DELAY_MS = 2600;
+const WINDOWS_MATRIX_INITIAL_SYNC_LIMIT = 5;
 const WORKSPACE_CACHE_PREFIX = "gtt_workspace_state_v1:";
 const WORKSPACE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const NOTEBOOK_API_BASE_URL_CACHE_PREFIX = "gtt_notebook_api_base_url_v1:";
 const NOTEBOOK_CAPABILITIES_CACHE_PREFIX = "gtt_notebook_capabilities_v1:";
 const NOTEBOOK_BOOT_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-const MATRIX_INITIAL_SYNC_LIMIT = (isTauriDesktop() && resolveRuntimePlatform() === "windows") ? 6 : 12;
+const MATRIX_INITIAL_SYNC_LIMIT = (isTauriDesktop() && resolveRuntimePlatform() === "windows")
+    ? WINDOWS_MATRIX_INITIAL_SYNC_LIMIT
+    : 12;
 
 type DeferredModuleState = {
     tasks: boolean;
@@ -410,6 +414,15 @@ function writeNotebookBootCache<T>(cacheKey: string | null, value: T | null): vo
     }
 }
 
+function readDebugActiveRoomId(): string | null {
+    const roomId = import.meta.env.VITE_DEBUG_ACTIVE_ROOM_ID;
+    if (!roomId || typeof roomId !== "string") {
+        return null;
+    }
+    const normalized = roomId.trim();
+    return normalized || null;
+}
+
 function DeferredModulePanel({ title, description }: { title: string; description: string }) {
     return (
         <div className="flex h-full min-h-0 items-center justify-center bg-white p-6 dark:bg-slate-900">
@@ -428,8 +441,10 @@ export const MainLayout: React.FC = () => {
     const runtimePlatform = useMemo(() => resolveRuntimePlatform(), []);
     const isWindowsDesktop = useMemo(() => isTauriDesktop() && runtimePlatform === "windows", [runtimePlatform]);
     const shouldWarmDeferredModules = !(isTauriDesktop() && runtimePlatform === "windows");
+    const injectedDebugActiveRoomId = useMemo(() => readDebugActiveRoomId(), []);
     const [roomListMounted, setRoomListMounted] = useState(!isWindowsDesktop);
     const [matrixBootReady, setMatrixBootReady] = useState(!isWindowsDesktop);
+    const [windowsMatrixLiveSyncRequested, setWindowsMatrixLiveSyncRequested] = useState(true);
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
@@ -602,6 +617,8 @@ export const MainLayout: React.FC = () => {
     const tasksReady = deferredModules.tasks || activeTab === "tasks";
     const filesReady = deferredModules.files || activeTab === "files";
     const notebookReady = deferredModules.notebook || activeTab === "notebook";
+    const taskChatReady = tasksReady || activeTab === "chat";
+    const notebookChatReady = notebookReady || activeTab === "chat";
 
     useEffect(() => {
         if (!matrixCredentials?.user_id) {
@@ -641,17 +658,18 @@ export const MainLayout: React.FC = () => {
     }, [matrixCredentials?.user_id, shouldWarmDeferredModules]);
 
     useEffect(() => {
+        if (isWindowsDesktop) {
+            setActiveTab("chat");
+            setActiveRoomId(injectedDebugActiveRoomId);
+            setSelectedFileRoomId(null);
+            setRestoredActiveContactId(null);
+            return;
+        }
+
         let disposed = false;
 
         const applyCachedState = (cached: PersistedWorkspaceState | null): void => {
             if (!cached || disposed) return;
-            if (isWindowsDesktop) {
-                setActiveTab("chat");
-                setActiveRoomId(null);
-                setSelectedFileRoomId(null);
-                setRestoredActiveContactId(null);
-                return;
-            }
             if (cached.activeTab) {
                 setActiveTab(cached.activeTab);
             }
@@ -677,12 +695,10 @@ export const MainLayout: React.FC = () => {
         return () => {
             disposed = true;
         };
-    }, [matrixCredentials?.user_id, workspaceCacheKey]);
+    }, [injectedDebugActiveRoomId, isWindowsDesktop, matrixCredentials?.user_id, workspaceCacheKey]);
 
     useEffect(() => {
-        const cachedNotebookApiBaseUrl = userType === "staff"
-            ? null
-            : readNotebookBootCache<string>(notebookApiBaseUrlCacheKey);
+        const cachedNotebookApiBaseUrl = readNotebookBootCache<string>(notebookApiBaseUrlCacheKey);
         const cachedCapabilities = readNotebookBootCache<string[]>(notebookCapabilitiesCacheKey);
 
         setNotebookApiBaseUrlOverride(cachedNotebookApiBaseUrl);
@@ -722,6 +738,34 @@ export const MainLayout: React.FC = () => {
             setDeferredModules((prev) => ({ ...prev, notebook: true }));
         }
     }, [activeTab, deferredModules.files, deferredModules.notebook, deferredModules.tasks]);
+    const activeRoomName = useMemo(() => {
+        if (!matrixClient || !activeRoomId) return null;
+        const room = matrixClient.getRoom(activeRoomId);
+        if (!room) return null;
+        return resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
+    }, [activeRoomId, matrixClient, matrixCredentials?.user_id]);
+    const taskModule = useTaskModule({
+        userId: taskChatReady ? matrixCredentials?.user_id ?? null : null,
+        activeRoomId,
+        activeRoomName,
+        accessToken: taskChatReady ? taskAccessToken : null,
+        hsUrl: taskChatReady ? taskHsUrl : null,
+        matrixUserId: taskChatReady ? matrixCredentials?.user_id ?? null : null,
+    });
+    const taskUi = useTaskUI({
+        taskModule,
+        onOpenRoom: (roomId) => {
+            setActiveRoomId(roomId);
+            setActiveTab("chat");
+            setMobileView("detail");
+        },
+        onOpenTasksTab: () => {
+            setActiveTab("tasks");
+            setMobileView("list");
+        },
+        onMobileDetail: () => setMobileView("detail"),
+        onMobileList: () => setMobileView("list"),
+    });
 
     useEffect(() => {
         if (!isWindowsDesktop) return;
@@ -760,7 +804,7 @@ export const MainLayout: React.FC = () => {
     const [capabilityTokenRefreshSeq, setCapabilityTokenRefreshSeq] = useState(0);
     const shouldWaitForNotebookMeBootstrap = userType === "staff";
     const resolvedNotebookApiBaseUrl = userType === "staff"
-        ? (hubMeResolved ? (notebookApiBaseUrlOverride ?? null) : null)
+        ? (notebookApiBaseUrlOverride ?? null)
         : (shouldWaitForNotebookMeBootstrap && !hubMeResolved
             ? null
             : notebookApiBaseUrlOverride ?? configuredNotebookApiBaseUrl ?? null);
@@ -796,6 +840,12 @@ export const MainLayout: React.FC = () => {
         userType,
     ]);
     const capabilityToken = notebookToken.accessToken;
+    const notebookCapabilityBootstrapReady = hubMeResolved || (
+        userType === "staff"
+        && Boolean(effectiveNotebookApiBaseUrl)
+        && Boolean(matrixCredentials?.user_id)
+        && Boolean(capabilityToken)
+    );
     const notebookCapabilityState = useMemo(
         () =>
             resolveNotebookCapabilities({
@@ -808,6 +858,17 @@ export const MainLayout: React.FC = () => {
     const hasNotebookLocalWorkspace = Boolean(matrixCredentials?.user_id);
     const notebookWorkspaceVisible = hasNotebookLocalWorkspace;
     const notebookWorkspaceAvailable = Boolean(notebookWorkspaceAuth?.matrixUserId);
+    const matrixLiveSyncEnabled = !isWindowsDesktop || windowsMatrixLiveSyncRequested;
+
+    const requestWindowsMatrixLiveSync = useCallback(() => {
+        if (!isWindowsDesktop) return;
+        setWindowsMatrixLiveSyncRequested(true);
+    }, [isWindowsDesktop]);
+
+    useEffect(() => {
+        setWindowsMatrixLiveSyncRequested(true);
+    }, [isWindowsDesktop, matrixCredentials?.user_id]);
+
     useEffect(() => {
         if (!desktopUpdaterAvailable) return;
 
@@ -875,17 +936,45 @@ export const MainLayout: React.FC = () => {
 
         let active = true;
         let unsubscribe: (() => void) | undefined;
+        const currentHubSub = parseJwtSub(hubSession?.access_token);
 
-        const syncStoreFromSession = (
+        type SupabaseSessionSyncClient = {
+            auth: {
+                setSession: (session: { access_token: string; refresh_token: string }) => Promise<unknown>;
+            };
+        };
+
+        const syncSupabaseFromCurrentSession = async (
+            supabase: SupabaseSessionSyncClient,
+        ): Promise<void> => {
+            if (!active) return;
+            if (!hubSession?.access_token || !hubSession.refresh_token) return;
+            try {
+                await supabase.auth.setSession({
+                    access_token: hubSession.access_token,
+                    refresh_token: hubSession.refresh_token,
+                });
+            } catch {
+                // ignore bootstrap sync failures; request-level refresh handles recovery
+            }
+        };
+
+        const syncStoreFromSession = async (
+            supabase: SupabaseSessionSyncClient,
             nextSession: {
                 access_token?: string | null;
                 refresh_token?: string | null;
                 expires_at?: number | null;
             } | null | undefined,
-        ): void => {
+        ): Promise<void> => {
             if (!active) return;
             const normalized = toStoredHubSession(nextSession, hubSession?.refresh_token);
             if (!normalized) return;
+            const nextHubSub = parseJwtSub(normalized.access_token);
+            if (currentHubSub && nextHubSub && nextHubSub !== currentHubSub) {
+                await syncSupabaseFromCurrentSession(supabase);
+                return;
+            }
             if (
                 normalized.access_token === hubSession?.access_token
                 && normalized.refresh_token === (hubSession?.refresh_token || "")
@@ -903,20 +992,14 @@ export const MainLayout: React.FC = () => {
             void supabase.auth.getSession().then(({ data, error }) => {
                 if (!active || error) return;
                 if (data.session?.access_token) {
-                    syncStoreFromSession(data.session);
+                    void syncStoreFromSession(supabase, data.session);
                     return;
                 }
-                if (!hubSession?.access_token || !hubSession.refresh_token) return;
-                void supabase.auth.setSession({
-                    access_token: hubSession.access_token,
-                    refresh_token: hubSession.refresh_token,
-                }).catch(() => {
-                    // ignore bootstrap sync failures; request-level refresh handles recovery
-                });
+                void syncSupabaseFromCurrentSession(supabase);
             });
 
             const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-                syncStoreFromSession(nextSession);
+                void syncStoreFromSession(supabase, nextSession);
             });
             unsubscribe = () => data.subscription.unsubscribe();
         });
@@ -1251,12 +1334,12 @@ export const MainLayout: React.FC = () => {
     ]);
 
     useEffect(() => {
-        if (!matrixBootReady || matrixClient || !matrixCredentials) return;
+        if (!matrixBootReady || !matrixLiveSyncEnabled || matrixClient || !matrixCredentials) return;
         void ensureMatrixClient();
-    }, [ensureMatrixClient, matrixBootReady, matrixClient, matrixCredentials]);
+    }, [ensureMatrixClient, matrixBootReady, matrixClient, matrixCredentials, matrixLiveSyncEnabled]);
 
     useEffect(() => {
-        if (!matrixBootReady || !matrixClient) return undefined;
+        if (!matrixBootReady || !matrixLiveSyncEnabled || !matrixClient) return undefined;
         let cancelled = false;
 
         void import("../matrix/client").then(({ prepareMatrixClient }) =>
@@ -1273,7 +1356,7 @@ export const MainLayout: React.FC = () => {
             cancelled = true;
             matrixClient.stopClient();
         };
-    }, [matrixBootReady, matrixClient]);
+    }, [matrixBootReady, matrixClient, matrixLiveSyncEnabled]);
 
     useEffect(() => {
         if (!matrixClient || !matrixCredentials?.user_id) return undefined;
@@ -1434,7 +1517,7 @@ export const MainLayout: React.FC = () => {
     }, [hubAccessToken, matrixHsUrl, matrixCredentials?.user_id, notebookApiBaseUrlCacheKey, runHubSessionRequest]);
 
     useEffect(() => {
-        if (!notebookReady) {
+        if (!notebookChatReady) {
             setNotebookUploadLimitMb(20);
             return;
         }
@@ -1458,10 +1541,10 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [effectiveNotebookApiBaseUrl, notebookAuth, notebookReady, runNotebookAuthedRequest]);
+    }, [effectiveNotebookApiBaseUrl, notebookAuth, notebookChatReady, runNotebookAuthedRequest]);
 
     useEffect(() => {
-        if (!notebookReady) {
+        if (!notebookChatReady) {
             setCapabilityError(null);
             return;
         }
@@ -1498,7 +1581,7 @@ export const MainLayout: React.FC = () => {
             });
             return;
         }
-        if (!hubMeResolved) {
+        if (!notebookCapabilityBootstrapReady) {
             setCapabilityLoaded(false);
             setCapabilityError(null);
             return;
@@ -1516,13 +1599,28 @@ export const MainLayout: React.FC = () => {
         let alive = true;
         setCapabilityLoaded(false);
         setCapabilityError(null);
-        void import("../services/notebookApi").then(({ getNotebookCapabilities }) =>
-            runNotebookAuthedRequest((auth) => getNotebookCapabilities({
+
+        const loadCapabilities = async () => {
+            if (isTauriDesktop()) {
+                const { desktopGetNotebookCapabilities } = await import("../desktop/notebookDesktopApi");
+                return runNotebookAuthedRequest((auth) => desktopGetNotebookCapabilities({
+                    accessToken: auth.accessToken,
+                    apiBaseUrl: auth.apiBaseUrl ?? effectiveNotebookApiBaseUrl ?? "",
+                    hsUrl: auth.hsUrl,
+                    matrixUserId: auth.matrixUserId,
+                }));
+            }
+
+            const { getNotebookCapabilities } = await import("../services/notebookApi");
+            return runNotebookAuthedRequest((auth) => getNotebookCapabilities({
                 accessToken: auth.accessToken,
                 apiBaseUrl: auth.apiBaseUrl,
                 hsUrl: auth.hsUrl,
                 matrixUserId: auth.matrixUserId,
-            }))).then((result) => {
+            }));
+        };
+
+        void loadCapabilities().then((result) => {
             if (!alive) return;
             const values = Array.isArray(result.capabilities)
                 ? result.capabilities.filter((value): value is string => typeof value === "string")
@@ -1604,7 +1702,7 @@ export const MainLayout: React.FC = () => {
         return () => {
             alive = false;
         };
-    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, runNotebookAuthedRequest, t, triggerNotebookTerminalLogout, userType]);
+    }, [capabilityRefreshSeq, capabilityToken, capabilityTokenRefreshSeq, capabilityValues.length, effectiveNotebookApiBaseUrl, hubMeResolved, hubSession?.refresh_token, matrixCredentials?.user_id, matrixHsUrl, notebookCapabilitiesCacheKey, notebookCapabilityBootstrapReady, notebookChatReady, notebookToken.reason, refreshNotebookToken, refreshingNotebookToken, runNotebookAuthedRequest, t, triggerNotebookTerminalLogout, userType]);
 
     useEffect(() => {
         const onClickOutside = (event: MouseEvent): void => {
@@ -2228,7 +2326,7 @@ export const MainLayout: React.FC = () => {
             {/* 2. List Panel (w-80, bg-white) */}
             <aside
                 className={`min-h-0 w-full flex-1 lg:flex-none bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10 shadow-sm dark:bg-slate-900 dark:border-slate-800 lg:w-80 ${
-                    activeTab === "tasks" || activeTab === "notebook" ? "hidden lg:hidden" : mobileView === "detail" ? "hidden lg:flex" : "flex"
+                    activeTab === "tasks" || activeTab === "notebook" || activeTab === "files" ? "hidden lg:hidden" : mobileView === "detail" ? "hidden lg:flex" : "flex"
                     }`}
             >
                 {activeTab === "settings" || activeTab === "account" ? (
@@ -2307,6 +2405,7 @@ export const MainLayout: React.FC = () => {
                             <Suspense fallback={<div className="flex-1 min-h-0 bg-white dark:bg-slate-900" />}>
                                 <RoomList
                                     client={matrixClient}
+                                    cacheUserId={matrixCredentials?.user_id ?? null}
                                     hubAccessToken={hubAccessToken}
                                     matrixAccessToken={matrixAccessToken}
                                     matrixHsUrl={matrixHsUrl}
@@ -2314,6 +2413,9 @@ export const MainLayout: React.FC = () => {
                                     hubSessionExpiresAt={hubSessionExpiresAt}
                                     activeRoomId={activeRoomId}
                                     onSelectRoom={(roomId) => {
+                                        if (isWindowsDesktop) {
+                                            setWindowsMatrixLiveSyncRequested(true);
+                                        }
                                         setActiveRoomId(roomId);
                                         setMobileView("detail");
                                     }}
@@ -2331,6 +2433,9 @@ export const MainLayout: React.FC = () => {
                                     enableContactPolling
                                     notificationSoundMode={notificationSoundMode}
                                     autoSelectInitialRoom={!isWindowsDesktop}
+                                    liveSyncEnabled={matrixLiveSyncEnabled}
+                                    liveSyncStarting={matrixLiveSyncEnabled && !matrixClient}
+                                    onRequestLiveSync={requestWindowsMatrixLiveSync}
                                 />
                             </Suspense>
                         ) : (
@@ -2346,6 +2451,9 @@ export const MainLayout: React.FC = () => {
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
             >
+                {taskChatReady && taskModule.hydrated ? (
+                    <TaskReminderBanner {...(activeTab === "chat" ? taskUi.chatReminderProps : taskUi.reminderProps)} />
+                ) : null}
                 {/* Render nested routes (ChatRoom) here */}
                 {activeTab === "contacts" ? (
                     <Suspense fallback={null}>
@@ -2387,6 +2495,7 @@ export const MainLayout: React.FC = () => {
                             setActiveTab={setActiveTab}
                             setJumpToEventId={setJumpToEventId}
                             setMobileView={setMobileView}
+                            mobileView={mobileView}
                             fileLibraryTick={fileLibraryTick}
                             setFileLibraryTick={setFileLibraryTick}
                             filesReady={filesReady}
@@ -2406,7 +2515,7 @@ export const MainLayout: React.FC = () => {
                         />}>
                             <NotebookPanel
                                 auth={notebookWorkspaceAuth}
-                                enabled={notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved)}
+                                enabled={notebookReady && notebookWorkspaceAvailable && (!shouldWaitForNotebookMeBootstrap || hubMeResolved || Boolean(resolvedNotebookApiBaseUrl))}
                                 refreshToken={notebookRefreshToken}
                                 onAuthFailure={async () => refreshNotebookToken({ force: true })}
                                 onTerminalAuthFailure={triggerNotebookTerminalLogout}
@@ -2440,28 +2549,8 @@ export const MainLayout: React.FC = () => {
                             description="The task workspace is restoring local data before showing the latest task state."
                         />}>
                             <TaskWorkspaceDesktop
-                                userId={matrixCredentials?.user_id ?? null}
-                                activeRoomId={activeRoomId}
-                                activeRoomName={(() => {
-                                    if (!activeRoomId || !matrixClient) return null;
-                                    const room = matrixClient.getRoom(activeRoomId);
-                                    if (!room) return null;
-                                    return resolveRoomListDisplayName(room, matrixCredentials?.user_id ?? null);
-                                })()}
-                                accessToken={taskAccessToken}
-                                hsUrl={taskHsUrl}
-                                matrixUserId={matrixCredentials?.user_id ?? null}
-                                onOpenRoom={(roomId) => {
-                                    setActiveRoomId(roomId);
-                                    setActiveTab("chat");
-                                    setMobileView("detail");
-                                }}
-                                onOpenTasksTab={() => {
-                                    setActiveTab("tasks");
-                                    setMobileView("list");
-                                }}
-                                onMobileDetail={() => setMobileView("detail")}
-                                onMobileList={() => setMobileView("list")}
+                                taskModule={taskModule}
+                                taskUi={taskUi}
                             />
                         </Suspense>
                     ) : (
@@ -2493,6 +2582,8 @@ export const MainLayout: React.FC = () => {
                     <Outlet
                         context={{
                             activeRoomId,
+                            activeRoomName,
+                            chatRouteReady: !isWindowsDesktop || Boolean(matrixClient),
                             onMobileBack: () => setMobileView("list"),
                             onHideRoom: () => void onHideActiveRoom(),
                             onLeaveRoom: () => void onLeaveActiveRoom(),
@@ -2504,12 +2595,20 @@ export const MainLayout: React.FC = () => {
                             jumpToEventId,
                             onJumpHandled: () => setJumpToEventId(null),
                             notebookAssistEnabled: notebookCapabilityState.canUseNotebookAssist,
+                            notebookCapabilityLoaded: notebookCapabilityState.loaded,
+                            notebookCapabilityLoading: notebookCapabilityState.loading,
                             notebookCapabilities: capabilityValues,
                             notebookCapabilityError: capabilityError,
                             onRetryNotebookCapability: retryNotebookCapability,
                             onReloginForNotebook: onLogout,
                             hasNotebookAuthToken: Boolean(capabilityToken),
+                            notebookAccessToken: capabilityToken,
+                            notebookMatrixAccessToken: matrixCredentials?.access_token ?? null,
+                            notebookHsUrl: matrixCredentials?.hs_url ?? null,
+                            notebookMatrixUserId: matrixCredentials?.user_id ?? null,
+                            notebookUserType: userType,
                             notebookApiBaseUrl: effectiveNotebookApiBaseUrl,
+                            ...taskUi.chatContext,
                         }}
                     />
                 )}

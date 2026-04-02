@@ -7,7 +7,9 @@ type MessageActionsMenuProps = {
     translationMode?: TranslationDisplayMode;
     canRetryTranslation?: boolean;
     canQuoteMessage?: boolean;
+    showAssistFromContext?: boolean;
     canAssistFromContext: boolean;
+    assistFromContextReason?: string | null;
     canSendFileToNotebook: boolean;
     canRecallMessage?: boolean;
     sendFileToNotebookBusy?: boolean;
@@ -16,6 +18,7 @@ type MessageActionsMenuProps = {
     onCopyMessage: () => void;
     onQuoteMessage?: () => void;
     onAssistFromContext?: () => void;
+    onAssistFromContextUnavailable?: () => void;
     onSendFileToNotebook?: () => void;
     onRecallMessage?: () => void;
     openUpward?: boolean;
@@ -28,7 +31,9 @@ export function MessageActionsMenu({
     translationMode,
     canRetryTranslation,
     canQuoteMessage,
+    showAssistFromContext = false,
     canAssistFromContext,
+    assistFromContextReason,
     canSendFileToNotebook,
     canRecallMessage,
     sendFileToNotebookBusy,
@@ -37,6 +42,7 @@ export function MessageActionsMenu({
     onCopyMessage,
     onQuoteMessage,
     onAssistFromContext,
+    onAssistFromContextUnavailable,
     onSendFileToNotebook,
     onRecallMessage,
     openUpward = false,
@@ -112,14 +118,26 @@ export function MessageActionsMenu({
                     {t("chat.quoteMessage")}
                 </button>
             )}
-            {canAssistFromContext && (
-                <button
-                    type="button"
-                    className="w-full px-3 py-1.5 text-left text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
-                    onClick={onAssistFromContext}
-                >
-                    {t("chat.notebook.useKnowledgeBase")}
-                </button>
+            {showAssistFromContext && (
+                <>
+                    <button
+                        type="button"
+                        className={`w-full px-3 py-1.5 text-left ${
+                            canAssistFromContext
+                                ? "text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
+                                : "text-slate-400 hover:bg-slate-50 dark:text-slate-500 dark:hover:bg-slate-800"
+                        }`}
+                        onClick={canAssistFromContext ? onAssistFromContext : onAssistFromContextUnavailable}
+                        title={!canAssistFromContext ? assistFromContextReason ?? undefined : undefined}
+                    >
+                        {t("chat.notebook.useKnowledgeBase")}
+                    </button>
+                    {!canAssistFromContext && assistFromContextReason && (
+                        <div className="px-3 pb-1 text-[10px] leading-4 text-slate-400 dark:text-slate-500">
+                            {assistFromContextReason}
+                        </div>
+                    )}
+                </>
             )}
             {canSendFileToNotebook && (
                 <button

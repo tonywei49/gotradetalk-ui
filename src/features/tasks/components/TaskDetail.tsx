@@ -32,6 +32,7 @@ export function TaskDetail({
     onOpenLinkedRoom,
 }: TaskDetailProps) {
     const { t } = useTranslation();
+    const linkedRoomLabel = task?.roomNameSnapshot || task?.roomId || null;
     if (!task && !editing) {
         return (
             <div className="flex h-full items-center justify-center bg-white text-slate-500 dark:bg-slate-900 dark:text-slate-400">
@@ -112,10 +113,10 @@ export function TaskDetail({
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                 </label>
-                {task?.roomNameSnapshot ? (
+                {linkedRoomLabel ? (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        <div>{t("tasks.linkedRoom", { roomName: task.roomNameSnapshot })}</div>
-                        {task.roomId && onOpenLinkedRoom ? (
+                        <div>{t("tasks.linkedRoom", { roomName: linkedRoomLabel })}</div>
+                        {task?.roomId && onOpenLinkedRoom ? (
                             <button
                                 type="button"
                                 onClick={() => onOpenLinkedRoom(task.roomId as string)}

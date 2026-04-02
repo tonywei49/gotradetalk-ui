@@ -62,6 +62,26 @@ struct DesktopHttpResponse {
   body_base64: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopNotebookCapabilitiesInput {
+  access_token: String,
+  api_base_url: String,
+  hs_url: Option<String>,
+  matrix_user_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NotebookCapabilitiesApiResponse {
+  capabilities: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopNotebookCapabilitiesResponse {
+  capabilities: Vec<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopBootReadyResult {
@@ -367,6 +387,58 @@ async fn desktop_http_request(input: DesktopHttpRequest) -> Result<DesktopHttpRe
   Ok(DesktopHttpResponse { status, headers, body_base64 })
 }
 
+#[tauri::command]
+async fn desktop_notebook_get_capabilities(
+  input: DesktopNotebookCapabilitiesInput,
+) -> Result<DesktopNotebookCapabilitiesResponse, String> {
+  let mut url = Url::parse(&format!("{}/me/capabilities", input.api_base_url.trim_end_matches('/')))
+    .map_err(|error| format!("invalid notebook api base url: {error}"))?;
+
+  if let Some(hs_url) = input.hs_url.as_deref().filter(|value| !value.trim().is_empty()) {
+    url.query_pairs_mut().append_pair("hs_url", hs_url);
+  }
+  if let Some(matrix_user_id) = input.matrix_user_id.as_deref().filter(|value| !value.trim().is_empty()) {
+    url.query_pairs_mut().append_pair("matrix_user_id", matrix_user_id);
+  }
+
+  let client = reqwest::Client::builder()
+    .use_rustls_tls()
+    .connect_timeout(Duration::from_secs(8))
+    .timeout(Duration::from_secs(15))
+    .http1_only()
+    .build()
+    .map_err(|error| format!("failed to build notebook capability client: {error}"))?;
+
+  let response = client
+    .get(url.clone())
+    .bearer_auth(input.access_token)
+    .send()
+    .await
+    .map_err(|error| format!("desktop notebook capability request failed: {error}"))?;
+
+  let status = response.status();
+  if !status.is_success() {
+    let body = response
+      .text()
+      .await
+      .unwrap_or_else(|_| String::new());
+    return Err(format!(
+      "desktop notebook capability request failed with HTTP {}: {}",
+      status.as_u16(),
+      body
+    ));
+  }
+
+  let payload = response
+    .json::<NotebookCapabilitiesApiResponse>()
+    .await
+    .map_err(|error| format!("failed to decode notebook capability response: {error}"))?;
+
+  Ok(DesktopNotebookCapabilitiesResponse {
+    capabilities: payload.capabilities.unwrap_or_default(),
+  })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let log_level = if cfg!(debug_assertions) {
@@ -542,6 +614,7 @@ pub fn run() {
       desktop_boot_ready,
       desktop_open_devtools,
       desktop_http_request,
+      desktop_notebook_get_capabilities,
       desktop_updater_status,
       desktop_check_for_updates,
       desktop_install_update

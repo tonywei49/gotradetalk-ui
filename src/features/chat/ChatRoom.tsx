@@ -66,7 +66,7 @@ import { useNotebookAssist } from "./hooks/useNotebookAssist";
 import { MessageActionsMenu } from "./components/MessageActionsMenu";
 import { getNotebookAdapter } from "../notebook/adapters";
 import { mapNotebookErrorToMessage } from "../notebook/notebookErrorMap";
-import { buildNotebookAuth } from "../notebook/utils/buildNotebookAuth";
+import type { NotebookAuthContext } from "../notebook/types";
 import { isNotebookTerminalAuthFailure } from "../notebook/utils/isNotebookTerminalAuthFailure";
 import { TaskQuickCreate } from "../tasks/components/TaskQuickCreate";
 import { TaskRoomBar } from "../tasks/components/TaskRoomBar";
@@ -107,8 +107,11 @@ type MessageBubbleProps = {
     canDeleteFile?: boolean;
     deleteBusy?: boolean;
     onDeleteFile?: (event: MatrixEvent) => void;
+    showAssistFromContextAction?: boolean;
     canUseNotebookAssist?: boolean;
+    assistFromContextReason?: string | null;
     onAssistFromContext?: (anchorEventId: string) => void;
+    onAssistFromContextUnavailable?: () => void;
     canUseNotebookBasic?: boolean;
     onSendFileToNotebook?: (event: MatrixEvent) => void;
     sendFileToNotebookBusy?: boolean;
@@ -473,8 +476,11 @@ const MessageBubble = ({
     canDeleteFile,
     deleteBusy,
     onDeleteFile,
+    showAssistFromContextAction,
     canUseNotebookAssist,
+    assistFromContextReason,
     onAssistFromContext,
+    onAssistFromContextUnavailable,
     canUseNotebookBasic,
     onSendFileToNotebook,
     sendFileToNotebookBusy,
@@ -532,6 +538,13 @@ const MessageBubble = ({
         anchorEventId &&
         onAssistFromContext,
     );
+    const showAssistFromContext = Boolean(
+        showAssistFromContextAction &&
+        isText &&
+        event.getType() === EventType.RoomMessage &&
+        content?.msgtype !== MsgType.Notice &&
+        anchorEventId,
+    );
     const rawMxc = typeof (content as { url?: unknown } | undefined)?.url === "string"
         ? String((content as { url?: string }).url)
         : "";
@@ -550,7 +563,7 @@ const MessageBubble = ({
         event.getId(),
     );
     const canQuoteMessage = Boolean(onQuoteMessage);
-    const hasQuickActions = Boolean(onCopyMessage) || canQuoteMessage || canToggleTranslation || canAssistFromContext || canSendFileToNotebook || canRecallMessage;
+    const hasQuickActions = Boolean(onCopyMessage) || canQuoteMessage || canToggleTranslation || showAssistFromContext || canSendFileToNotebook || canRecallMessage;
     const displayText = showTranslated
         ? hasTranslatedText
             ? (translatedText as string)
@@ -636,7 +649,9 @@ const MessageBubble = ({
                                     translationMode={effectiveTranslationMode}
                                     canRetryTranslation={canRetryTranslation}
                                     canQuoteMessage={canQuoteMessage}
+                                    showAssistFromContext={showAssistFromContext}
                                     canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
+                                    assistFromContextReason={assistFromContextReason}
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
                                     openUpward={showQuickActionMenuUpward}
@@ -661,6 +676,10 @@ const MessageBubble = ({
                                         if (!anchorEventId) return;
                                         setShowQuickActionMenu(false);
                                         onAssistFromContext?.(anchorEventId);
+                                    }}
+                                    onAssistFromContextUnavailable={() => {
+                                        setShowQuickActionMenu(false);
+                                        onAssistFromContextUnavailable?.();
                                     }}
                                     onSendFileToNotebook={() => {
                                         setShowQuickActionMenu(false);
@@ -832,7 +851,9 @@ const MessageBubble = ({
                                     translationMode={effectiveTranslationMode}
                                     canRetryTranslation={canRetryTranslation}
                                     canQuoteMessage={canQuoteMessage}
+                                    showAssistFromContext={showAssistFromContext}
                                     canAssistFromContext={Boolean(canAssistFromContext && anchorEventId)}
+                                    assistFromContextReason={assistFromContextReason}
                                     canSendFileToNotebook={canSendFileToNotebook}
                                     sendFileToNotebookBusy={sendFileToNotebookBusy}
                                     openUpward={showQuickActionMenuUpward}
@@ -857,6 +878,10 @@ const MessageBubble = ({
                                         if (!anchorEventId) return;
                                         setShowQuickActionMenu(false);
                                         onAssistFromContext?.(anchorEventId);
+                                    }}
+                                    onAssistFromContextUnavailable={() => {
+                                        setShowQuickActionMenu(false);
+                                        onAssistFromContextUnavailable?.();
                                     }}
                                     onSendFileToNotebook={() => {
                                         setShowQuickActionMenu(false);
@@ -936,6 +961,7 @@ const MessageBubble = ({
 
 type ChatRoomContext = {
     activeRoomId: string | null;
+    activeRoomName?: string | null;
     onMobileBack?: () => void;
     onHideRoom?: () => void;
     onLeaveRoom?: () => void;
@@ -947,13 +973,68 @@ type ChatRoomContext = {
     jumpToEventId?: string | null;
     onJumpHandled?: () => void;
     notebookAssistEnabled?: boolean;
+    notebookCapabilityLoaded?: boolean;
+    notebookCapabilityLoading?: boolean;
     notebookCapabilities?: string[];
     notebookCapabilityError?: string | null;
     onRetryNotebookCapability?: () => void;
     onReloginForNotebook?: () => void;
     hasNotebookAuthToken?: boolean;
+    notebookAccessToken?: string | null;
+    notebookMatrixAccessToken?: string | null;
+    notebookHsUrl?: string | null;
+    notebookMatrixUserId?: string | null;
+    notebookUserType?: "client" | "staff" | null;
     notebookApiBaseUrl?: string | null;
 } & TaskChatContext;
+
+type ChatCapabilityProbeState = {
+    loading: boolean;
+    loaded: boolean;
+    values: string[];
+    error: string | null;
+};
+
+const CHAT_NOTEBOOK_CAPABILITY_CACHE_SCOPE = "chat-notebook-capability";
+const CHAT_NOTEBOOK_CAPABILITY_CACHE_KEY_PREFIX = "gtt_chat_notebook_capability_v1";
+const CHAT_NOTEBOOK_CAPABILITY_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
+function readChatNotebookCapabilityCache(storageKey: string): ChatCapabilityProbeState | null {
+    if (!storageKey || typeof window === "undefined") return null;
+    try {
+        const raw = window.sessionStorage.getItem(storageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<ChatCapabilityProbeState>;
+        if (!parsed || typeof parsed !== "object") return null;
+        return {
+            loading: false,
+            loaded: Boolean(parsed.loaded || Array.isArray(parsed.values)),
+            values: Array.isArray(parsed.values)
+                ? parsed.values.filter((value): value is string => typeof value === "string")
+                : [],
+            error: typeof parsed.error === "string" ? parsed.error : null,
+        };
+    } catch {
+        return null;
+    }
+}
+
+function writeChatNotebookCapabilityCache(storageKey: string, payload: ChatCapabilityProbeState): void {
+    if (!storageKey || typeof window === "undefined") return;
+    try {
+        if (!payload.loaded && payload.values.length === 0 && !payload.error) {
+            window.sessionStorage.removeItem(storageKey);
+            return;
+        }
+        window.sessionStorage.setItem(storageKey, JSON.stringify({
+            loaded: payload.loaded,
+            values: payload.values,
+            error: payload.error,
+        }));
+    } catch {
+        // ignore session cache failures
+    }
+}
 
 type RemoveTarget = {
     userId: string;
@@ -1128,6 +1209,7 @@ export const ChatRoom: React.FC = () => {
     const pushToast = useToastStore((state) => state.pushToast);
     const {
         activeRoomId,
+        activeRoomName,
         onMobileBack,
         onHideRoom,
         onLeaveRoom,
@@ -1139,11 +1221,18 @@ export const ChatRoom: React.FC = () => {
         jumpToEventId,
         onJumpHandled,
         notebookAssistEnabled,
+        notebookCapabilityLoaded,
+        notebookCapabilityLoading,
         notebookCapabilities,
         notebookCapabilityError,
         onRetryNotebookCapability,
         onReloginForNotebook,
         hasNotebookAuthToken,
+        notebookAccessToken,
+        notebookMatrixAccessToken,
+        notebookHsUrl,
+        notebookMatrixUserId,
+        notebookUserType,
         notebookApiBaseUrl,
         taskStatuses,
         roomTasks,
@@ -1160,6 +1249,7 @@ export const ChatRoom: React.FC = () => {
     const hubSession = useAuthStore((state) => state.hubSession);
     const userType = useAuthStore((state) => state.userType);
     const { events, room, showingCachedEvents } = useRoomTimeline(matrixClient, activeRoomId, { limit: 20 });
+    const taskLinkedRoomName = activeRoomName ?? room?.name ?? null;
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const roomStickBottomRef = useRef<Record<string, boolean>>({});
     const historyScrollAnchorRef = useRef<{
@@ -1255,6 +1345,20 @@ export const ChatRoom: React.FC = () => {
         [activeRoomId, matrixCredentials?.user_id],
     );
     const draftMediaRegistrySqliteKey = useMemo(() => matrixCredentials?.user_id ?? null, [matrixCredentials?.user_id]);
+
+    useEffect(() => {
+        if (!activeRoomId || !taskQuickDraft || !onTaskQuickDraftChange) return;
+        if (
+            taskQuickDraft.roomId === activeRoomId &&
+            taskQuickDraft.roomNameSnapshot === taskLinkedRoomName
+        ) {
+            return;
+        }
+        onTaskQuickDraftChange({
+            roomId: activeRoomId,
+            roomNameSnapshot: taskLinkedRoomName,
+        });
+    }, [activeRoomId, onTaskQuickDraftChange, taskLinkedRoomName, taskQuickDraft]);
     const hubAccessToken = hubSession?.access_token ?? null;
     const hubSessionExpiresAt = hubSession?.expires_at ?? null;
     const matrixAccessToken = matrixCredentials?.access_token ?? null;
@@ -1268,15 +1372,271 @@ export const ChatRoom: React.FC = () => {
     const translateHsUrl = useHubTokenForTranslate ? null : matrixHsUrl;
     const translateMatrixUserId = matrixCredentials?.user_id ?? null;
     const notebookAdapter = useMemo(() => getNotebookAdapter(), []);
-    const { notebookAuth } = useMemo(() => buildNotebookAuth({
-        hubSession,
-        matrixCredentials,
+    const notebookAuth = useMemo<NotebookAuthContext | null>(() => {
+        if (!notebookAccessToken) {
+            return null;
+        }
+        return {
+            accessToken: notebookAccessToken,
+            matrixAccessToken: notebookMatrixAccessToken ?? matrixCredentials?.access_token ?? null,
+            apiBaseUrl: notebookApiBaseUrl ?? null,
+            hsUrl: notebookHsUrl ?? matrixCredentials?.hs_url ?? null,
+            matrixUserId: notebookMatrixUserId ?? matrixCredentials?.user_id ?? null,
+            userType: notebookUserType ?? userType,
+            capabilities: notebookCapabilities,
+        };
+    }, [
+        matrixCredentials?.access_token,
+        matrixCredentials?.hs_url,
+        matrixCredentials?.user_id,
+        notebookAccessToken,
+        notebookApiBaseUrl,
+        notebookCapabilities,
+        notebookHsUrl,
+        notebookMatrixAccessToken,
+        notebookMatrixUserId,
+        notebookUserType,
         userType,
-        capabilities: notebookCapabilities,
-        apiBaseUrl: notebookApiBaseUrl,
-    }), [hubSession, matrixCredentials, userType, notebookCapabilities, notebookApiBaseUrl]);
-    const canUseNotebookAssist = Boolean(notebookAssistEnabled && notebookAuth);
-    const canUseNotebookBasic = Boolean(notebookAuth && notebookCapabilities?.includes("NOTEBOOK_BASIC"));
+    ]);
+    const chatCapabilityProbeStorageKey = useMemo(
+        () => (notebookMatrixUserId ?? matrixCredentials?.user_id)
+            ? `${CHAT_NOTEBOOK_CAPABILITY_CACHE_KEY_PREFIX}:${notebookMatrixUserId ?? matrixCredentials?.user_id}`
+            : "",
+        [matrixCredentials?.user_id, notebookMatrixUserId],
+    );
+    const [chatCapabilityProbeSeq, setChatCapabilityProbeSeq] = useState(0);
+    const [chatCapabilityProbe, setChatCapabilityProbe] = useState<ChatCapabilityProbeState>(() => (
+        readChatNotebookCapabilityCache(chatCapabilityProbeStorageKey) ?? {
+            loading: false,
+            loaded: false,
+            values: [],
+            error: null,
+        }
+    ));
+    const mergedNotebookCapabilities = useMemo(() => {
+        const values = new Set<string>([
+            ...(Array.isArray(notebookCapabilities) ? notebookCapabilities : []),
+            ...chatCapabilityProbe.values,
+        ]);
+        return Array.from(values);
+    }, [chatCapabilityProbe.values, notebookCapabilities]);
+    const hasNotebookAssistCapability = mergedNotebookCapabilities.includes("NOTEBOOK_LLM_ASSIST");
+    const hasNotebookBasicCapability = mergedNotebookCapabilities.includes("NOTEBOOK_BASIC");
+    const chatCapabilityProbeReady = Boolean(
+        activeRoomId
+        && notebookAccessToken
+        && notebookApiBaseUrl
+        && isTauriDesktop(),
+    );
+
+    useEffect(() => {
+        const cached = readChatNotebookCapabilityCache(chatCapabilityProbeStorageKey);
+        if (!cached) return;
+        setChatCapabilityProbe((prev) => {
+            if (prev.loaded && prev.values.length > 0 && !prev.error) {
+                return prev;
+            }
+            return cached;
+        });
+
+        let cancelled = false;
+        void readUiStateFromSqlite<ChatCapabilityProbeState>(
+            CHAT_NOTEBOOK_CAPABILITY_CACHE_SCOPE,
+            chatCapabilityProbeStorageKey,
+            CHAT_NOTEBOOK_CAPABILITY_CACHE_TTL_MS,
+        ).then((payload) => {
+            if (cancelled || !payload) return;
+            setChatCapabilityProbe((prev) => {
+                if (prev.loaded && prev.values.length > 0 && !prev.error) {
+                    return prev;
+                }
+                return {
+                    loading: false,
+                    loaded: Boolean(payload.loaded || payload.values?.length),
+                    values: Array.isArray(payload.values) ? payload.values : [],
+                    error: typeof payload.error === "string" ? payload.error : null,
+                };
+            });
+        }).catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+    }, [chatCapabilityProbeStorageKey]);
+
+    useEffect(() => {
+        if (!chatCapabilityProbeReady) {
+            setChatCapabilityProbe((prev) => (
+                prev.loading || prev.loaded || prev.error || prev.values.length > 0
+                    ? { loading: false, loaded: false, values: [], error: null }
+                    : prev
+            ));
+            return;
+        }
+
+        let cancelled = false;
+        setChatCapabilityProbe((prev) => ({
+            ...prev,
+            loading: prev.loaded && prev.values.length > 0 ? false : true,
+            error: null,
+        }));
+
+        const loadCapabilities = async (): Promise<void> => {
+            try {
+                let values: string[] = [];
+                if (isTauriDesktop()) {
+                    const { desktopGetNotebookCapabilities } = await import("../../desktop/notebookDesktopApi");
+                    const result = await desktopGetNotebookCapabilities({
+                        accessToken: notebookAccessToken ?? "",
+                        apiBaseUrl: notebookApiBaseUrl ?? "",
+                        hsUrl: notebookHsUrl ?? matrixCredentials?.hs_url ?? null,
+                        matrixUserId: notebookMatrixUserId ?? matrixCredentials?.user_id ?? null,
+                    });
+                    values = Array.isArray(result.capabilities)
+                        ? result.capabilities.filter((value): value is string => typeof value === "string")
+                        : [];
+                } else {
+                    const { getNotebookCapabilities } = await import("../../services/notebookApi");
+                    const result = await getNotebookCapabilities({
+                        accessToken: notebookAccessToken ?? "",
+                        apiBaseUrl: notebookApiBaseUrl ?? "",
+                        hsUrl: notebookHsUrl ?? matrixCredentials?.hs_url ?? null,
+                        matrixUserId: notebookMatrixUserId ?? matrixCredentials?.user_id ?? null,
+                    });
+                    values = Array.isArray(result.capabilities)
+                        ? result.capabilities.filter((value): value is string => typeof value === "string")
+                        : [];
+                }
+
+                if (cancelled) return;
+                const nextState = {
+                    loading: false,
+                    loaded: true,
+                    values,
+                    error: null,
+                } satisfies ChatCapabilityProbeState;
+                setChatCapabilityProbe(nextState);
+                writeChatNotebookCapabilityCache(chatCapabilityProbeStorageKey, nextState);
+                void writeUiStateToSqlite(
+                    CHAT_NOTEBOOK_CAPABILITY_CACHE_SCOPE,
+                    chatCapabilityProbeStorageKey,
+                    nextState,
+                );
+            } catch (error) {
+                if (cancelled) return;
+                const nextState = {
+                    loading: false,
+                    loaded: true,
+                    values: [],
+                    error: error instanceof Error ? error.message : String(error),
+                } satisfies ChatCapabilityProbeState;
+                setChatCapabilityProbe(nextState);
+                writeChatNotebookCapabilityCache(chatCapabilityProbeStorageKey, nextState);
+            }
+        };
+
+        void loadCapabilities();
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        activeRoomId,
+        chatCapabilityProbeSeq,
+        chatCapabilityProbeReady,
+        notebookApiBaseUrl,
+        notebookAccessToken,
+        notebookHsUrl,
+        notebookMatrixUserId,
+        chatCapabilityProbeStorageKey,
+        matrixCredentials?.hs_url,
+        matrixCredentials?.user_id,
+    ]);
+
+    const canUseNotebookAssistFallback = Boolean(
+        notebookAuth
+        && activeRoomId
+        && hasNotebookAuthToken
+        && notebookApiBaseUrl
+        && hasNotebookAssistCapability,
+    );
+    const canUseNotebookAssist = Boolean((notebookAssistEnabled || canUseNotebookAssistFallback) && notebookAuth);
+    const canUseNotebookBasic = Boolean(notebookAuth && hasNotebookBasicCapability);
+    const showNotebookAssistEntry = Boolean(
+        canUseNotebookAssist
+        || canUseNotebookBasic
+        || hasNotebookBasicCapability
+        || chatCapabilityProbe.loaded
+        || chatCapabilityProbe.loading
+        || chatCapabilityProbe.error
+        || notebookCapabilityLoading
+        || notebookCapabilityError
+        || hasNotebookAuthToken
+        || notebookApiBaseUrl,
+    );
+    const notebookAssistUnavailableReason = useMemo(() => {
+        if (hasNotebookAssistCapability && notebookAuth) {
+            return null;
+        }
+        if (chatCapabilityProbe.loading) {
+            return t("chat.notebook.initializing", "Notebook AI is still initializing.");
+        }
+        if (notebookCapabilityLoading) {
+            return t("chat.notebook.initializing", "Notebook AI is still initializing.");
+        }
+        if (chatCapabilityProbe.error) {
+            return `Notebook chat probe failed: ${chatCapabilityProbe.error}`;
+        }
+        if (notebookCapabilityError) {
+            return notebookCapabilityError;
+        }
+        if (!hasNotebookAuthToken) {
+            return t("chat.notebook.noValidHubTokenHint");
+        }
+        if (!notebookApiBaseUrl) {
+            return t("chat.notebook.serviceUnavailableInChat", "Notebook service is not ready for this session.");
+        }
+        if (hasNotebookBasicCapability && !notebookAssistEnabled) {
+            return t(
+                "chat.notebook.assistInitFailed",
+                "Notebook AI did not finish initializing for this session. Retry or re-login.",
+            );
+        }
+        if (notebookCapabilityLoaded && !notebookAssistEnabled) {
+            return t(
+                "chat.notebook.assistUnavailable",
+                "Notebook AI is unavailable for this session.",
+            );
+        }
+        return t("chat.notebook.initializing", "Notebook AI is still initializing.");
+    }, [
+        chatCapabilityProbe.error,
+        chatCapabilityProbe.loading,
+        chatCapabilityProbe.loaded,
+        hasNotebookAuthToken,
+        hasNotebookBasicCapability,
+        notebookApiBaseUrl,
+        notebookAssistEnabled,
+        notebookCapabilityError,
+        notebookCapabilityLoaded,
+        notebookCapabilityLoading,
+        t,
+    ]);
+    const showNotebookAssistStatus = Boolean(showNotebookAssistEntry && !canUseNotebookAssist && notebookAssistUnavailableReason);
+    const notebookAssistStatusCritical = Boolean(notebookCapabilityError || chatCapabilityProbe.error || !hasNotebookAuthToken);
+    const handleNotebookAssistUnavailable = useCallback(() => {
+        pushToast("warn", notebookAssistUnavailableReason ?? t("chat.notebook.initializing", "Notebook AI is still initializing."));
+        if ((notebookCapabilityError || (!notebookCapabilityLoaded && !notebookCapabilityLoading)) && onRetryNotebookCapability) {
+            onRetryNotebookCapability();
+        }
+        setChatCapabilityProbeSeq((prev) => prev + 1);
+    }, [
+        notebookAssistUnavailableReason,
+        chatCapabilityProbe.error,
+        notebookCapabilityError,
+        notebookCapabilityLoaded,
+        notebookCapabilityLoading,
+        onRetryNotebookCapability,
+        pushToast,
+    ]);
     const {
         assistState,
         assistError,
@@ -3318,10 +3678,13 @@ export const ChatRoom: React.FC = () => {
                                 onDeleteFile={(targetEvent) => {
                                     void onDeleteFileEvent(targetEvent);
                                 }}
+                                showAssistFromContextAction={showNotebookAssistEntry}
                                 canUseNotebookAssist={canUseNotebookAssist}
+                                assistFromContextReason={!canUseNotebookAssist ? notebookAssistUnavailableReason : null}
                                 onAssistFromContext={(anchorId) => {
                                     void runAssistFromContext(anchorId);
                                 }}
+                                onAssistFromContextUnavailable={handleNotebookAssistUnavailable}
                                 canUseNotebookBasic={canUseNotebookBasic}
                                 onSendFileToNotebook={(targetEvent) => {
                                     void sendMessageFileToNotebook(targetEvent);
@@ -3388,28 +3751,33 @@ export const ChatRoom: React.FC = () => {
                         {t("chat.singleMemberNotice", "此房间就剩你一人，发的讯息都是在和空气聊天哦")}
                     </div>
                 )}
-                {notebookCapabilityError && (
-                    <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
-                        <div>{notebookCapabilityError}</div>
-                        <div className="mt-2 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => onRetryNotebookCapability?.()}
-                                className="rounded-md border border-rose-300 px-2 py-1 font-semibold hover:bg-rose-100 dark:border-rose-700 dark:hover:bg-rose-900/40"
-                            >
-                                {t("chat.notebook.retry")}
-                            </button>
+                {showNotebookAssistStatus && (
+                    <div
+                        className={`mb-3 rounded-lg px-3 py-2 text-xs ${
+                            notebookAssistStatusCritical
+                                ? "border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200"
+                                : "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200"
+                        }`}
+                    >
+                        <div>{notebookAssistUnavailableReason}</div>
+                        {notebookAssistStatusCritical && (
+                            <div className="mt-2 flex gap-2">
                             <button
                                 type="button"
                                 onClick={() => onReloginForNotebook?.()}
-                                className="rounded-md bg-rose-600 px-2 py-1 font-semibold text-white hover:bg-rose-700"
+                                className={`rounded-md px-2 py-1 font-semibold text-white ${
+                                    notebookAssistStatusCritical
+                                        ? "bg-rose-600 hover:bg-rose-700"
+                                        : "bg-amber-600 hover:bg-amber-700"
+                                }`}
                             >
                                 {t("chat.notebook.relogin")}
                             </button>
                             {!hasNotebookAuthToken && (
                                 <span className="self-center text-[11px] opacity-90">{t("chat.notebook.noValidHubTokenHint")}</span>
                             )}
-                        </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 {typingMemberLabels.length > 0 && (
@@ -3449,14 +3817,22 @@ export const ChatRoom: React.FC = () => {
                             <ClockIcon className="w-6 h-6" />
                         </button>
                     )}
-                    {canUseNotebookAssist && (
+                    {showNotebookAssistEntry && (
                         <button
                             type="button"
                             onClick={() => {
+                                if (!canUseNotebookAssist) {
+                                    handleNotebookAssistUnavailable();
+                                    return;
+                                }
                                 void runAssistQuery(composerText);
                             }}
-                            className="hover:text-[#2F5C56] dark:hover:text-emerald-400"
-                            title={t("chat.notebook.panelTitle")}
+                            className={`${
+                                canUseNotebookAssist
+                                    ? "hover:text-[#2F5C56] dark:hover:text-emerald-400"
+                                    : "text-amber-500 hover:text-amber-600 dark:text-amber-300 dark:hover:text-amber-200"
+                            }`}
+                            title={canUseNotebookAssist ? t("chat.notebook.panelTitle") : (notebookAssistUnavailableReason ?? undefined)}
                         >
                             <SparklesIcon className="w-6 h-6" />
                         </button>

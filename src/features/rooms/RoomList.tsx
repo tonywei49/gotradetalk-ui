@@ -90,6 +90,7 @@ export type ContactSummary = {
 
 type RoomListProps = {
     client: MatrixClient | null;
+    cacheUserId?: string | null;
     hubAccessToken: string | null;
     matrixAccessToken: string | null;
     matrixHsUrl: string | null;
@@ -107,6 +108,9 @@ type RoomListProps = {
     enableContactPolling?: boolean;
     notificationSoundMode?: NotificationSoundMode;
     autoSelectInitialRoom?: boolean;
+    liveSyncEnabled?: boolean;
+    liveSyncStarting?: boolean;
+    onRequestLiveSync?: () => void;
 };
 
 const EMPTY_STATE: ChatRoomEntry[] = [];
@@ -352,6 +356,7 @@ function buildChatRooms(client: MatrixClient): ChatRoomEntry[] {
 
 export function RoomList({
     client,
+    cacheUserId = null,
     hubAccessToken,
     matrixAccessToken,
     matrixHsUrl,
@@ -369,6 +374,9 @@ export function RoomList({
     enableContactPolling = true,
     notificationSoundMode = "classic",
     autoSelectInitialRoom = true,
+    liveSyncEnabled = true,
+    liveSyncStarting = false,
+    onRequestLiveSync,
 }: RoomListProps) {
     const { t } = useTranslation();
     const [rooms, setRooms] = useState<ChatRoomEntry[]>(EMPTY_STATE);
@@ -420,22 +428,22 @@ export function RoomList({
     const [roomTagsHydrated, setRoomTagsHydrated] = useState(false);
     const tagMenuRef = useRef<HTMLDivElement | null>(null);
     const refreshTimerRef = useRef<number | null>(null);
+    const cacheIdentity = cacheUserId ?? client?.getUserId() ?? "";
     const contactCacheKey = useMemo(() => {
-        const userId = client?.getUserId() ?? "";
+        const userId = cacheIdentity;
         if (!userId) return null;
         return `${CONTACTS_CACHE_PREFIX}${userId}`;
-    }, [client]);
-    const cacheUserId = useMemo(() => client?.getUserId() ?? null, [client]);
+    }, [cacheIdentity]);
     const roomCacheKey = useMemo(() => {
-        const userId = client?.getUserId() ?? "";
+        const userId = cacheIdentity;
         if (!userId) return null;
         return `${ROOMS_CACHE_PREFIX}${userId}`;
-    }, [client]);
+    }, [cacheIdentity]);
     const roomTagCacheKey = useMemo(() => {
-        const userId = client?.getUserId() ?? "";
+        const userId = cacheIdentity;
         if (!userId) return null;
         return `${ROOM_TAGS_CACHE_PREFIX}${userId}`;
-    }, [client?.getUserId()]);
+    }, [cacheIdentity]);
     const cachedRoomSnapshot = useMemo(() => readRoomCache(roomCacheKey), [roomCacheKey]);
 
     const refresh = useCallback(() => {
@@ -486,7 +494,7 @@ export function RoomList({
     }, [client, refresh]);
 
     useEffect(() => {
-        if (!client) {
+        if (!client || !liveSyncEnabled) {
             setRooms(EMPTY_STATE);
             return undefined;
         }
@@ -557,7 +565,7 @@ export function RoomList({
             client.off("Room" as any, onRoom);
             client.off(RoomEvent.MyMembership, onMembership);
         };
-    }, [client, scheduleRefresh, activeRoomId, notificationSoundMode]);
+    }, [client, scheduleRefresh, activeRoomId, liveSyncEnabled, notificationSoundMode]);
 
     useEffect(() => {
         if (!roomCacheKey) return;
@@ -1406,7 +1414,12 @@ export function RoomList({
                 <button
                     type="button"
                     data-testid={`room-list-item-${entry.roomId}`}
-                    onClick={() => onSelectRoom(entry.roomId)}
+                    onClick={() => {
+                        if (!liveSyncEnabled) {
+                            onRequestLiveSync?.();
+                        }
+                        onSelectRoom(entry.roomId);
+                    }}
                     className="flex-1 min-w-0 flex items-center gap-3 text-left"
                 >
                     <div className="relative w-10 h-10 flex-shrink-0">
@@ -1533,7 +1546,16 @@ export function RoomList({
                 <span className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     {view === "contacts" ? t("roomList.sections.contacts") : t("roomList.sections.chatRooms")}
                 </span>
-                {view === "contacts" ? (
+                {view === "chat" && !liveSyncEnabled ? (
+                    <button
+                        type="button"
+                        onClick={() => onRequestLiveSync?.()}
+                        disabled={liveSyncStarting}
+                        className="inline-flex items-center rounded-full border border-emerald-300 px-3 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-wait disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
+                    >
+                        {liveSyncStarting ? "Connecting..." : "Connect live"}
+                    </button>
+                ) : view === "contacts" ? (
                     <button
                         type="button"
                         onClick={() => setShowSearchModal(true)}
@@ -1546,7 +1568,19 @@ export function RoomList({
             </div>
             {view === "chat" ? (
                 visibleRooms.length === 0 ? (
-                    <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">{t("roomList.empty.chatRooms")}</div>
+                    <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400">
+                        <div>{t("roomList.empty.chatRooms")}</div>
+                        {!liveSyncEnabled ? (
+                            <button
+                                type="button"
+                                onClick={() => onRequestLiveSync?.()}
+                                disabled={liveSyncStarting}
+                                className="mt-3 inline-flex items-center rounded-full border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 disabled:cursor-wait disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300"
+                            >
+                                {liveSyncStarting ? "Starting live sync..." : "Start live sync"}
+                            </button>
+                        ) : null}
+                    </div>
                 ) : (
                     <>
                         {inviteRooms.map((entry) => renderRoomEntry(entry))}

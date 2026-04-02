@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useOutletContext } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuthStore } from "./stores/AuthStore";
 import { useThemeStore } from "./stores/ThemeStore";
 import { ToastViewport } from "./components/ToastViewport";
@@ -7,6 +8,8 @@ import { PluginHostProvider } from "./plugins";
 import { useDesktopUpdater } from "./desktop/useDesktopUpdater";
 import { useDesktopWindowLifecycle } from "./desktop/useDesktopWindowLifecycle";
 import { isTauriDesktop, resolveRuntimePlatform } from "./runtime/appRuntime";
+import type { AuthUserType } from "./stores/AuthStore";
+import type { HubMatrixCredentials, HubSupabaseSession } from "./api/types";
 
 const loadMainLayout = async () => {
     const module = await import("./layouts/MainLayout");
@@ -14,7 +17,7 @@ const loadMainLayout = async () => {
 };
 
 const loadChatRoom = async () => {
-    const module = await import("./features/chat");
+    const module = await import("./features/chat/ChatRoom");
     return { default: module.ChatRoom };
 };
 
@@ -38,7 +41,34 @@ const ResetPasswordPage = lazy(async () => {
     return { default: module.ResetPasswordPage };
 });
 
+type DebugAuthSession = {
+    userType: AuthUserType;
+    matrixCredentials: HubMatrixCredentials;
+    hubSession: HubSupabaseSession | null;
+};
+
+function readDebugInjectedSession(): DebugAuthSession | null {
+    const encoded = import.meta.env.VITE_DEBUG_AUTH_SESSION_B64;
+    if (!encoded || typeof encoded !== "string") {
+        return null;
+    }
+
+    try {
+        const decoded = atob(encoded);
+        const parsed = JSON.parse(decoded) as DebugAuthSession;
+        if (!parsed?.userType || !parsed?.matrixCredentials?.access_token || !parsed.matrixCredentials?.user_id || !parsed.matrixCredentials?.hs_url) {
+            return null;
+        }
+        return parsed;
+    } catch (error) {
+        console.warn("Failed to parse injected debug auth session:", error);
+        return null;
+    }
+}
+
 function RouteTransitionScreen() {
+    const { t } = useTranslation();
+
     return (
         <div
             style={{
@@ -84,7 +114,7 @@ function RouteTransitionScreen() {
                         animation: "gt-route-spin 0.9s linear infinite",
                     }}
                 />
-                <div style={{ fontSize: "14px", fontWeight: 600 }}>Loading workspace...</div>
+                <div style={{ fontSize: "14px", fontWeight: 600 }}>{t("chat.workspaceLoading")}</div>
             </div>
             <style>
                 {`
@@ -104,9 +134,13 @@ function DesktopAuthBootstrap({ children }: { children: React.ReactNode }) {
 
 type DesktopChatOutletContext = {
     activeRoomId: string | null;
+    activeRoomName?: string | null;
+    chatRouteReady?: boolean;
 };
 
 function DesktopChatIdleScreen() {
+    const { t } = useTranslation();
+
     return (
         <div
             style={{
@@ -126,9 +160,9 @@ function DesktopChatIdleScreen() {
                     textAlign: "center",
                 }}
             >
-                <div style={{ fontSize: "16px", fontWeight: 600 }}>Select a conversation</div>
+                <div style={{ fontSize: "16px", fontWeight: 600 }}>{t("chat.selectConversationTitle")}</div>
                 <div style={{ fontSize: "13px", color: "#64748b", maxWidth: "320px" }}>
-                    Choose a room from the sidebar before loading the chat workspace.
+                    {t("chat.selectConversationSubtitle")}
                 </div>
             </div>
         </div>
@@ -136,11 +170,11 @@ function DesktopChatIdleScreen() {
 }
 
 function DesktopChatRouteBootstrap() {
-    const { activeRoomId } = useOutletContext<DesktopChatOutletContext>();
+    const { activeRoomId, chatRouteReady = true } = useOutletContext<DesktopChatOutletContext>();
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
-        if (!activeRoomId) {
+        if (!activeRoomId || !chatRouteReady) {
             setReady(false);
             return undefined;
         }
@@ -154,10 +188,14 @@ function DesktopChatRouteBootstrap() {
             cancelled = true;
             window.cancelAnimationFrame(frame);
         };
-    }, [activeRoomId]);
+    }, [activeRoomId, chatRouteReady]);
 
     if (!activeRoomId) {
         return <DesktopChatIdleScreen />;
+    }
+
+    if (!chatRouteReady) {
+        return <RouteTransitionScreen />;
     }
 
     if (!ready) {
@@ -212,15 +250,25 @@ function DesktopWorkspaceBootstrap() {
 
 export function App() {
     const isAuthenticated = useAuthStore((state) => Boolean(state.matrixCredentials));
+    const setAuthSession = useAuthStore((state) => state.setSession);
     const initTheme = useThemeStore((state) => state.initTheme);
     const isDesktop = useMemo(() => isTauriDesktop(), []);
     const isWindowsDesktop = useMemo(() => isDesktop && resolveRuntimePlatform() === "windows", [isDesktop]);
+    const injectedDebugSession = useMemo(() => readDebugInjectedSession(), []);
     useDesktopUpdater();
     useDesktopWindowLifecycle();
 
     useEffect(() => {
         initTheme();
     }, [initTheme]);
+
+    useEffect(() => {
+        if (isAuthenticated || !injectedDebugSession) {
+            return;
+        }
+        // Local desktop diagnostics can inject an already-validated session to skip the login form.
+        setAuthSession(injectedDebugSession);
+    }, [injectedDebugSession, isAuthenticated, setAuthSession]);
 
     useEffect(() => {
         if (!isAuthenticated) {

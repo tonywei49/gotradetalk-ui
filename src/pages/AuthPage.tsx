@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -30,9 +30,36 @@ import "./AuthPage.css";
 
 type EntryMode = "client" | "company";
 
+type DebugCompanyLogin = {
+    slug: string;
+    tld?: string;
+    username: string;
+    password: string;
+};
+
+function readDebugCompanyLogin(): DebugCompanyLogin | null {
+    const encoded = import.meta.env.VITE_DEBUG_COMPANY_LOGIN_B64;
+    if (!encoded || typeof encoded !== "string") {
+        return null;
+    }
+
+    try {
+        const decoded = atob(encoded);
+        const parsed = JSON.parse(decoded) as DebugCompanyLogin;
+        if (!parsed?.slug || !parsed?.username || !parsed?.password) {
+            return null;
+        }
+        return parsed;
+    } catch (error) {
+        console.warn("Failed to parse injected debug company login:", error);
+        return null;
+    }
+}
+
 export function AuthPage() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
+    const existingMatrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const setAuthSession = useAuthStore((state) => state.setSession);
     const pushToast = useToastStore((state) => state.pushToast);
     const [activeEntry, setActiveEntry] = useState<EntryMode>("client");
@@ -90,6 +117,8 @@ export function AuthPage() {
         | null
     >(null);
     const clientSessionMetadata = getClientLoginSessionMetadata();
+    const debugCompanyLogin = useMemo(() => readDebugCompanyLogin(), []);
+    const debugCompanyLoginStartedRef = useRef(false);
 
     const ensureHubSessionForStaff = async (params: {
         username: string;
@@ -228,84 +257,111 @@ export function AuthPage() {
         })();
     };
 
-    const onSubmitCompany = (event: React.FormEvent<HTMLFormElement>): void => {
-        event.preventDefault();
-        void (async (): Promise<void> => {
-            setCompanyBusy(true);
-            setCompanyError(null);
-            setCompanySuccess(null);
-            try {
-                const normalizedSlug = companySlug.trim().toLowerCase();
-                if (!normalizedSlug || !companyUsername.trim() || !companyPassword.trim()) {
-                    throw new Error(t("auth.errors.missingLoginFields"));
-                }
-                if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
-                    throw new Error(t("auth.errors.invalidCompanySlug"));
-                }
-                const normalizedTld = normalizeCompanyTld(companyTld);
-                if (!normalizedTld || !/^[a-z0-9.-]+$/.test(normalizedTld)) {
-                    throw new Error(t("auth.errors.invalidCompanyTld"));
-                }
-                const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
-                const credentials = await loginWithPassword(hsUrl, companyUsername.trim(), companyPassword);
-                const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
-                const hubSession = await ensureHubSessionForStaff({
-                    username: companyUsername.trim(),
-                    password: companyPassword,
-                    matrixAccessToken: credentials.accessToken,
-                    hsUrl: credentials.homeserverUrl,
-                    matrixUserId: credentials.userId,
-                    matrixDeviceId: credentials.deviceId,
-                });
-                if (passwordState.password_state === "RESET_REQUIRED") {
-                    setForceResetAccessToken(credentials.accessToken);
-                    setForceResetHsUrl(credentials.homeserverUrl);
-                    setForceResetUserId(credentials.userId);
-                    setForceResetDeviceId(credentials.deviceId);
-                    setForceResetInitialPassword(companyPassword);
-                    setShowForceReset(true);
-                    return;
-                }
-                setCompanySuccess(t("auth.company.loginSuccess"));
-                const language = await fetchStaffLanguage(credentials.accessToken, credentials.homeserverUrl);
-                if (!language) {
-                    setPendingLanguageContext({
-                        userType: "staff",
-                        matrixUserId: credentials.userId,
-                        accessToken: credentials.accessToken,
-                        hsUrl: credentials.homeserverUrl,
-                        hubSession,
-                        matrixCredentials: {
-                            access_token: credentials.accessToken,
-                            device_id: credentials.deviceId,
-                            user_id: credentials.userId,
-                            hs_url: credentials.homeserverUrl,
-                        },
-                    });
-                    setShowLanguageModal(true);
-                    return;
-                }
-                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
-                setAuthSession({
+    const submitCompanyLogin = async (params?: {
+        slug?: string;
+        tld?: string;
+        username?: string;
+        password?: string;
+    }): Promise<void> => {
+        setCompanyBusy(true);
+        setCompanyError(null);
+        setCompanySuccess(null);
+        try {
+            const slugInput = params?.slug ?? companySlug;
+            const usernameInput = params?.username ?? companyUsername;
+            const passwordInput = params?.password ?? companyPassword;
+            const tldInput = params?.tld ?? companyTld;
+
+            const normalizedSlug = slugInput.trim().toLowerCase();
+            if (!normalizedSlug || !usernameInput.trim() || !passwordInput.trim()) {
+                throw new Error(t("auth.errors.missingLoginFields"));
+            }
+            if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
+                throw new Error(t("auth.errors.invalidCompanySlug"));
+            }
+            const normalizedTld = normalizeCompanyTld(tldInput);
+            if (!normalizedTld || !/^[a-z0-9.-]+$/.test(normalizedTld)) {
+                throw new Error(t("auth.errors.invalidCompanyTld"));
+            }
+            const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
+            const trimmedUsername = usernameInput.trim();
+            const credentials = await loginWithPassword(hsUrl, trimmedUsername, passwordInput);
+            const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
+            const hubSession = await ensureHubSessionForStaff({
+                username: trimmedUsername,
+                password: passwordInput,
+                matrixAccessToken: credentials.accessToken,
+                hsUrl: credentials.homeserverUrl,
+                matrixUserId: credentials.userId,
+                matrixDeviceId: credentials.deviceId,
+            });
+            if (passwordState.password_state === "RESET_REQUIRED") {
+                setForceResetAccessToken(credentials.accessToken);
+                setForceResetHsUrl(credentials.homeserverUrl);
+                setForceResetUserId(credentials.userId);
+                setForceResetDeviceId(credentials.deviceId);
+                setForceResetInitialPassword(passwordInput);
+                setShowForceReset(true);
+                return;
+            }
+            setCompanySuccess(t("auth.company.loginSuccess"));
+            const language = await fetchStaffLanguage(credentials.accessToken, credentials.homeserverUrl);
+            if (!language) {
+                setPendingLanguageContext({
                     userType: "staff",
+                    matrixUserId: credentials.userId,
+                    accessToken: credentials.accessToken,
+                    hsUrl: credentials.homeserverUrl,
+                    hubSession,
                     matrixCredentials: {
                         access_token: credentials.accessToken,
                         device_id: credentials.deviceId,
                         user_id: credentials.userId,
                         hs_url: credentials.homeserverUrl,
                     },
-                    hubSession,
                 });
-                navigate("/app");
-            } catch (error) {
-                const message = mapAuthErrorToMessage(t, error);
-                setCompanyError(message);
-                pushToast("error", message);
-            } finally {
-                setCompanyBusy(false);
+                setShowLanguageModal(true);
+                return;
             }
-        })();
+            setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
+            setAuthSession({
+                userType: "staff",
+                matrixCredentials: {
+                    access_token: credentials.accessToken,
+                    device_id: credentials.deviceId,
+                    user_id: credentials.userId,
+                    hs_url: credentials.homeserverUrl,
+                },
+                hubSession,
+            });
+            navigate("/app");
+        } catch (error) {
+            const message = mapAuthErrorToMessage(t, error);
+            setCompanyError(message);
+            pushToast("error", message);
+        } finally {
+            setCompanyBusy(false);
+        }
     };
+
+    const onSubmitCompany = (event: React.FormEvent<HTMLFormElement>): void => {
+        event.preventDefault();
+        void submitCompanyLogin();
+    };
+
+    useEffect(() => {
+        if (!debugCompanyLogin || existingMatrixCredentials || debugCompanyLoginStartedRef.current) {
+            return;
+        }
+
+        debugCompanyLoginStartedRef.current = true;
+        setActiveEntry("company");
+        setCompanySlug(debugCompanyLogin.slug);
+        setCompanyTld(normalizeCompanyTld(debugCompanyLogin.tld ?? "com"));
+        setCompanyUsername(debugCompanyLogin.username);
+        setCompanyPassword(debugCompanyLogin.password);
+        void submitCompanyLogin(debugCompanyLogin);
+    }, [debugCompanyLogin, existingMatrixCredentials]);
 
     const onSubmitClientRegister = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();

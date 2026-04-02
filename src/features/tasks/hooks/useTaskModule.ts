@@ -52,6 +52,13 @@ function formatDate(value: string): string {
     return `${parsed.getFullYear()}/${parsed.getMonth() + 1}/${parsed.getDate()}`;
 }
 
+function isReminderDue(task: TaskItem, nowTs: number): boolean {
+    if (!task.remindAt) return false;
+    if (task.remindState === "notified") return false;
+    if (task.snoozedUntil && Date.parse(task.snoozedUntil) > nowTs) return false;
+    return Date.parse(task.remindAt) <= nowTs;
+}
+
 export function sortTasks(tasks: TaskItem[]): TaskItem[] {
     return [...tasks].sort((a, b) => {
         const aDone = a.completedAt ? 1 : 0;
@@ -283,13 +290,11 @@ export function useTaskModule(params: {
         [sortedTasks, activeRoomId],
     );
     const currentReminder = useMemo(() => {
-        return sortedTasks.find((task) => {
-            if (!task.remindAt) return false;
-            if (task.remindState === "notified") return false;
-            if (task.snoozedUntil && Date.parse(task.snoozedUntil) > nowTs) return false;
-            return Date.parse(task.remindAt) <= nowTs;
-        }) ?? null;
+        return sortedTasks.find((task) => isReminderDue(task, nowTs)) ?? null;
     }, [nowTs, sortedTasks]);
+    const currentRoomReminder = useMemo(() => {
+        return roomTasks.find((task) => isReminderDue(task, nowTs)) ?? null;
+    }, [nowTs, roomTasks]);
 
     useEffect(() => {
         if (!selectedTask) {
@@ -324,8 +329,8 @@ export function useTaskModule(params: {
         setDetailDraft({
             ...EMPTY_DRAFT,
             statusId: statuses[0]?.id || getDefaultTaskStatusId(),
-            roomId: activeRoomId,
-            roomNameSnapshot: activeRoomName ?? null,
+            roomId: null,
+            roomNameSnapshot: null,
         });
         setEditing(true);
     };
@@ -441,6 +446,9 @@ export function useTaskModule(params: {
 
     const createQuickTask = (): void => {
         if (!quickDraft.title.trim() && !quickDraft.content.trim()) return;
+        const linkedRoomId = activeRoomId ?? quickDraft.roomId ?? null;
+        const linkedRoomName = activeRoomName ?? quickDraft.roomNameSnapshot ?? null;
+        if (!linkedRoomId) return;
         const now = new Date().toISOString();
         const remindAtIso = toIsoOrNull(quickDraft.remindAt);
         const next: TaskItem = {
@@ -451,8 +459,8 @@ export function useTaskModule(params: {
             remindAt: remindAtIso,
             remindState: remindAtIso ? "pending" : "notified",
             snoozedUntil: null,
-            roomId: quickDraft.roomId ?? null,
-            roomNameSnapshot: quickDraft.roomNameSnapshot ?? null,
+            roomId: linkedRoomId,
+            roomNameSnapshot: linkedRoomName,
             createdBy: userId,
             createdAt: now,
             updatedAt: now,
@@ -486,8 +494,9 @@ export function useTaskModule(params: {
         })();
     };
 
-    const snoozeReminder = (): void => {
-        if (!currentReminder) return;
+    const snoozeReminder = (taskId?: string | null): void => {
+        const targetTaskId = taskId ?? currentReminder?.id ?? null;
+        if (!targetTaskId) return;
         const nextTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
         const patch: Partial<TaskItem> = {
             remindState: "snoozed",
@@ -496,23 +505,24 @@ export function useTaskModule(params: {
         };
 
         if (!accessToken) {
-            setTasks((prev) => prev.map((task) => task.id === currentReminder.id ? { ...task, ...patch } : task));
+            setTasks((prev) => prev.map((task) => task.id === targetTaskId ? { ...task, ...patch } : task));
             return;
         }
 
         void (async () => {
             try {
-                const saved = await updateRemoteTask(currentReminder.id, patch, remoteAuth);
+                const saved = await updateRemoteTask(targetTaskId, patch, remoteAuth);
                 if (!saved) return;
-                setTasks((prev) => prev.map((task) => task.id === currentReminder.id ? saved : task));
+                setTasks((prev) => prev.map((task) => task.id === targetTaskId ? saved : task));
             } catch (error) {
                 console.error("Failed to snooze task reminder", error);
             }
         })();
     };
 
-    const dismissReminder = (): void => {
-        if (!currentReminder) return;
+    const dismissReminder = (taskId?: string | null): void => {
+        const targetTaskId = taskId ?? currentReminder?.id ?? null;
+        if (!targetTaskId) return;
         const patch: Partial<TaskItem> = {
             remindState: "notified",
             snoozedUntil: null,
@@ -520,15 +530,15 @@ export function useTaskModule(params: {
         };
 
         if (!accessToken) {
-            setTasks((prev) => prev.map((task) => task.id === currentReminder.id ? { ...task, ...patch } : task));
+            setTasks((prev) => prev.map((task) => task.id === targetTaskId ? { ...task, ...patch } : task));
             return;
         }
 
         void (async () => {
             try {
-                const saved = await updateRemoteTask(currentReminder.id, patch, remoteAuth);
+                const saved = await updateRemoteTask(targetTaskId, patch, remoteAuth);
                 if (!saved) return;
-                setTasks((prev) => prev.map((task) => task.id === currentReminder.id ? saved : task));
+                setTasks((prev) => prev.map((task) => task.id === targetTaskId ? saved : task));
             } catch (error) {
                 console.error("Failed to dismiss task reminder", error);
             }
@@ -617,6 +627,7 @@ export function useTaskModule(params: {
         syncError,
         roomTasks: roomTasks.map((task) => ({ ...task, createdAt: formatDate(task.createdAt) })),
         currentReminder: currentReminder ? { ...currentReminder, createdAt: formatDate(currentReminder.createdAt) } : null,
+        currentRoomReminder: currentRoomReminder ? { ...currentRoomReminder, createdAt: formatDate(currentRoomReminder.createdAt) } : null,
         setSelectedTaskId,
         setDetailDraft: (patch: Partial<TaskDraft>) => setDetailDraft((prev) => ({ ...prev, ...patch })),
         setQuickDraft: (patch: Partial<TaskDraft>) => setQuickDraft((prev) => ({ ...prev, ...patch })),
