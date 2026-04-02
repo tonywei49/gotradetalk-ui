@@ -16,7 +16,7 @@ import {
     updateClientLanguage,
     updateStaffLanguage,
 } from "../api/profile";
-import { getSupabaseClient } from "../api/supabase";
+import { getOptionalSupabaseClient, getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
 import { displayLanguageOptions, isSupportedDisplayLanguage, type DisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { LanguageModal } from "../components/LanguageModal";
@@ -119,6 +119,8 @@ export function AuthPage() {
     const clientSessionMetadata = getClientLoginSessionMetadata();
     const debugCompanyLogin = useMemo(() => readDebugCompanyLogin(), []);
     const debugCompanyLoginStartedRef = useRef(false);
+    const supabaseAvailable = useMemo(() => hasSupabaseConfig(), []);
+    const supabaseUnavailableMessage = "Supabase is unavailable in this desktop build.";
 
     const ensureHubSessionForStaff = async (params: {
         username: string;
@@ -162,7 +164,10 @@ export function AuthPage() {
     };
 
     useEffect(() => {
-        const supabase = getSupabaseClient();
+        const supabase = getOptionalSupabaseClient();
+        if (!supabase) {
+            return;
+        }
         const { data } = supabase.auth.onAuthStateChange((event) => {
             if (event === "PASSWORD_RECOVERY") {
                 navigate("/reset-password");
@@ -178,6 +183,10 @@ export function AuthPage() {
     };
 
     const onGoogleLogin = (): void => {
+        if (!supabaseAvailable) {
+            pushToast("error", supabaseUnavailableMessage);
+            return;
+        }
         const supabase = getSupabaseClient();
         void supabase.auth.signInWithOAuth({
             provider: "google",
@@ -204,6 +213,9 @@ export function AuthPage() {
                 let response: HubClientLoginResponse;
 
                 if (isEmail) {
+                    if (!supabaseAvailable) {
+                        throw new Error(supabaseUnavailableMessage);
+                    }
                     const supabase = getSupabaseClient();
                     const { data, error } = await supabase.auth.signInWithPassword({
                         email: account,
@@ -227,6 +239,15 @@ export function AuthPage() {
                     hubSession = response.supabase ?? null;
                 }
                 setClientSuccess(response);
+                if (!hubSession && !supabaseAvailable) {
+                    setAuthSession({
+                        userType: "client",
+                        matrixCredentials: response.matrix,
+                        hubSession: null,
+                    });
+                    navigate("/app");
+                    return;
+                }
                 if (!hubSession) {
                     throw new Error(t("auth.errors.missingSupabaseSession"));
                 }
@@ -369,6 +390,9 @@ export function AuthPage() {
             setRegisterBusy(true);
             setRegisterError(null);
             try {
+                if (!supabaseAvailable) {
+                    throw new Error(supabaseUnavailableMessage);
+                }
                 if (!registerEmail.trim() || !registerPassword.trim()) {
                     throw new Error(t("auth.errors.missingRegisterFields"));
                 }
@@ -437,6 +461,9 @@ export function AuthPage() {
             setResetError(null);
             setResetSuccess(null);
             try {
+                if (!supabaseAvailable) {
+                    throw new Error(supabaseUnavailableMessage);
+                }
                 const email = resetEmail.trim();
                 if (!email) {
                     throw new Error(t("auth.errors.missingResetEmail"));

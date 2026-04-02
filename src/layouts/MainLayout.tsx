@@ -897,13 +897,13 @@ export const MainLayout: React.FC = () => {
 
     const clearLocalAuthSession = useCallback((): void => {
         clearSession();
-        void import("../api/supabase").then(({ getSupabaseClient }) =>
-            getSupabaseClient()
-                .auth.signOut({ scope: "local" })
-                .catch(() => {
-                    // ignore local sign-out failures during session cleanup
-                }),
-        );
+        void import("../api/supabase").then(({ getOptionalSupabaseClient }) => {
+            const supabase = getOptionalSupabaseClient();
+            if (!supabase) return;
+            void supabase.auth.signOut({ scope: "local" }).catch(() => {
+                // ignore local sign-out failures during session cleanup
+            });
+        });
     }, [clearSession]);
 
     const onLogout = useCallback((): void => {
@@ -985,9 +985,10 @@ export const MainLayout: React.FC = () => {
             setHubSession(normalized);
         };
 
-        void import("../api/supabase").then(({ getSupabaseClient }) => {
+        void import("../api/supabase").then(({ getOptionalSupabaseClient }) => {
             if (!active) return;
-            const supabase = getSupabaseClient();
+            const supabase = getOptionalSupabaseClient();
+            if (!supabase) return;
 
             void supabase.auth.getSession().then(({ data, error }) => {
                 if (!active || error) return;
@@ -1025,8 +1026,11 @@ export const MainLayout: React.FC = () => {
         const flight = (async (): Promise<string | null> => {
             setRefreshingNotebookToken(true);
             try {
-                const { getSupabaseClient } = await import("../api/supabase");
-                const supabase = getSupabaseClient();
+                const { getOptionalSupabaseClient } = await import("../api/supabase");
+                const supabase = getOptionalSupabaseClient();
+                if (!supabase) {
+                    return null;
+                }
                 const { data, error } = await supabase.auth.refreshSession({
                     refresh_token: hubSession.refresh_token,
                 });
