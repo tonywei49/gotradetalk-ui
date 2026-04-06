@@ -126,6 +126,12 @@ type QuotedMessageDraft = {
     preview: string;
 };
 
+type ChatContextMenuState = {
+    x: number;
+    y: number;
+    text: string;
+};
+
 const DRAFT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const DRAFT_MEDIA_REGISTRY_KEY = "gtt_draft_media_registry_v1";
 const CHAT_COMPOSER_DRAFT_KEY_PREFIX = "gtt_chat_composer_draft_v1";
@@ -302,9 +308,82 @@ type DraftMediaRegistryEntry = {
 };
 
 const IS_WINDOWS_DESKTOP = isTauriDesktop() && resolveRuntimePlatform() === "windows";
+const IS_DESKTOP_APP = isTauriDesktop();
 
 const CHAT_INITIAL_RENDER_WINDOW = IS_WINDOWS_DESKTOP ? 20 : 40;
 const CHAT_RENDER_WINDOW_STEP = IS_WINDOWS_DESKTOP ? 20 : 40;
+
+function getEventRenderStableKey(event: MatrixEvent): string {
+    return event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender() ?? "unknown"}`;
+}
+
+function haveSameRenderedEventSequence(a: MatrixEvent[], b: MatrixEvent[]): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) {
+        if (getEventRenderStableKey(a[index]) !== getEventRenderStableKey(b[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function haveSameRecordEntries<T>(a: Record<string, T>, b: Record<string, T>): boolean {
+    if (a === b) return true;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const key of aKeys) {
+        if (!(key in b) || !Object.is(a[key], b[key])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function isSelectionNodeInsideContainer(node: Node | null, container: HTMLElement | null): boolean {
+    if (!node || !container) return false;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+        return container.contains(node);
+    }
+    return container.contains(node.parentElement);
+}
+
+function hasActiveTextSelectionWithinContainer(selection: Selection | null, container: HTMLElement | null): boolean {
+    if (!selection || !container || selection.isCollapsed || selection.rangeCount === 0) {
+        return false;
+    }
+    if (!selection.toString().trim()) {
+        return false;
+    }
+    const range = selection.getRangeAt(0);
+    return (
+        isSelectionNodeInsideContainer(range.startContainer, container) &&
+        isSelectionNodeInsideContainer(range.endContainer, container)
+    );
+}
+
+function getSelectedTextWithinContainer(selection: Selection | null, container: HTMLElement | null): string {
+    if (!hasActiveTextSelectionWithinContainer(selection, container)) {
+        return "";
+    }
+    return selection?.toString().trim() ?? "";
+}
+
+function useFrozenValueWhile<T>(
+    value: T,
+    freeze: boolean,
+    areEqual: (previous: T, next: T) => boolean = Object.is,
+): T {
+    const [displayValue, setDisplayValue] = useState(value);
+
+    useEffect(() => {
+        if (freeze) return;
+        setDisplayValue((previous) => (areEqual(previous, value) ? previous : value));
+    }, [areEqual, freeze, value]);
+
+    return freeze ? displayValue : value;
+}
 
 function shouldUseRichMarkdownRenderer(value: string): boolean {
     if (!value) return false;
@@ -319,7 +398,7 @@ function shouldUseRichMarkdownRenderer(value: string): boolean {
     return false;
 }
 
-const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
+const MessageMarkdown = React.memo(({ text, isMe }: { text: string; isMe: boolean }) => {
     const shouldRenderRichMarkdown = useMemo(() => shouldUseRichMarkdownRenderer(text), [text]);
     const normalizedText = useMemo(
         () => (shouldRenderRichMarkdown ? normalizeMarkdownDisplayText(text) : text),
@@ -338,30 +417,36 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
 
     if (!shouldRenderRichMarkdown) {
         return (
-            <div className={`w-full max-w-full min-w-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${textClass}`}>
+            <div
+                data-allow-native-context-menu="true"
+                className={`w-full max-w-full min-w-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] [user-select:text] ${textClass}`}
+            >
                 {text}
             </div>
         );
     }
 
     return (
-        <div className="w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere]">
+        <div
+            data-allow-native-context-menu="true"
+            className="w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere] [user-select:text]"
+        >
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 components={{
-                    p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{children}</p>,
+                    p: ({ children }) => <p className="my-1 last:mb-0 whitespace-pre-wrap break-all [overflow-wrap:anywhere] [user-select:text]">{children}</p>,
                     br: () => <br />,
-                    ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
-                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
-                    li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{children}</li>,
+                    ul: ({ children }) => <ul className="my-1 list-disc pl-5 [user-select:text]">{children}</ul>,
+                    ol: ({ children }) => <ol className="my-1 list-decimal pl-5 [user-select:text]">{children}</ol>,
+                    li: ({ children }) => <li className="my-0.5 whitespace-pre-wrap break-all [overflow-wrap:anywhere] [user-select:text]">{children}</li>,
                     blockquote: ({ children }) => (
-                        <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] ${borderClass} ${mutedTextClass}`}>{children}</blockquote>
+                        <blockquote className={`my-2 whitespace-pre-wrap break-all border-l-2 pl-2 italic [overflow-wrap:anywhere] [user-select:text] ${borderClass} ${mutedTextClass}`}>{children}</blockquote>
                     ),
-                    code: ({ children }) => <code className={codeClass}>{children}</code>,
-                    pre: ({ children }) => <pre className={preClass}>{children}</pre>,
+                    code: ({ children }) => <code className={`${codeClass} [user-select:text]`}>{children}</code>,
+                    pre: ({ children }) => <pre className={`${preClass} [user-select:text]`}>{children}</pre>,
                     table: ({ children }) => (
-                        <div className="my-2 max-w-full overflow-x-auto overflow-y-hidden [overscroll-behavior-x:contain] [-webkit-overflow-scrolling:touch] scrollbar-thin">
-                            <table className={`w-max border-collapse text-left text-[12px] ${textClass}`}>{children}</table>
+                        <div className="my-2 max-w-full overflow-x-auto overflow-y-hidden [overscroll-behavior-x:contain] [-webkit-overflow-scrolling:touch] scrollbar-thin [user-select:text]">
+                            <table className={`w-max border-collapse text-left text-[12px] [user-select:text] ${textClass}`}>{children}</table>
                         </div>
                     ),
                     thead: ({ children }) => <thead className={tableHeaderClass}>{children}</thead>,
@@ -370,7 +455,7 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
                     th: ({ children }) => <th className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 font-semibold ${borderClass}`}>{children}</th>,
                     td: ({ children }) => <td className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 align-top ${borderClass}`}>{children}</td>,
                     a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
+                        <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere] [user-select:text]">
                             {children}
                         </a>
                     )
@@ -380,7 +465,9 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
             </ReactMarkdown>
         </div>
     );
-};
+});
+
+MessageMarkdown.displayName = "MessageMarkdown";
 
 const TranslationTypingIndicator = ({ isMe }: { isMe: boolean }) => {
     const dotClass = isMe ? "bg-white/90" : "bg-slate-500 dark:bg-slate-300";
@@ -1303,6 +1390,8 @@ export const ChatRoom: React.FC = () => {
     const [activeMentionIndex, setActiveMentionIndex] = useState(0);
     const [typingMemberLabels, setTypingMemberLabels] = useState<string[]>([]);
     const [renderedEventCount, setRenderedEventCount] = useState(CHAT_INITIAL_RENDER_WINDOW);
+    const [timelineSelectionActive, setTimelineSelectionActive] = useState(false);
+    const [chatContextMenu, setChatContextMenu] = useState<ChatContextMenuState | null>(null);
     const [showTaskQuickCreate, setShowTaskQuickCreate] = useState(false);
     const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
     const actionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2019,6 +2108,11 @@ export const ChatRoom: React.FC = () => {
         () => mergedEvents.slice(-Math.max(CHAT_INITIAL_RENDER_WINDOW, renderedEventCount)),
         [mergedEvents, renderedEventCount],
     );
+    const displayedRenderedEvents = useFrozenValueWhile(
+        renderedEvents,
+        timelineSelectionActive,
+        haveSameRenderedEventSequence,
+    );
 
     useEffect(() => {
         setRenderedEventCount(CHAT_INITIAL_RENDER_WINDOW);
@@ -2124,6 +2218,64 @@ export const ChatRoom: React.FC = () => {
         pushToast,
         translationUnavailableText: t("chat.translationUnavailable"),
     });
+    const displayedTranslationMap = useFrozenValueWhile(
+        translationMap,
+        timelineSelectionActive,
+        haveSameRecordEntries,
+    );
+    const displayedTranslationView = useFrozenValueWhile(
+        translationView,
+        timelineSelectionActive,
+        haveSameRecordEntries,
+    );
+
+    useEffect(() => {
+        setTimelineSelectionActive(false);
+        setChatContextMenu(null);
+    }, [activeRoomId]);
+
+    useEffect(() => {
+        if (!IS_DESKTOP_APP) return;
+
+        const updateSelectionState = (): void => {
+            const next = hasActiveTextSelectionWithinContainer(window.getSelection(), timelineRef.current);
+            setTimelineSelectionActive((previous) => (previous === next ? previous : next));
+        };
+
+        updateSelectionState();
+        document.addEventListener("selectionchange", updateSelectionState);
+        window.addEventListener("mouseup", updateSelectionState, true);
+        window.addEventListener("keyup", updateSelectionState, true);
+        window.addEventListener("blur", updateSelectionState);
+
+        return () => {
+            document.removeEventListener("selectionchange", updateSelectionState);
+            window.removeEventListener("mouseup", updateSelectionState, true);
+            window.removeEventListener("keyup", updateSelectionState, true);
+            window.removeEventListener("blur", updateSelectionState);
+        };
+    }, [activeRoomId]);
+
+    useEffect(() => {
+        if (!chatContextMenu) return;
+
+        const closeMenu = (): void => setChatContextMenu(null);
+        const handleKeyDown = (event: KeyboardEvent): void => {
+            if (event.key === "Escape") {
+                closeMenu();
+            }
+        };
+
+        document.addEventListener("mousedown", closeMenu);
+        window.addEventListener("blur", closeMenu);
+        window.addEventListener("keydown", handleKeyDown, true);
+
+        return () => {
+            document.removeEventListener("mousedown", closeMenu);
+            window.removeEventListener("blur", closeMenu);
+            window.removeEventListener("keydown", handleKeyDown, true);
+        };
+    }, [chatContextMenu]);
 
     const canSendReceipt = (event: MatrixEvent | undefined): event is MatrixEvent => {
         const eventId = event?.getId();
@@ -2819,6 +2971,17 @@ export const ChatRoom: React.FC = () => {
         ].filter(Boolean);
         const unique = Array.from(new Set(parts));
         const payload = unique.join("\n");
+        if (!payload) return;
+        try {
+            await navigator.clipboard.writeText(payload);
+            pushToast("success", t("chat.copyMessageSuccess"));
+        } catch {
+            pushToast("error", t("chat.copyMessageFailed"));
+        }
+    };
+
+    const copySelectedChatText = async (selectedText: string): Promise<void> => {
+        const payload = selectedText.trim();
         if (!payload) return;
         try {
             await navigator.clipboard.writeText(payload);
@@ -3561,7 +3724,28 @@ export const ChatRoom: React.FC = () => {
             <div
                 ref={timelineRef}
                 data-testid="chat-timeline"
-                onScroll={() => void onScroll()}
+                onScroll={() => {
+                    setChatContextMenu(null);
+                    void onScroll();
+                }}
+                onContextMenu={(event) => {
+                    if (!IS_DESKTOP_APP) return;
+                    const selectedText = getSelectedTextWithinContainer(window.getSelection(), timelineRef.current);
+                    if (!selectedText) {
+                        setChatContextMenu(null);
+                        return;
+                    }
+                    event.preventDefault();
+                    const menuWidth = 120;
+                    const menuHeight = 48;
+                    const maxX = typeof window !== "undefined" ? Math.max(12, window.innerWidth - menuWidth - 12) : event.clientX;
+                    const maxY = typeof window !== "undefined" ? Math.max(12, window.innerHeight - menuHeight - 12) : event.clientY;
+                    setChatContextMenu({
+                        x: Math.min(event.clientX, maxX),
+                        y: Math.min(event.clientY, maxY),
+                        text: selectedText,
+                    });
+                }}
                 className="flex-1 min-h-0 overflow-y-auto p-6 bg-[#F2F4F7] dark:bg-slate-950"
             >
                 {showingCachedEvents && (
@@ -3579,7 +3763,7 @@ export const ChatRoom: React.FC = () => {
                         {t("common.loading")}
                     </div>
                 )}
-                {renderedEvents.map((event) => {
+                {displayedRenderedEvents.map((event) => {
                     if (event.getType() === EventType.RoomMember) {
                         if (!room || room.isSpaceRoom()) return null;
                         const content = (event.getContent() ?? {}) as { membership?: string };
@@ -3667,11 +3851,11 @@ export const ChatRoom: React.FC = () => {
                                 senderLabel={senderLabel}
                                 senderAvatarUrl={senderAvatarUrl}
                                 onOpenMedia={openMediaPreview}
-                                translatedText={translationMap[getMessageEventKey(event)]?.text ?? null}
-                                translationMode={translationView[getMessageEventKey(event)] ?? (!isMe ? (translationDefaultView ?? "translated") : "original")}
-                                translationLoading={translationMap[getMessageEventKey(event)]?.loading ?? false}
-                                translationError={translationMap[getMessageEventKey(event)]?.error ?? false}
-                                translationSuspect={translationMap[getMessageEventKey(event)]?.suspect ?? false}
+                                translatedText={displayedTranslationMap[getMessageEventKey(event)]?.text ?? null}
+                                translationMode={displayedTranslationView[getMessageEventKey(event)] ?? (!isMe ? (translationDefaultView ?? "translated") : "original")}
+                                translationLoading={displayedTranslationMap[getMessageEventKey(event)]?.loading ?? false}
+                                translationError={displayedTranslationMap[getMessageEventKey(event)]?.error ?? false}
+                                translationSuspect={displayedTranslationMap[getMessageEventKey(event)]?.suspect ?? false}
                                 allowTranslationActions={!isDirectRoom || directTranslationEnabled}
                                 canDeleteFile={isOwnFileEvent(event)}
                                 deleteBusy={deletingEventId === event.getId()}
@@ -3705,7 +3889,7 @@ export const ChatRoom: React.FC = () => {
                                     if (mode === "translated" || mode === "bilingual") {
                                         const content = event.getContent() as { body?: string; msgtype?: string } | undefined;
                                         const messageText = content?.body ?? "";
-                                        const cache = translationMap[key];
+                                        const cache = displayedTranslationMap[key];
                                         const hasCachedTranslation = Boolean((cache?.text ?? "").trim());
                                         const shouldLoad =
                                             !cache || (!cache.loading && !hasCachedTranslation && !cache.error);
@@ -3726,6 +3910,24 @@ export const ChatRoom: React.FC = () => {
                     );
                 })}
             </div>
+
+            {chatContextMenu && (
+                <div
+                    className="fixed z-[80] min-w-[120px] rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+                    style={{ left: chatContextMenu.x, top: chatContextMenu.y }}
+                >
+                    <button
+                        type="button"
+                        className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                        onClick={() => {
+                            void copySelectedChatText(chatContextMenu.text);
+                            setChatContextMenu(null);
+                        }}
+                    >
+                        {t("chat.copyMessage", "复制")}
+                    </button>
+                </div>
+            )}
 
             {/* 滾動到底部按鈕 */}
             {showScrollToBottom && (

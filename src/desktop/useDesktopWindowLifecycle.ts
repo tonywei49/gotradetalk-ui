@@ -17,6 +17,17 @@ export function useDesktopWindowLifecycle() {
 
         let unlistenCloseRequested: (() => void) | undefined;
         const preventContextMenu = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            const tagName = target?.tagName?.toLowerCase() ?? "";
+            const isEditableTarget = Boolean(
+                target?.isContentEditable
+                || tagName === "input"
+                || tagName === "textarea"
+                || tagName === "select",
+            );
+            if (isEditableTarget) {
+                return;
+            }
             event.preventDefault();
         };
         const openDevtoolsShortcut = (event: KeyboardEvent) => {

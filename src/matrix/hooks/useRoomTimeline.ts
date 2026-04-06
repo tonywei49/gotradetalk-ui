@@ -106,6 +106,21 @@ function mergeRoomEvents(roomId: string, ...groups: MatrixEvent[][]): MatrixEven
     return merged;
 }
 
+function getEventStableKey(event: MatrixEvent): string {
+    return event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender() ?? "unknown"}`;
+}
+
+function haveSameEventSequence(a: MatrixEvent[], b: MatrixEvent[]): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) {
+        if (getEventStableKey(a[index]) !== getEventStableKey(b[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export function useRoomTimeline(
     client: MatrixClient | null,
     roomId: string | null,
@@ -184,6 +199,9 @@ export function useRoomTimeline(
                 const snapshot = prev.length > 0
                     ? trimLiveWindow(mergeRoomEvents(roomId, prev, liveEvents))
                     : trimLiveWindow([...base]);
+                if (haveSameEventSequence(prev, snapshot)) {
+                    return prev;
+                }
                 writeCachedTimeline(cacheKey, roomId, snapshot, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, snapshot, limit));
                 return snapshot;
@@ -215,6 +233,9 @@ export function useRoomTimeline(
                 const next = trimLiveWindow(
                     filterEventsForRoom(toStartOfTimeline ? [event, ...prev] : [...prev, event], roomId),
                 );
+                if (haveSameEventSequence(prev, next)) {
+                    return prev;
+                }
                 writeCachedTimeline(cacheKey, roomId, next, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, next, limit));
                 return next;
@@ -231,6 +252,9 @@ export function useRoomTimeline(
                 const snapshot = prev.length > 0
                     ? trimLiveWindow(mergeRoomEvents(roomId, prev, liveEvents))
                     : trimLiveWindow(limit ? liveEvents.slice(-limit) : liveEvents);
+                if (haveSameEventSequence(prev, snapshot)) {
+                    return prev;
+                }
                 writeCachedTimeline(cacheKey, roomId, snapshot, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, snapshot, limit));
                 return snapshot;
