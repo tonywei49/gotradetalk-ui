@@ -37,7 +37,6 @@ export function isInvalidCredentialError(error: unknown): boolean {
     return (
         normalized.includes("INVALID LOGIN CREDENTIALS") ||
         normalized.includes("WRONG USERNAME OR PASSWORD") ||
-        normalized.includes("ACCOUNT NOT FOUND") ||
         normalized.includes("INVALID_CREDENTIALS") ||
         normalized.includes("M_FORBIDDEN")
     );
@@ -111,6 +110,12 @@ export function mapActionErrorToMessage(
 export function mapAuthErrorToMessage(t: TFunction, error: unknown): string {
     const { statusCode, normalized, message } = normalizeError(error);
     if (isInvalidCredentialError(error)) return t("auth.errors.invalidCredentials");
+    if (normalized.includes("ACCOUNT NOT FOUND")) {
+        return t(
+            "auth.errors.accountNotFound",
+            "Account not found. If you registered with email but did not finish client setup, continue registration from the email link first.",
+        );
+    }
     if (
         statusCode === 429
         || normalized.includes("TOO MANY REQUESTS")
