@@ -6,12 +6,13 @@ import { useNavigate } from "react-router-dom";
 import { hubClientLogin, hubClientProvision, hubClientSetPassword } from "../api/hub";
 import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
-import { getSupabaseClient } from "../api/supabase";
+import { getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
+import { clearPendingClientRegistrationDraft, readPendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
@@ -45,23 +46,42 @@ export function OauthSetupPage() {
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
     const clientSessionMetadata = getClientLoginSessionMetadata();
+    const supabaseAvailable = useMemo(() => hasSupabaseConfig(), []);
+    const supabaseUnavailableMessage = "Supabase is unavailable in this desktop build.";
 
     const email = useMemo(() => session?.user?.email ?? "", [session]);
 
     useEffect(() => {
+        if (!supabaseAvailable) {
+            setLoading(false);
+            setError(supabaseUnavailableMessage);
+            return;
+        }
         const supabase = getSupabaseClient();
         void (async (): Promise<void> => {
             const { data } = await supabase.auth.getSession();
             setSession(data.session ?? null);
             if (data.session?.user?.email) {
-                const localPart = data.session.user.email.split("@")[0] || "";
-                setUserLocalId(localPart.toLowerCase());
+                const email = data.session.user.email;
+                const draft = readPendingClientRegistrationDraft();
+                if (draft && draft.email.toLowerCase() === email.toLowerCase()) {
+                    setUserLocalId(draft.userLocalId || email.split("@")[0]?.toLowerCase() || "");
+                    setCompanyName(draft.companyName || "");
+                    setCountry(draft.country || "");
+                    setJobTitle(draft.jobTitle || "");
+                    setGender(draft.gender || "");
+                    setTranslationLocale(draft.translationLocale || "");
+                } else {
+                    const localPart = email.split("@")[0] || "";
+                    setUserLocalId(localPart.toLowerCase());
+                }
             }
             setLoading(false);
         })();
-    }, []);
+    }, [supabaseAvailable]);
 
     useEffect(() => {
+        if (!supabaseAvailable) return;
         if (!session?.access_token) return;
         const supabase = getSupabaseClient();
         void (async (): Promise<void> => {
@@ -89,7 +109,7 @@ export function OauthSetupPage() {
             const hasPassword = !!data?.password_set;
             setNeedsProvision(!hasAllRequired || !hasPassword || !hasMatrixAccount);
         })();
-    }, [session]);
+    }, [session, supabaseAvailable]);
 
     const isValidPassword = (value: string): boolean => {
         if (value.length < 10) return false;
@@ -168,6 +188,7 @@ export function OauthSetupPage() {
                     return;
                 }
                 setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
+                clearPendingClientRegistrationDraft();
                 setAuthSession({
                     userType: "client",
                     matrixCredentials: response.matrix,
@@ -222,7 +243,7 @@ export function OauthSetupPage() {
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
                         <h2>{t("oauth.title")}</h2>
-                        <p>{t("oauth.invalid")}</p>
+                        <p>{error ?? t("oauth.invalid")}</p>
                     </div>
                     <div className="gt_actions">
                         <button type="button" className="gt_primary" onClick={() => navigate("/")}>
@@ -352,6 +373,7 @@ export function OauthSetupPage() {
                     }
                     await updateClientLanguage(pendingLanguageSession, language);
                     setLanguage(language);
+                    clearPendingClientRegistrationDraft();
                     setAuthSession({
                         userType: "client",
                         matrixCredentials,

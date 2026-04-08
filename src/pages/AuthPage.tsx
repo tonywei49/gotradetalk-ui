@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -16,7 +16,7 @@ import {
     updateClientLanguage,
     updateStaffLanguage,
 } from "../api/profile";
-import { getSupabaseClient } from "../api/supabase";
+import { getOptionalSupabaseClient, getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
 import { displayLanguageOptions, isSupportedDisplayLanguage, type DisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { LanguageModal } from "../components/LanguageModal";
@@ -26,68 +26,54 @@ import { useAuthStore } from "../stores/AuthStore";
 import { useToastStore } from "../stores/ToastStore";
 import { mapAuthErrorToMessage } from "../utils/errorMessages";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
+import { clearPendingClientRegistrationDraft, writePendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import "./AuthPage.css";
 
 type EntryMode = "client" | "company";
 
-function readNamedField(form: HTMLFormElement, name: string): string {
-    const field = form.elements.namedItem(name);
-    if (
-        field instanceof HTMLInputElement ||
-        field instanceof HTMLSelectElement ||
-        field instanceof HTMLTextAreaElement
-    ) {
-        return field.value.trim();
+type DebugCompanyLogin = {
+    slug: string;
+    tld?: string;
+    username: string;
+    password: string;
+};
+
+function readDebugCompanyLogin(): DebugCompanyLogin | null {
+    const encoded = import.meta.env.VITE_DEBUG_COMPANY_LOGIN_B64;
+    if (!encoded || typeof encoded !== "string") {
+        return null;
     }
-    return "";
+
+    try {
+        const decoded = atob(encoded);
+        const parsed = JSON.parse(decoded) as DebugCompanyLogin;
+        if (!parsed?.slug || !parsed?.username || !parsed?.password) {
+            return null;
+        }
+        return parsed;
+    } catch (error) {
+        console.warn("Failed to parse injected debug company login:", error);
+        return null;
+    }
 }
 
-function buildAuthErrorDetail(error: unknown, friendlyMessage: string): string | null {
-    const candidate = error as
-        | {
-              code?: string;
-              errcode?: string;
-              status?: number;
-              statusCode?: number;
-              httpStatus?: number;
-              message?: string;
-              error?: string;
-          }
-        | null;
-
-    const code = typeof candidate?.code === "string" && candidate.code.trim()
-        ? candidate.code.trim()
-        : typeof candidate?.errcode === "string" && candidate.errcode.trim()
-            ? candidate.errcode.trim()
-            : "";
-    const status = typeof candidate?.status === "number"
-        ? candidate.status
-        : typeof candidate?.statusCode === "number"
-            ? candidate.statusCode
-            : typeof candidate?.httpStatus === "number"
-                ? candidate.httpStatus
-                : null;
-    const rawMessage = typeof candidate?.message === "string" && candidate.message.trim()
-        ? candidate.message.trim()
-        : typeof candidate?.error === "string" && candidate.error.trim()
-            ? candidate.error.trim()
-            : error instanceof Error && error.message.trim()
-                ? error.message.trim()
-                : "";
-
-    const parts: string[] = [];
-    if (code) parts.push(code);
-    if (status !== null) parts.push(`HTTP ${status}`);
-    if (rawMessage && rawMessage !== friendlyMessage.trim()) {
-        parts.push(rawMessage);
-    }
-
-    return parts.length ? parts.join(" | ") : null;
+function isHubAccountNotFoundError(error: unknown): boolean {
+    const maybeObj = error as { message?: string; error?: string } | null;
+    const message =
+        typeof maybeObj?.message === "string"
+            ? maybeObj.message
+            : typeof maybeObj?.error === "string"
+                ? maybeObj.error
+                : error instanceof Error
+                    ? error.message
+                    : String(error ?? "");
+    return message.toUpperCase().includes("ACCOUNT NOT FOUND");
 }
 
 export function AuthPage() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
+    const existingMatrixCredentials = useAuthStore((state) => state.matrixCredentials);
     const setAuthSession = useAuthStore((state) => state.setSession);
     const pushToast = useToastStore((state) => state.pushToast);
     const [activeEntry, setActiveEntry] = useState<EntryMode>("client");
@@ -95,8 +81,8 @@ export function AuthPage() {
     const [clientPassword, setClientPassword] = useState("");
     const [clientBusy, setClientBusy] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
-    const [clientErrorDetail, setClientErrorDetail] = useState<string | null>(null);
     const [clientSuccess, setClientSuccess] = useState<HubClientLoginResponse | null>(null);
+    const [clientRegisterSuccess, setClientRegisterSuccess] = useState<string | null>(null);
     const [showClientRegister, setShowClientRegister] = useState(false);
     const [showClientReset, setShowClientReset] = useState(false);
     const [resetEmail, setResetEmail] = useState("");
@@ -121,7 +107,6 @@ export function AuthPage() {
     const [companyPassword, setCompanyPassword] = useState("");
     const [companyBusy, setCompanyBusy] = useState(false);
     const [companyError, setCompanyError] = useState<string | null>(null);
-    const [companyErrorDetail, setCompanyErrorDetail] = useState<string | null>(null);
     const [companySuccess, setCompanySuccess] = useState<string | null>(null);
     const [showForceReset, setShowForceReset] = useState(false);
     const [forceResetAccessToken, setForceResetAccessToken] = useState("");
@@ -147,6 +132,10 @@ export function AuthPage() {
         | null
     >(null);
     const clientSessionMetadata = getClientLoginSessionMetadata();
+    const debugCompanyLogin = useMemo(() => readDebugCompanyLogin(), []);
+    const debugCompanyLoginStartedRef = useRef(false);
+    const supabaseAvailable = useMemo(() => hasSupabaseConfig(), []);
+    const supabaseUnavailableMessage = "Supabase is unavailable in this desktop build.";
 
     const ensureHubSessionForStaff = async (params: {
         username: string;
@@ -190,7 +179,10 @@ export function AuthPage() {
     };
 
     useEffect(() => {
-        const supabase = getSupabaseClient();
+        const supabase = getOptionalSupabaseClient();
+        if (!supabase) {
+            return;
+        }
         const { data } = supabase.auth.onAuthStateChange((event) => {
             if (event === "PASSWORD_RECOVERY") {
                 navigate("/reset-password");
@@ -206,6 +198,10 @@ export function AuthPage() {
     };
 
     const onGoogleLogin = (): void => {
+        if (!supabaseAvailable) {
+            pushToast("error", supabaseUnavailableMessage);
+            return;
+        }
         const supabase = getSupabaseClient();
         void supabase.auth.signInWithOAuth({
             provider: "google",
@@ -217,26 +213,24 @@ export function AuthPage() {
 
     const onSubmitClient = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
-        const form = event.currentTarget;
         void (async (): Promise<void> => {
             setClientBusy(true);
             setClientError(null);
-            setClientErrorDetail(null);
             setClientSuccess(null);
             try {
-                const account = readNamedField(form, "clientUsername");
-                const password = readNamedField(form, "clientPassword");
-                setClientUsername(account);
-                setClientPassword(password);
-
-                if (!account || !password) {
+                if (!clientUsername.trim() || !clientPassword.trim()) {
                     throw new Error(t("auth.errors.missingLoginFields"));
                 }
+                const account = clientUsername.trim();
+                const password = clientPassword.trim();
                 const isEmail = account.includes("@");
                 let hubSession: HubSupabaseSession | null = null;
                 let response: HubClientLoginResponse;
 
                 if (isEmail) {
+                    if (!supabaseAvailable) {
+                        throw new Error(supabaseUnavailableMessage);
+                    }
                     const supabase = getSupabaseClient();
                     const { data, error } = await supabase.auth.signInWithPassword({
                         email: account,
@@ -249,7 +243,22 @@ export function AuthPage() {
                     if (!session?.access_token) {
                         throw new Error(t("auth.errors.missingSupabaseSession"));
                     }
-                    response = await hubClientLogin(account, password, session.access_token, clientSessionMetadata);
+                    try {
+                        response = await hubClientLogin(account, password, session.access_token, clientSessionMetadata);
+                    } catch (error) {
+                        if (isHubAccountNotFoundError(error)) {
+                            pushToast(
+                                "warn",
+                                t(
+                                    "auth.client.completeRegistrationHint",
+                                    "Email verified, but account setup is not finished yet. Please complete the remaining registration steps.",
+                                ),
+                            );
+                            navigate("/oauth");
+                            return;
+                        }
+                        throw error;
+                    }
                     hubSession = response.supabase ?? {
                         access_token: session.access_token,
                         refresh_token: session.refresh_token,
@@ -260,6 +269,15 @@ export function AuthPage() {
                     hubSession = response.supabase ?? null;
                 }
                 setClientSuccess(response);
+                if (!hubSession && !supabaseAvailable) {
+                    setAuthSession({
+                        userType: "client",
+                        matrixCredentials: response.matrix,
+                        hubSession: null,
+                    });
+                    navigate("/app");
+                    return;
+                }
                 if (!hubSession) {
                     throw new Error(t("auth.errors.missingSupabaseSession"));
                 }
@@ -282,10 +300,7 @@ export function AuthPage() {
                 navigate("/app");
             } catch (error) {
                 const message = mapAuthErrorToMessage(t, error);
-                const detail = buildAuthErrorDetail(error, message);
-                console.error("Client login failed", error);
                 setClientError(message);
-                setClientErrorDetail(detail);
                 pushToast("error", message);
             } finally {
                 setClientBusy(false);
@@ -293,105 +308,123 @@ export function AuthPage() {
         })();
     };
 
-    const onSubmitCompany = (event: React.FormEvent<HTMLFormElement>): void => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        void (async (): Promise<void> => {
-            setCompanyBusy(true);
-            setCompanyError(null);
-            setCompanyErrorDetail(null);
-            setCompanySuccess(null);
-            try {
-                const slugInput = readNamedField(form, "companySlug");
-                const tldInput = readNamedField(form, "companyTld");
-                const usernameInput = readNamedField(form, "companyUsername");
-                const passwordInput = readNamedField(form, "companyPassword");
-                setCompanySlug(slugInput);
-                setCompanyTld(tldInput);
-                setCompanyUsername(usernameInput);
-                setCompanyPassword(passwordInput);
+    const submitCompanyLogin = async (params?: {
+        slug?: string;
+        tld?: string;
+        username?: string;
+        password?: string;
+    }): Promise<void> => {
+        setCompanyBusy(true);
+        setCompanyError(null);
+        setCompanySuccess(null);
+        try {
+            const slugInput = params?.slug ?? companySlug;
+            const usernameInput = params?.username ?? companyUsername;
+            const passwordInput = params?.password ?? companyPassword;
+            const tldInput = params?.tld ?? companyTld;
 
-                const normalizedSlug = slugInput.toLowerCase();
-                if (!normalizedSlug || !usernameInput || !passwordInput) {
-                    throw new Error(t("auth.errors.missingLoginFields"));
-                }
-                if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
-                    throw new Error(t("auth.errors.invalidCompanySlug"));
-                }
-                const normalizedTld = normalizeCompanyTld(tldInput);
-                if (!normalizedTld || !/^[a-z0-9.-]+$/.test(normalizedTld)) {
-                    throw new Error(t("auth.errors.invalidCompanyTld"));
-                }
-                const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
-                const credentials = await loginWithPassword(hsUrl, usernameInput, passwordInput);
-                const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
-                const hubSession = await ensureHubSessionForStaff({
-                    username: usernameInput,
-                    password: passwordInput,
-                    matrixAccessToken: credentials.accessToken,
-                    hsUrl: credentials.homeserverUrl,
-                    matrixUserId: credentials.userId,
-                    matrixDeviceId: credentials.deviceId,
-                });
-                if (passwordState.password_state === "RESET_REQUIRED") {
-                    setForceResetAccessToken(credentials.accessToken);
-                    setForceResetHsUrl(credentials.homeserverUrl);
-                    setForceResetUserId(credentials.userId);
-                    setForceResetDeviceId(credentials.deviceId);
-                    setForceResetInitialPassword(passwordInput);
-                    setShowForceReset(true);
-                    return;
-                }
-                setCompanySuccess(t("auth.company.loginSuccess"));
-                const language = await fetchStaffLanguage(credentials.accessToken, credentials.homeserverUrl);
-                if (!language) {
-                    setPendingLanguageContext({
-                        userType: "staff",
-                        matrixUserId: credentials.userId,
-                        accessToken: credentials.accessToken,
-                        hsUrl: credentials.homeserverUrl,
-                        hubSession,
-                        matrixCredentials: {
-                            access_token: credentials.accessToken,
-                            device_id: credentials.deviceId,
-                            user_id: credentials.userId,
-                            hs_url: credentials.homeserverUrl,
-                        },
-                    });
-                    setShowLanguageModal(true);
-                    return;
-                }
-                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
-                setAuthSession({
+            const normalizedSlug = slugInput.trim().toLowerCase();
+            if (!normalizedSlug || !usernameInput.trim() || !passwordInput.trim()) {
+                throw new Error(t("auth.errors.missingLoginFields"));
+            }
+            if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
+                throw new Error(t("auth.errors.invalidCompanySlug"));
+            }
+            const normalizedTld = normalizeCompanyTld(tldInput);
+            if (!normalizedTld || !/^[a-z0-9.-]+$/.test(normalizedTld)) {
+                throw new Error(t("auth.errors.invalidCompanyTld"));
+            }
+            const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
+            const trimmedUsername = usernameInput.trim();
+            const credentials = await loginWithPassword(hsUrl, trimmedUsername, passwordInput);
+            const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
+            const hubSession = await ensureHubSessionForStaff({
+                username: trimmedUsername,
+                password: passwordInput,
+                matrixAccessToken: credentials.accessToken,
+                hsUrl: credentials.homeserverUrl,
+                matrixUserId: credentials.userId,
+                matrixDeviceId: credentials.deviceId,
+            });
+            if (passwordState.password_state === "RESET_REQUIRED") {
+                setForceResetAccessToken(credentials.accessToken);
+                setForceResetHsUrl(credentials.homeserverUrl);
+                setForceResetUserId(credentials.userId);
+                setForceResetDeviceId(credentials.deviceId);
+                setForceResetInitialPassword(passwordInput);
+                setShowForceReset(true);
+                return;
+            }
+            setCompanySuccess(t("auth.company.loginSuccess"));
+            const language = await fetchStaffLanguage(credentials.accessToken, credentials.homeserverUrl);
+            if (!language) {
+                setPendingLanguageContext({
                     userType: "staff",
+                    matrixUserId: credentials.userId,
+                    accessToken: credentials.accessToken,
+                    hsUrl: credentials.homeserverUrl,
+                    hubSession,
                     matrixCredentials: {
                         access_token: credentials.accessToken,
                         device_id: credentials.deviceId,
                         user_id: credentials.userId,
                         hs_url: credentials.homeserverUrl,
                     },
-                    hubSession,
                 });
-                navigate("/app");
-            } catch (error) {
-                const message = mapAuthErrorToMessage(t, error);
-                const detail = buildAuthErrorDetail(error, message);
-                console.error("Company login failed", error);
-                setCompanyError(message);
-                setCompanyErrorDetail(detail);
-                pushToast("error", message);
-            } finally {
-                setCompanyBusy(false);
+                setShowLanguageModal(true);
+                return;
             }
-        })();
+            setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
+            setAuthSession({
+                userType: "staff",
+                matrixCredentials: {
+                    access_token: credentials.accessToken,
+                    device_id: credentials.deviceId,
+                    user_id: credentials.userId,
+                    hs_url: credentials.homeserverUrl,
+                },
+                hubSession,
+            });
+            navigate("/app");
+        } catch (error) {
+            const message = mapAuthErrorToMessage(t, error);
+            setCompanyError(message);
+            pushToast("error", message);
+        } finally {
+            setCompanyBusy(false);
+        }
     };
+
+    const onSubmitCompany = (event: React.FormEvent<HTMLFormElement>): void => {
+        event.preventDefault();
+        void submitCompanyLogin();
+    };
+
+    useEffect(() => {
+        if (!debugCompanyLogin || existingMatrixCredentials || debugCompanyLoginStartedRef.current) {
+            return;
+        }
+
+        debugCompanyLoginStartedRef.current = true;
+        setActiveEntry("company");
+        setCompanySlug(debugCompanyLogin.slug);
+        setCompanyTld(normalizeCompanyTld(debugCompanyLogin.tld ?? "com"));
+        setCompanyUsername(debugCompanyLogin.username);
+        setCompanyPassword(debugCompanyLogin.password);
+        void submitCompanyLogin(debugCompanyLogin);
+    }, [debugCompanyLogin, existingMatrixCredentials]);
 
     const onSubmitClientRegister = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
+        if (registerBusy) return;
         void (async (): Promise<void> => {
             setRegisterBusy(true);
             setRegisterError(null);
+            setClientRegisterSuccess(null);
             try {
+                if (!supabaseAvailable) {
+                    throw new Error(supabaseUnavailableMessage);
+                }
                 if (!registerEmail.trim() || !registerPassword.trim()) {
                     throw new Error(t("auth.errors.missingRegisterFields"));
                 }
@@ -408,11 +441,40 @@ export function AuthPage() {
                 const { data, error } = await supabase.auth.signUp({
                     email: registerEmail.trim(),
                     password: registerPassword.trim(),
+                    options: {
+                        emailRedirectTo: `${window.location.origin}/oauth`,
+                    },
                 });
                 if (error) {
                     throw new Error(error.message);
                 }
                 const session = data.session;
+                if (!session?.access_token && data.user?.id) {
+                    writePendingClientRegistrationDraft({
+                        email: registerEmail.trim(),
+                        userLocalId: registerUserLocalId.trim(),
+                        companyName: registerCompanyName.trim(),
+                        country: registerCountry.trim(),
+                        translationLocale: registerTranslationLocale.trim(),
+                        jobTitle: registerJobTitle.trim(),
+                        gender: registerGender.trim(),
+                        language: registerLanguage,
+                    });
+                    const successMessage = t("auth.client.registerEmailSent");
+                    setShowClientRegister(false);
+                    setRegisterEmail("");
+                    setRegisterPassword("");
+                    setRegisterUserLocalId("");
+                    setRegisterCompanyName("");
+                    setRegisterCountry("");
+                    setRegisterGender("");
+                    setRegisterJobTitle("");
+                    setRegisterTranslationLocale("");
+                    setRegisterLanguage("en");
+                    setClientRegisterSuccess(successMessage);
+                    pushToast("success", successMessage);
+                    return;
+                }
                 if (!session?.access_token) {
                     throw new Error(t("auth.errors.missingSupabaseSession"));
                 }
@@ -433,6 +495,7 @@ export function AuthPage() {
                     },
                     registerLanguage,
                 );
+                clearPendingClientRegistrationDraft();
                 setShowClientRegister(false);
                 setRegisterEmail("");
                 setRegisterPassword("");
@@ -460,6 +523,9 @@ export function AuthPage() {
             setResetError(null);
             setResetSuccess(null);
             try {
+                if (!supabaseAvailable) {
+                    throw new Error(supabaseUnavailableMessage);
+                }
                 const email = resetEmail.trim();
                 if (!email) {
                     throw new Error(t("auth.errors.missingResetEmail"));
@@ -534,12 +600,10 @@ export function AuthPage() {
                             <span>{t("auth.fields.usernameLabel")}</span>
                             <input
                                 type="text"
-                                name="clientUsername"
                                 data-testid="auth-client-username"
                                 placeholder={t("auth.fields.usernamePlaceholder")}
                                 value={clientUsername}
                                 onChange={(event) => setClientUsername(event.target.value)}
-                                onInput={(event) => setClientUsername((event.target as HTMLInputElement).value)}
                                 autoComplete="username"
                             />
                         </label>
@@ -547,12 +611,10 @@ export function AuthPage() {
                             <span>{t("auth.fields.passwordLabel")}</span>
                             <input
                                 type="password"
-                                name="clientPassword"
                                 data-testid="auth-client-password"
                                 placeholder={t("auth.fields.passwordPlaceholder")}
                                 value={clientPassword}
                                 onChange={(event) => setClientPassword(event.target.value)}
-                                onInput={(event) => setClientPassword((event.target as HTMLInputElement).value)}
                                 autoComplete="current-password"
                             />
                         </label>
@@ -586,12 +648,8 @@ export function AuthPage() {
                         >
                             {t("auth.client.forgotPassword")}
                         </button>
-                        {clientError && (
-                            <div className="gt_error">
-                                <div>{clientError}</div>
-                                {clientErrorDetail && <div className="gt_errorDetail">{clientErrorDetail}</div>}
-                            </div>
-                        )}
+                        {clientError && <div className="gt_error">{clientError}</div>}
+                        {clientRegisterSuccess && <div className="gt_success">{clientRegisterSuccess}</div>}
                         {clientSuccess && (
                             <div className="gt_success">{t("auth.client.loginSuccess")}</div>
                         )}
@@ -608,11 +666,9 @@ export function AuthPage() {
                             <span>{t("auth.fields.companySlugLabel")}</span>
                             <input
                                 type="text"
-                                name="companySlug"
                                 placeholder={t("auth.fields.companySlugPlaceholder")}
                                 value={companySlug}
                                 onChange={(event) => setCompanySlug(event.target.value)}
-                                onInput={(event) => setCompanySlug((event.target as HTMLInputElement).value)}
                                 autoComplete="organization"
                             />
                         </label>
@@ -621,10 +677,8 @@ export function AuthPage() {
                             <div className="gt_inlineField">
                                 <input
                                     type="text"
-                                    name="companyTld"
                                     value={companyTld}
                                     onChange={(event) => setCompanyTld(event.target.value)}
-                                    onInput={(event) => setCompanyTld((event.target as HTMLInputElement).value)}
                                     placeholder={t("auth.fields.companyTldPlaceholder")}
                                     disabled={!companyTldEditable}
                                 />
@@ -643,11 +697,9 @@ export function AuthPage() {
                             <span>{t("auth.fields.usernameLabel")}</span>
                             <input
                                 type="text"
-                                name="companyUsername"
                                 placeholder={t("auth.fields.usernamePlaceholder")}
                                 value={companyUsername}
                                 onChange={(event) => setCompanyUsername(event.target.value)}
-                                onInput={(event) => setCompanyUsername((event.target as HTMLInputElement).value)}
                                 autoComplete="username"
                             />
                         </label>
@@ -655,11 +707,9 @@ export function AuthPage() {
                             <span>{t("auth.fields.passwordLabel")}</span>
                             <input
                                 type="password"
-                                name="companyPassword"
                                 placeholder={t("auth.fields.passwordPlaceholder")}
                                 value={companyPassword}
                                 onChange={(event) => setCompanyPassword(event.target.value)}
-                                onInput={(event) => setCompanyPassword((event.target as HTMLInputElement).value)}
                                 autoComplete="current-password"
                             />
                         </label>
@@ -671,12 +721,7 @@ export function AuthPage() {
                         <button type="button" className="gt_link">
                             {t("auth.company.forgotPassword")}
                         </button>
-                        {companyError && (
-                            <div className="gt_error">
-                                <div>{companyError}</div>
-                                {companyErrorDetail && <div className="gt_errorDetail">{companyErrorDetail}</div>}
-                            </div>
-                        )}
+                        {companyError && <div className="gt_error">{companyError}</div>}
                         {companySuccess && <div className="gt_success">{companySuccess}</div>}
                     </form>
                 </section>
@@ -819,7 +864,7 @@ export function AuthPage() {
                                 onClick={() => setShowClientReset(false)}
                                 disabled={resetBusy}
                             >
-                                ×
+                                脳
                             </button>
                         </div>
                         <p className="gt_modalSubtitle">{t("auth.client.resetEmailSubtitle")}</p>
