@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { hubClientLogin, hubClientProvision, hubClientSetPassword } from "../api/hub";
 import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
-import { getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
+import { getSupabaseClient, hasSupabaseConfig, resolveSupabaseSessionFromUrl } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
@@ -97,27 +97,40 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
             return;
         }
         const supabase = getSupabaseClient();
+        const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            setSession(nextSession);
+        });
         void (async (): Promise<void> => {
-            const { data } = await supabase.auth.getSession();
-            setSession(data.session ?? null);
-            if (data.session?.user?.email) {
-                const email = data.session.user.email;
-                const draft = readPendingClientRegistrationDraft();
-                if (draft && draft.email.toLowerCase() === email.toLowerCase()) {
-                    setUserLocalId(draft.userLocalId || email.split("@")[0]?.toLowerCase() || "");
-                    setCompanyName(draft.companyName || "");
-                    setCountry(draft.country || "");
-                    setJobTitle(draft.jobTitle || "");
-                    setGender(draft.gender || "");
-                    setTranslationLocale(draft.translationLocale || "");
+            try {
+                const resolvedSession = await resolveSupabaseSessionFromUrl();
+                setSession(resolvedSession);
+                if (resolvedSession?.user?.email) {
+                    const email = resolvedSession.user.email;
+                    const draft = readPendingClientRegistrationDraft();
+                    if (draft && draft.email.toLowerCase() === email.toLowerCase()) {
+                        setUserLocalId(draft.userLocalId || email.split("@")[0]?.toLowerCase() || "");
+                        setCompanyName(draft.companyName || "");
+                        setCountry(draft.country || "");
+                        setJobTitle(draft.jobTitle || "");
+                        setGender(draft.gender || "");
+                        setTranslationLocale(draft.translationLocale || "");
+                    } else {
+                        const localPart = email.split("@")[0] || "";
+                        setUserLocalId(localPart.toLowerCase());
+                    }
                 } else {
-                    const localPart = email.split("@")[0] || "";
-                    setUserLocalId(localPart.toLowerCase());
+                    setError(null);
                 }
+            } catch (resolveError) {
+                setError(resolveError instanceof Error ? resolveError.message : t("auth.errors.generic"));
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         })();
-    }, [supabaseAvailable]);
+        return () => {
+            data.subscription.unsubscribe();
+        };
+    }, [supabaseAvailable, t]);
 
     useEffect(() => {
         if (!supabaseAvailable) return;

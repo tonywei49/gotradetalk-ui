@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { hubClientLogin, hubClientResetPassword } from "../api/hub";
 import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
-import { getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
+import { getSupabaseClient, hasSupabaseConfig, resolveSupabaseSessionFromUrl } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { setLanguage } from "../i18n";
@@ -47,9 +47,14 @@ export function ResetPasswordPage() {
         }
         const supabase = getSupabaseClient();
         void (async (): Promise<void> => {
-            const { data } = await supabase.auth.getSession();
-            setSession(data.session ?? null);
-            setLoading(false);
+            try {
+                const resolvedSession = await resolveSupabaseSessionFromUrl();
+                setSession(resolvedSession);
+            } catch (resolveError) {
+                setError(resolveError instanceof Error ? resolveError.message : t("auth.errors.generic"));
+            } finally {
+                setLoading(false);
+            }
         })();
         const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
             setSession(nextSession);
@@ -57,7 +62,7 @@ export function ResetPasswordPage() {
         return () => {
             data.subscription.unsubscribe();
         };
-    }, [supabaseAvailable]);
+    }, [supabaseAvailable, t]);
 
     const isValidPassword = (value: string): boolean => {
         if (value.length < 10) return false;
