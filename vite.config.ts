@@ -18,9 +18,11 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), "");
     const hubTarget = resolveProxyTarget(env.VITE_HUB_API_BASE_URL, "https://api.gotradetalk.com");
     const notebookTarget = resolveProxyTarget(env.VITE_NOTEBOOK_API_BASE_URL, hubTarget);
+    const assetBase = env.VITE_ASSET_BASE?.trim() || "/";
 
     return {
-        base: mode === "development" ? "/" : "./",
+        // Deep-link routes must keep resolving JS/CSS after a hard refresh in web deploys.
+        base: mode === "development" ? "/" : assetBase,
         plugins: [react(), tailwindcss()],
         server: {
             strictPort: true,
