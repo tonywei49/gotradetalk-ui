@@ -24,6 +24,8 @@
             "registerConfirm": "创建账号",
             "registerCancel": "取消",
             "registerBusy": "创建中...",
+            "registerEmailSent": "验证邮件已发送，请查收邮箱并点击邮件中的链接继续完成注册。",
+            "completeRegistrationHint": "邮箱已验证，但账号资料尚未完成，请继续补完注册流程。",
             "forgotPassword": "忘记密码？",
             "or": "或",
             "googleLogin": "使用 Google 登录",
@@ -103,7 +105,9 @@
             "invalidCredentials": "账号或密码错误。",
             "emptyPassword": "请输入当前密码和新密码。",
             "passwordMismatch": "两次输入的密码不一致。",
-            "passwordWeak": "密码至少 10 位且包含字母和数字。"
+            "passwordWeak": "密码至少 10 位且包含字母和数字。",
+            "rateLimited": "当前尝试过多，请稍后再试。",
+            "rateLimitedWait": "当前请求过于频繁，请等待 {{seconds}} 秒后再试。"
         }
     },
     "oauth": {

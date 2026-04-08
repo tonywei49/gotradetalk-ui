@@ -24,6 +24,8 @@
             "registerConfirm": "Create account",
             "registerCancel": "Cancel",
             "registerBusy": "Creating...",
+            "registerEmailSent": "Verification email sent. Please open the link in your inbox to continue registration.",
+            "completeRegistrationHint": "Email verified, but account setup is not finished yet. Please complete the remaining registration steps.",
             "forgotPassword": "Forgot password?",
             "or": "Or",
             "googleLogin": "Continue with Google",
@@ -103,7 +105,9 @@
             "invalidCredentials": "Invalid credentials.",
             "emptyPassword": "Please enter your current and new password.",
             "passwordMismatch": "Passwords do not match.",
-            "passwordWeak": "Password must be at least 10 characters and include letters and numbers."
+            "passwordWeak": "Password must be at least 10 characters and include letters and numbers.",
+            "rateLimited": "Too many attempts right now. Please try again shortly.",
+            "rateLimitedWait": "Too many attempts right now. Please wait {{seconds}} seconds and try again."
         }
     },
     "oauth": {

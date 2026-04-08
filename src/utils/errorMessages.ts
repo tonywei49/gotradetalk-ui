@@ -109,6 +109,25 @@ export function mapActionErrorToMessage(
 }
 
 export function mapAuthErrorToMessage(t: TFunction, error: unknown): string {
+    const { statusCode, normalized, message } = normalizeError(error);
     if (isInvalidCredentialError(error)) return t("auth.errors.invalidCredentials");
+    if (
+        statusCode === 429
+        || normalized.includes("TOO MANY REQUESTS")
+        || normalized.includes("OVER EMAIL SEND RATE LIMIT")
+        || normalized.includes("RATE LIMIT")
+    ) {
+        const waitSeconds = message.match(/after\s+(\d+)\s+seconds?/i)?.[1];
+        if (waitSeconds) {
+            return t(
+                "auth.errors.rateLimitedWait",
+                { seconds: waitSeconds, defaultValue: "Too many attempts right now. Please wait {{seconds}} seconds and try again." },
+            );
+        }
+        return t(
+            "auth.errors.rateLimited",
+            "Too many attempts right now. Please wait a moment and try again.",
+        );
+    }
     return mapActionErrorToMessage(t, error, "auth.errors.generic");
 }

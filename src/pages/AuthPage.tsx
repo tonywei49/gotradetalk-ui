@@ -26,6 +26,7 @@ import { useAuthStore } from "../stores/AuthStore";
 import { useToastStore } from "../stores/ToastStore";
 import { mapAuthErrorToMessage } from "../utils/errorMessages";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
+import { clearPendingClientRegistrationDraft, writePendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import "./AuthPage.css";
 
 type EntryMode = "client" | "company";
@@ -56,6 +57,19 @@ function readDebugCompanyLogin(): DebugCompanyLogin | null {
     }
 }
 
+function isHubAccountNotFoundError(error: unknown): boolean {
+    const maybeObj = error as { message?: string; error?: string } | null;
+    const message =
+        typeof maybeObj?.message === "string"
+            ? maybeObj.message
+            : typeof maybeObj?.error === "string"
+                ? maybeObj.error
+                : error instanceof Error
+                    ? error.message
+                    : String(error ?? "");
+    return message.toUpperCase().includes("ACCOUNT NOT FOUND");
+}
+
 export function AuthPage() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
@@ -68,6 +82,7 @@ export function AuthPage() {
     const [clientBusy, setClientBusy] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
     const [clientSuccess, setClientSuccess] = useState<HubClientLoginResponse | null>(null);
+    const [clientRegisterSuccess, setClientRegisterSuccess] = useState<string | null>(null);
     const [showClientRegister, setShowClientRegister] = useState(false);
     const [showClientReset, setShowClientReset] = useState(false);
     const [resetEmail, setResetEmail] = useState("");
@@ -228,7 +243,22 @@ export function AuthPage() {
                     if (!session?.access_token) {
                         throw new Error(t("auth.errors.missingSupabaseSession"));
                     }
-                    response = await hubClientLogin(account, password, session.access_token, clientSessionMetadata);
+                    try {
+                        response = await hubClientLogin(account, password, session.access_token, clientSessionMetadata);
+                    } catch (error) {
+                        if (isHubAccountNotFoundError(error)) {
+                            pushToast(
+                                "warn",
+                                t(
+                                    "auth.client.completeRegistrationHint",
+                                    "Email verified, but account setup is not finished yet. Please complete the remaining registration steps.",
+                                ),
+                            );
+                            navigate("/oauth");
+                            return;
+                        }
+                        throw error;
+                    }
                     hubSession = response.supabase ?? {
                         access_token: session.access_token,
                         refresh_token: session.refresh_token,
@@ -386,9 +416,11 @@ export function AuthPage() {
 
     const onSubmitClientRegister = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
+        if (registerBusy) return;
         void (async (): Promise<void> => {
             setRegisterBusy(true);
             setRegisterError(null);
+            setClientRegisterSuccess(null);
             try {
                 if (!supabaseAvailable) {
                     throw new Error(supabaseUnavailableMessage);
@@ -409,11 +441,40 @@ export function AuthPage() {
                 const { data, error } = await supabase.auth.signUp({
                     email: registerEmail.trim(),
                     password: registerPassword.trim(),
+                    options: {
+                        emailRedirectTo: `${window.location.origin}/oauth`,
+                    },
                 });
                 if (error) {
                     throw new Error(error.message);
                 }
                 const session = data.session;
+                if (!session?.access_token && data.user?.id) {
+                    writePendingClientRegistrationDraft({
+                        email: registerEmail.trim(),
+                        userLocalId: registerUserLocalId.trim(),
+                        companyName: registerCompanyName.trim(),
+                        country: registerCountry.trim(),
+                        translationLocale: registerTranslationLocale.trim(),
+                        jobTitle: registerJobTitle.trim(),
+                        gender: registerGender.trim(),
+                        language: registerLanguage,
+                    });
+                    const successMessage = t("auth.client.registerEmailSent");
+                    setShowClientRegister(false);
+                    setRegisterEmail("");
+                    setRegisterPassword("");
+                    setRegisterUserLocalId("");
+                    setRegisterCompanyName("");
+                    setRegisterCountry("");
+                    setRegisterGender("");
+                    setRegisterJobTitle("");
+                    setRegisterTranslationLocale("");
+                    setRegisterLanguage("en");
+                    setClientRegisterSuccess(successMessage);
+                    pushToast("success", successMessage);
+                    return;
+                }
                 if (!session?.access_token) {
                     throw new Error(t("auth.errors.missingSupabaseSession"));
                 }
@@ -434,6 +495,7 @@ export function AuthPage() {
                     },
                     registerLanguage,
                 );
+                clearPendingClientRegistrationDraft();
                 setShowClientRegister(false);
                 setRegisterEmail("");
                 setRegisterPassword("");
@@ -587,6 +649,7 @@ export function AuthPage() {
                             {t("auth.client.forgotPassword")}
                         </button>
                         {clientError && <div className="gt_error">{clientError}</div>}
+                        {clientRegisterSuccess && <div className="gt_success">{clientRegisterSuccess}</div>}
                         {clientSuccess && (
                             <div className="gt_success">{t("auth.client.loginSuccess")}</div>
                         )}

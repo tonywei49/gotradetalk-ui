@@ -12,6 +12,7 @@ import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n/language";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
+import { clearPendingClientRegistrationDraft, readPendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
@@ -61,8 +62,19 @@ export function OauthSetupPage() {
             const { data } = await supabase.auth.getSession();
             setSession(data.session ?? null);
             if (data.session?.user?.email) {
-                const localPart = data.session.user.email.split("@")[0] || "";
-                setUserLocalId(localPart.toLowerCase());
+                const email = data.session.user.email;
+                const draft = readPendingClientRegistrationDraft();
+                if (draft && draft.email.toLowerCase() === email.toLowerCase()) {
+                    setUserLocalId(draft.userLocalId || email.split("@")[0]?.toLowerCase() || "");
+                    setCompanyName(draft.companyName || "");
+                    setCountry(draft.country || "");
+                    setJobTitle(draft.jobTitle || "");
+                    setGender(draft.gender || "");
+                    setTranslationLocale(draft.translationLocale || "");
+                } else {
+                    const localPart = email.split("@")[0] || "";
+                    setUserLocalId(localPart.toLowerCase());
+                }
             }
             setLoading(false);
         })();
@@ -176,6 +188,7 @@ export function OauthSetupPage() {
                     return;
                 }
                 setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
+                clearPendingClientRegistrationDraft();
                 setAuthSession({
                     userType: "client",
                     matrixCredentials: response.matrix,
@@ -360,6 +373,7 @@ export function OauthSetupPage() {
                     }
                     await updateClientLanguage(pendingLanguageSession, language);
                     setLanguage(language);
+                    clearPendingClientRegistrationDraft();
                     setAuthSession({
                         userType: "client",
                         matrixCredentials,
