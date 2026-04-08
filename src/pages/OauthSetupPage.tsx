@@ -18,7 +18,11 @@ import "./AuthPage.css";
 
 const USER_ID_PATTERN = /^[a-z0-9._=-]+$/;
 
-export function OauthSetupPage() {
+type OauthSetupPageProps = {
+    mode?: "oauth" | "email";
+};
+
+export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const setAuthSession = useAuthStore((state) => state.setSession);
@@ -48,8 +52,43 @@ export function OauthSetupPage() {
     const clientSessionMetadata = getClientLoginSessionMetadata();
     const supabaseAvailable = useMemo(() => hasSupabaseConfig(), []);
     const supabaseUnavailableMessage = "Supabase is unavailable in this desktop build.";
+    const isEmailRegistrationFlow = mode === "email";
 
     const email = useMemo(() => session?.user?.email ?? "", [session]);
+    const pageText = useMemo(() => {
+        if (!isEmailRegistrationFlow) {
+            return {
+                title: t("oauth.title"),
+                loading: t("oauth.loading"),
+                invalid: t("oauth.invalid"),
+                subtitle: t("oauth.subtitle"),
+                loginSubtitle: t("oauth.loginSubtitle"),
+                confirm: t("oauth.confirm"),
+                cancel: t("oauth.cancel"),
+                back: t("oauth.back"),
+            };
+        }
+
+        return {
+            title: t("auth.client.completeRegistrationTitle", "Complete email registration"),
+            loading: t("auth.client.completeRegistrationLoading", "Preparing your verified email session..."),
+            invalid: t(
+                "auth.client.completeRegistrationInvalid",
+                "This registration link is invalid or expired. Please request a new verification email.",
+            ),
+            subtitle: t(
+                "auth.client.completeRegistrationSubtitle",
+                "Your email is verified. Finish the remaining registration steps below.",
+            ),
+            loginSubtitle: t(
+                "auth.client.completeRegistrationLoginSubtitle",
+                "Your account exists, but setup is not finished yet. Set your password to continue.",
+            ),
+            confirm: t("auth.client.completeRegistrationConfirm", "Finish registration"),
+            cancel: t("auth.client.completeRegistrationCancel", "Back to sign in"),
+            back: t("auth.client.completeRegistrationBack", "Back to sign in"),
+        };
+    }, [isEmailRegistrationFlow, t]);
 
     useEffect(() => {
         if (!supabaseAvailable) {
@@ -204,6 +243,7 @@ export function OauthSetupPage() {
     };
 
     const onSendReset = (): void => {
+        if (!isEmailRegistrationFlow) return;
         if (!email || resetBusy) return;
         void (async (): Promise<void> => {
             setResetBusy(true);
@@ -229,8 +269,8 @@ export function OauthSetupPage() {
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
-                        <h2>{t("oauth.title")}</h2>
-                        <p>{t("oauth.loading")}</p>
+                        <h2>{pageText.title}</h2>
+                        <p>{pageText.loading}</p>
                     </div>
                 </main>
             </div>
@@ -242,12 +282,12 @@ export function OauthSetupPage() {
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
-                        <h2>{t("oauth.title")}</h2>
-                        <p>{error ?? t("oauth.invalid")}</p>
+                        <h2>{pageText.title}</h2>
+                        <p>{error ?? pageText.invalid}</p>
                     </div>
                     <div className="gt_actions">
-                        <button type="button" className="gt_primary" onClick={() => navigate("/")}>
-                            {t("oauth.back")}
+                        <button type="button" className="gt_primary" onClick={() => navigate("/auth")}>
+                            {pageText.back}
                         </button>
                     </div>
                 </main>
@@ -259,8 +299,8 @@ export function OauthSetupPage() {
         <div className="gt_app">
             <main className="gt_auth">
                 <div className="gt_cardHeader">
-                    <h2>{t("oauth.title")}</h2>
-                    <p>{needsProvision ? t("oauth.subtitle") : t("oauth.loginSubtitle")}</p>
+                    <h2>{pageText.title}</h2>
+                    <p>{needsProvision ? pageText.subtitle : pageText.loginSubtitle}</p>
                 </div>
                 <form className="gt_form" onSubmit={onSubmit}>
                     <label className="gt_field">
@@ -353,15 +393,17 @@ export function OauthSetupPage() {
                     {resetSuccess && <div className="gt_success">{resetSuccess}</div>}
                     <div className="gt_actions">
                         <button type="submit" className="gt_primary" disabled={busy}>
-                            {busy ? t("oauth.busy") : t("oauth.confirm")}
+                            {busy ? t("oauth.busy") : pageText.confirm}
                         </button>
-                        <button type="button" className="gt_secondary" onClick={() => navigate("/")} disabled={busy}>
-                            {t("oauth.cancel")}
+                        <button type="button" className="gt_secondary" onClick={() => navigate("/auth")} disabled={busy}>
+                            {pageText.cancel}
                         </button>
                     </div>
-                    <button type="button" className="gt_link" onClick={onSendReset} disabled={resetBusy}>
-                        {resetBusy ? t("auth.client.resetBusy") : t("auth.client.forgotPassword")}
-                    </button>
+                    {isEmailRegistrationFlow && (
+                        <button type="button" className="gt_link" onClick={onSendReset} disabled={resetBusy}>
+                            {resetBusy ? t("auth.client.resetBusy") : t("auth.client.forgotPassword")}
+                        </button>
+                    )}
                 </form>
             </main>
             <LanguageModal

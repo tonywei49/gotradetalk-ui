@@ -255,7 +255,7 @@ export function AuthPage() {
                                     "Email verified, but account setup is not finished yet. Please complete the remaining registration steps.",
                                 ),
                             );
-                            navigate("/oauth");
+                            navigate("/register/complete");
                             return;
                         }
                         throw error;
@@ -448,7 +448,7 @@ export function AuthPage() {
                     email: registerEmail.trim(),
                     password: registerPassword.trim(),
                     options: {
-                        emailRedirectTo: `${window.location.origin}/oauth`,
+                        emailRedirectTo: `${window.location.origin}/register/complete`,
                     },
                 });
                 if (error) {
