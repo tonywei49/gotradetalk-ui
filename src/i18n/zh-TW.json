@@ -24,6 +24,8 @@
             "registerConfirm": "建立帳戶",
             "registerCancel": "取消",
             "registerBusy": "建立中...",
+            "registerEmailSent": "驗證郵件已寄出，請查收信箱並點擊信中的連結繼續完成註冊。",
+            "completeRegistrationHint": "信箱已驗證，但帳號資料尚未完成，請繼續補完註冊流程。",
             "forgotPassword": "忘記密碼？",
             "or": "或",
             "googleLogin": "使用 Google 登入",
@@ -103,7 +105,9 @@
             "invalidCredentials": "帳號或密碼錯誤。",
             "emptyPassword": "請輸入當前密碼和新密碼。",
             "passwordMismatch": "兩次輸入的密碼不一致。",
-            "passwordWeak": "密碼至少 10 位且包含字母和數字。"
+            "passwordWeak": "密碼至少 10 位且包含字母和數字。",
+            "rateLimited": "目前嘗試次數過多，請稍後再試。",
+            "rateLimitedWait": "目前請求過於頻繁，請等待 {{seconds}} 秒後再試。"
         }
     },
     "oauth": {
@@ -168,6 +172,8 @@
     "tasks": {
         "title": "工作任務",
         "newTask": "新增任務",
+        "sync": "同步",
+        "syncing": "同步中...",
         "empty": "目前沒有任務。",
         "emptyFiltered": "當前篩選條件下沒有任務。",
         "untitled": "未命名任務",

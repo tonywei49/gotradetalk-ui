@@ -360,19 +360,24 @@
     inset: 0;
     background: rgba(15, 23, 42, 0.45);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     padding: 24px;
+    overflow-y: auto;
     z-index: 10;
 }
 
 .gt_modal {
     width: min(540px, 100%);
+    max-height: calc(100vh - 48px);
     background: #ffffff;
     border-radius: 20px;
     padding: 24px;
     box-shadow: 0 30px 80px rgba(15, 23, 42, 0.3);
     position: relative;
+    margin: auto 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .dark .gt_modal {
