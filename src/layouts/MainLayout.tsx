@@ -32,7 +32,7 @@ import {
     type ChatSummaryJobItem,
 } from "../api/hub";
 import { HUB_SESSION_REVOKED_EVENT, type HubSessionRevokedDetail } from "../api/session";
-import type { HubProfileSummary } from "../api/types";
+import type { HubProfileSummary, HubSupabaseSession } from "../api/types";
 import { removeContact } from "../api/contacts";
 import { getOrCreateDirectRoom, hideDirectRoom } from "../matrix/direct";
 import { prepareMatrixClient } from "../matrix/client";
@@ -476,6 +476,23 @@ function formatSummaryDisplayDate(value: string | null | undefined): string {
     const month = parsed.getMonth() + 1;
     const day = parsed.getDate();
     return `${year}/${month}/${day}`;
+}
+
+function toStoredHubSession(
+    session: {
+        access_token?: string | null;
+        refresh_token?: string | null;
+        expires_at?: number | null;
+    } | null | undefined,
+    fallbackRefreshToken?: string | null,
+): HubSupabaseSession | null {
+    const accessToken = session?.access_token?.trim();
+    if (!accessToken) return null;
+    return {
+        access_token: accessToken,
+        refresh_token: session?.refresh_token?.trim() || fallbackRefreshToken?.trim() || "",
+        expires_at: typeof session?.expires_at === "number" ? session.expires_at : undefined,
+    };
 }
 
 function parseJwtSub(token: string | null | undefined): string | null {

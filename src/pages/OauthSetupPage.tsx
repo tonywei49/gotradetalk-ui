@@ -10,7 +10,7 @@ import { getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
-import { setLanguage } from "../i18n/language";
+import { setLanguage } from "../i18n";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
 import { clearPendingClientRegistrationDraft, readPendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import { useAuthStore } from "../stores/AuthStore";
