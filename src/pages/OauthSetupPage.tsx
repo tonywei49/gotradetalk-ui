@@ -211,8 +211,6 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
 
             setBusy(true);
             try {
-                await hubClientSetPassword(session.access_token, password);
-
                 if (needsProvision) {
                     const normalizedUserId = userLocalId.trim().toLowerCase();
                     await hubClientProvision(session.access_token, {
@@ -226,7 +224,9 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
                     });
                 }
 
-                const response = await hubClientLogin(email, password, session.access_token, clientSessionMetadata);
+                await hubClientSetPassword(session.access_token, password);
+
+                const response = await hubClientLogin(email, password, undefined, clientSessionMetadata);
                 setMatrixCredentials(response.matrix);
                 const hubSession = response.supabase ?? {
                     access_token: session.access_token,
