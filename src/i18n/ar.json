@@ -24,6 +24,7 @@
             "registerConfirm": "إنشاء الحساب",
             "registerCancel": "إلغاء",
             "registerBusy": "جارٍ الإنشاء...",
+            "registerEmailOnlySubtitle": "بعد التحقق من بريدك الإلكتروني، سنطلب منك المعرّف والشركة والدولة واللغة وكلمة المرور.",
             "forgotPassword": "هل نسيت كلمة المرور؟",
             "or": "أو",
             "googleLogin": "المتابعة باستخدام Google",
@@ -90,7 +91,7 @@
         "errors": {
             "generic": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
             "missingLoginFields": "يرجى إدخال اسم المستخدم وكلمة المرور.",
-            "missingRegisterFields": "يرجى إدخال البريد الإلكتروني وكلمة المرور.",
+            "missingRegisterFields": "يرجى إدخال بريدك الإلكتروني.",
             "missingRegisterLanguage": "يرجى اختيار لغة.",
             "missingResetEmail": "يرجى إدخال بريدك الإلكتروني.",
             "missingCountry": "يرجى إدخال بلدك.",

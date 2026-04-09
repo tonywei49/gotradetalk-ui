@@ -24,6 +24,7 @@
             "registerConfirm": "Buat akun",
             "registerCancel": "Batal",
             "registerBusy": "Sedang membuat...",
+            "registerEmailOnlySubtitle": "Setelah email diverifikasi, kami akan meminta ID, perusahaan, negara, bahasa, dan kata sandi Anda.",
             "forgotPassword": "Lupa kata sandi?",
             "or": "Atau",
             "googleLogin": "Lanjutkan dengan Google",
@@ -90,7 +91,7 @@
         "errors": {
             "generic": "Terjadi kesalahan. Silakan coba lagi.",
             "missingLoginFields": "Silakan masukkan nama pengguna dan kata sandi Anda.",
-            "missingRegisterFields": "Silakan masukkan email dan kata sandi.",
+            "missingRegisterFields": "Silakan masukkan email Anda.",
             "missingRegisterLanguage": "Silakan pilih bahasa.",
             "missingResetEmail": "Silakan masukkan email Anda.",
             "missingCountry": "Silakan masukkan negara Anda.",

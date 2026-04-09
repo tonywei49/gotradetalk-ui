@@ -24,6 +24,7 @@
             "registerConfirm": "アカウントを作成",
             "registerCancel": "キャンセル",
             "registerBusy": "作成中...",
+            "registerEmailOnlySubtitle": "メール認証後に、ユーザー ID、会社名、国、言語、パスワードを入力していただきます。",
             "forgotPassword": "パスワードをお忘れですか？",
             "or": "または",
             "googleLogin": "Google で続行",
@@ -90,7 +91,7 @@
         "errors": {
             "generic": "問題が発生しました。もう一度お試しください。",
             "missingLoginFields": "ユーザー名とパスワードを入力してください。",
-            "missingRegisterFields": "メールアドレスとパスワードを入力してください。",
+            "missingRegisterFields": "メールアドレスを入力してください。",
             "missingRegisterLanguage": "言語を選択してください。",
             "missingResetEmail": "メールアドレスを入力してください。",
             "missingCountry": "国を入力してください。",

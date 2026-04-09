@@ -24,6 +24,7 @@
             "registerConfirm": "建立帳戶",
             "registerCancel": "取消",
             "registerBusy": "建立中...",
+            "registerEmailOnlySubtitle": "驗證電子郵件後，我們會再請你填寫使用者 ID、公司、國家、語言和密碼。",
             "registerEmailSent": "驗證郵件已寄出，請查收信箱並點擊信中的連結繼續完成註冊。",
             "completeRegistrationHint": "信箱已驗證，但帳號資料尚未完成，請繼續補完註冊流程。",
             "forgotPassword": "忘記密碼？",
@@ -92,7 +93,7 @@
         "errors": {
             "generic": "發生錯誤，請稍後再試。",
             "missingLoginFields": "請輸入帳號和密碼。",
-            "missingRegisterFields": "請輸入電子郵件和密碼。",
+            "missingRegisterFields": "請輸入電子郵件。",
             "missingRegisterLanguage": "請選擇語言。",
             "missingResetEmail": "請輸入電子郵件。",
             "missingCountry": "請輸入國家。",

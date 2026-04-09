@@ -24,6 +24,7 @@
             "registerConfirm": "Tạo tài khoản",
             "registerCancel": "Hủy",
             "registerBusy": "Đang tạo...",
+            "registerEmailOnlySubtitle": "Sau khi xác minh email, chúng tôi sẽ yêu cầu bạn nhập ID, công ty, quốc gia, ngôn ngữ và mật khẩu.",
             "forgotPassword": "Quên mật khẩu?",
             "or": "Hoặc",
             "googleLogin": "Tiếp tục với Google",
@@ -90,7 +91,7 @@
         "errors": {
             "generic": "Đã xảy ra lỗi. Vui lòng thử lại.",
             "missingLoginFields": "Vui lòng nhập tên đăng nhập và mật khẩu.",
-            "missingRegisterFields": "Vui lòng nhập email và mật khẩu.",
+            "missingRegisterFields": "Vui lòng nhập email.",
             "missingRegisterLanguage": "Vui lòng chọn ngôn ngữ.",
             "missingResetEmail": "Vui lòng nhập email của bạn.",
             "missingCountry": "Vui lòng nhập quốc gia của bạn.",

@@ -24,6 +24,7 @@
             "registerConfirm": "Create account",
             "registerCancel": "Cancel",
             "registerBusy": "Creating...",
+            "registerEmailOnlySubtitle": "We will ask for your ID, company, country, language, and password after you verify your email.",
             "registerEmailSent": "Verification email sent. Please open the link in your inbox to continue registration.",
             "completeRegistrationHint": "Email verified, but account setup is not finished yet. Please complete the remaining registration steps.",
             "forgotPassword": "Forgot password?",
@@ -92,7 +93,7 @@
         "errors": {
             "generic": "Something went wrong. Please try again.",
             "missingLoginFields": "Please enter your username and password.",
-            "missingRegisterFields": "Please enter email and password.",
+            "missingRegisterFields": "Please enter your email.",
             "missingRegisterLanguage": "Please select a language.",
             "missingResetEmail": "Please enter your email.",
             "missingCountry": "Please enter your country.",

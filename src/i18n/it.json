@@ -24,6 +24,7 @@
             "registerConfirm": "Crea account",
             "registerCancel": "Annulla",
             "registerBusy": "Creazione in corso...",
+            "registerEmailOnlySubtitle": "Dopo aver verificato l'e-mail, ti chiederemo ID utente, azienda, paese, lingua e password.",
             "forgotPassword": "Password dimenticata?",
             "or": "Oppure",
             "googleLogin": "Continua con Google",
@@ -90,7 +91,7 @@
         "errors": {
             "generic": "Qualcosa è andato storto. Riprova.",
             "missingLoginFields": "Inserisci nome utente e password.",
-            "missingRegisterFields": "Inserisci email e password.",
+            "missingRegisterFields": "Inserisci la tua email.",
             "missingRegisterLanguage": "Seleziona una lingua.",
             "missingResetEmail": "Inserisci la tua email.",
             "missingCountry": "Inserisci il tuo paese.",

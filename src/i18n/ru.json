@@ -24,6 +24,7 @@
             "registerConfirm": "Создать аккаунт",
             "registerCancel": "Отмена",
             "registerBusy": "Создание...",
+            "registerEmailOnlySubtitle": "После подтверждения почты мы попросим вас указать ID, компанию, страну, язык и пароль.",
             "forgotPassword": "Забыли пароль?",
             "or": "Или",
             "googleLogin": "Продолжить через Google",
@@ -90,7 +91,7 @@
         "errors": {
             "generic": "Что-то пошло не так. Повторите попытку.",
             "missingLoginFields": "Пожалуйста, введите имя пользователя и пароль.",
-            "missingRegisterFields": "Пожалуйста, введите электронную почту и пароль.",
+            "missingRegisterFields": "Пожалуйста, введите электронную почту.",
             "missingRegisterLanguage": "Пожалуйста, выберите язык.",
             "missingResetEmail": "Пожалуйста, введите адрес электронной почты.",
             "missingCountry": "Пожалуйста, укажите страну.",

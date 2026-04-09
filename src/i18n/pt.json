@@ -24,6 +24,7 @@
             "registerConfirm": "Criar conta",
             "registerCancel": "Cancelar",
             "registerBusy": "Criando...",
+            "registerEmailOnlySubtitle": "Depois de verificar o e-mail, vamos pedir seu ID, empresa, país, idioma e senha.",
             "forgotPassword": "Esqueceu a senha?",
             "or": "Ou",
             "googleLogin": "Continuar com o Google",
@@ -90,7 +91,7 @@
         "errors": {
             "generic": "Algo deu errado. Tente novamente.",
             "missingLoginFields": "Informe seu nome de usuário e senha.",
-            "missingRegisterFields": "Informe o e-mail e a senha.",
+            "missingRegisterFields": "Informe seu e-mail.",
             "missingRegisterLanguage": "Selecione um idioma.",
             "missingResetEmail": "Informe seu e-mail.",
             "missingCountry": "Informe seu país.",

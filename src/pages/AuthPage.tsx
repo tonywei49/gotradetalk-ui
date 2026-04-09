@@ -204,20 +204,6 @@ export function AuthPage() {
         setLanguage(language);
     };
 
-    const onGoogleLogin = (): void => {
-        if (!supabaseAvailable) {
-            pushToast("error", supabaseUnavailableMessage);
-            return;
-        }
-        const supabase = getSupabaseClient();
-        void supabase.auth.signInWithOAuth({
-            provider: "google",
-            options: {
-                redirectTo: `${window.location.origin}/oauth`,
-            },
-        });
-    };
-
     const onSubmitClient = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
         void (async (): Promise<void> => {
@@ -593,10 +579,6 @@ export function AuthPage() {
                                 {t("auth.client.registerAction")}
                             </button>
                         </div>
-                        <div className="gt_separator">{t("auth.client.or")}</div>
-                        <button type="button" className="gt_googleButton" onClick={onGoogleLogin} disabled={clientBusy}>
-                            {t("auth.client.googleLogin")}
-                        </button>
                         <button
                             type="button"
                             className="gt_link"
@@ -704,10 +686,7 @@ export function AuthPage() {
                             </button>
                         </div>
                         <p className="gt_modalSubtitle">
-                            {t(
-                                "auth.client.registerEmailOnlySubtitle",
-                                "We will ask for your ID, company, country, language, and password after you verify your email.",
-                            )}
+                            {t("auth.client.registerEmailOnlySubtitle")}
                         </p>
                         <form className="gt_form" onSubmit={onSubmitClientRegister}>
                             <label className="gt_field">
