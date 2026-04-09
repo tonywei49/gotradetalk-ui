@@ -39,6 +39,13 @@ type DebugCompanyLogin = {
     password: string;
 };
 
+const CLIENT_USER_ID_PATTERN = /^[a-z0-9._=-]+$/;
+
+function isValidPassword(value: string): boolean {
+    if (value.length < 10) return false;
+    return /[A-Za-z]/.test(value) && /\d/.test(value);
+}
+
 function readDebugCompanyLogin(): DebugCompanyLogin | null {
     const encoded = import.meta.env.VITE_DEBUG_COMPANY_LOGIN_B64;
     if (!encoded || typeof encoded !== "string") {
@@ -434,6 +441,13 @@ export function AuthPage() {
                 if (!registerEmail.trim() || !registerPassword.trim()) {
                     throw new Error(t("auth.errors.missingRegisterFields"));
                 }
+                const normalizedUserLocalId = registerUserLocalId.trim().toLowerCase();
+                if (!normalizedUserLocalId || !CLIENT_USER_ID_PATTERN.test(normalizedUserLocalId)) {
+                    throw new Error(t("auth.errors.invalidUserLocalId"));
+                }
+                if (!registerCompanyName.trim()) {
+                    throw new Error(t("auth.errors.missingCompanyName"));
+                }
                 if (!registerCountry.trim()) {
                     throw new Error(t("auth.errors.missingCountry"));
                 }
@@ -442,6 +456,9 @@ export function AuthPage() {
                 }
                 if (!registerLanguage) {
                     throw new Error(t("auth.errors.missingRegisterLanguage"));
+                }
+                if (!isValidPassword(registerPassword.trim())) {
+                    throw new Error(t("auth.errors.passwordWeak"));
                 }
                 const supabase = getSupabaseClient();
                 const { data, error } = await supabase.auth.signUp({
@@ -458,13 +475,14 @@ export function AuthPage() {
                 if (!session?.access_token && data.user?.id) {
                     writePendingClientRegistrationDraft({
                         email: registerEmail.trim(),
-                        userLocalId: registerUserLocalId.trim(),
+                        userLocalId: normalizedUserLocalId,
                         companyName: registerCompanyName.trim(),
                         country: registerCountry.trim(),
                         translationLocale: registerTranslationLocale.trim(),
                         jobTitle: registerJobTitle.trim(),
                         gender: registerGender.trim(),
                         language: registerLanguage,
+                        password: registerPassword.trim(),
                     });
                     const successMessage = t("auth.client.registerEmailSent");
                     setShowClientRegister(false);
@@ -485,7 +503,7 @@ export function AuthPage() {
                     throw new Error(t("auth.errors.missingSupabaseSession"));
                 }
                 await hubClientProvision(session.access_token, {
-                    user_local_id: registerUserLocalId.trim(),
+                    user_local_id: normalizedUserLocalId,
                     company_name: registerCompanyName.trim(),
                     country: registerCountry.trim(),
                     translation_locale: registerTranslationLocale.trim(),

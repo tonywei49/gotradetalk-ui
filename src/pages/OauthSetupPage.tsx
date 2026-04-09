@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -12,7 +12,11 @@ import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
-import { clearPendingClientRegistrationDraft, readPendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
+import {
+    clearPendingClientRegistrationDraft,
+    readPendingClientRegistrationDraft,
+    type PendingClientRegistrationDraft,
+} from "../utils/pendingClientRegistration";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
@@ -49,6 +53,10 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
     } | null>(null);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [pendingLanguageSession, setPendingLanguageSession] = useState<HubSupabaseSession | null>(null);
+    const [pendingRegistrationDraft, setPendingRegistrationDraft] = useState<PendingClientRegistrationDraft | null>(null);
+    const [profileChecked, setProfileChecked] = useState(false);
+    const [autoCompleting, setAutoCompleting] = useState(false);
+    const autoCompletionStartedRef = useRef(false);
     const clientSessionMetadata = getClientLoginSessionMetadata();
     const supabaseAvailable = useMemo(() => hasSupabaseConfig(), []);
     const supabaseUnavailableMessage = "Supabase is unavailable in this desktop build.";
@@ -60,6 +68,7 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
             return {
                 title: t("oauth.title"),
                 loading: t("oauth.loading"),
+                autoCompleting: t("oauth.loading"),
                 invalid: t("oauth.invalid"),
                 subtitle: t("oauth.subtitle"),
                 loginSubtitle: t("oauth.loginSubtitle"),
@@ -72,6 +81,7 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
         return {
             title: t("auth.client.completeRegistrationTitle", "Complete email registration"),
             loading: t("auth.client.completeRegistrationLoading", "Preparing your verified email session..."),
+            autoCompleting: t("auth.client.autoCompletingRegistration", "Email verified. Completing your registration..."),
             invalid: t(
                 "auth.client.completeRegistrationInvalid",
                 "This registration link is invalid or expired. Please request a new verification email.",
@@ -108,17 +118,22 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
                     const email = resolvedSession.user.email;
                     const draft = readPendingClientRegistrationDraft();
                     if (draft && draft.email.toLowerCase() === email.toLowerCase()) {
+                        setPendingRegistrationDraft(draft);
                         setUserLocalId(draft.userLocalId || email.split("@")[0]?.toLowerCase() || "");
                         setCompanyName(draft.companyName || "");
                         setCountry(draft.country || "");
                         setJobTitle(draft.jobTitle || "");
                         setGender(draft.gender || "");
                         setTranslationLocale(draft.translationLocale || "");
+                        setPassword(draft.password || "");
+                        setConfirmPassword(draft.password || "");
                     } else {
+                        setPendingRegistrationDraft(null);
                         const localPart = email.split("@")[0] || "";
                         setUserLocalId(localPart.toLowerCase());
                     }
                 } else {
+                    setPendingRegistrationDraft(null);
                     setError(null);
                 }
             } catch (resolveError) {
@@ -135,31 +150,36 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
     useEffect(() => {
         if (!supabaseAvailable) return;
         if (!session?.access_token) return;
+        setProfileChecked(false);
         const supabase = getSupabaseClient();
         void (async (): Promise<void> => {
-            const { data, error: profileError } = await supabase
-                .from("profiles")
-                .select(
-                    "id, user_local_id, matrix_user_id, company_name, country, translation_locale, job_title, gender, password_set",
-                )
-                .eq("auth_user_id", session.user.id)
-                .eq("user_type", "client")
-                .maybeSingle();
-            if (profileError) {
-                setError(profileError.message);
-                return;
+            try {
+                const { data, error: profileError } = await supabase
+                    .from("profiles")
+                    .select(
+                        "id, user_local_id, matrix_user_id, company_name, country, translation_locale, job_title, gender, password_set",
+                    )
+                    .eq("auth_user_id", session.user.id)
+                    .eq("user_type", "client")
+                    .maybeSingle();
+                if (profileError) {
+                    setError(profileError.message);
+                    return;
+                }
+                const hasMatrixAccount = Boolean(data?.matrix_user_id);
+                if (data?.user_local_id) setUserLocalId(data.user_local_id);
+                if (data?.company_name) setCompanyName(data.company_name);
+                if (data?.country) setCountry(data.country);
+                if (data?.translation_locale) setTranslationLocale(data.translation_locale);
+                if (data?.job_title) setJobTitle(data.job_title);
+                if (data?.gender) setGender(data.gender);
+                const hasAllRequired =
+                    !!data?.user_local_id && !!data?.company_name && !!data?.country && !!data?.translation_locale;
+                const hasPassword = !!data?.password_set;
+                setNeedsProvision(!hasAllRequired || !hasPassword || !hasMatrixAccount);
+            } finally {
+                setProfileChecked(true);
             }
-            const hasMatrixAccount = Boolean(data?.matrix_user_id);
-            if (data?.user_local_id) setUserLocalId(data.user_local_id);
-            if (data?.company_name) setCompanyName(data.company_name);
-            if (data?.country) setCountry(data.country);
-            if (data?.translation_locale) setTranslationLocale(data.translation_locale);
-            if (data?.job_title) setJobTitle(data.job_title);
-            if (data?.gender) setGender(data.gender);
-            const hasAllRequired =
-                !!data?.user_local_id && !!data?.company_name && !!data?.country && !!data?.translation_locale;
-            const hasPassword = !!data?.password_set;
-            setNeedsProvision(!hasAllRequired || !hasPassword || !hasMatrixAccount);
         })();
     }, [session, supabaseAvailable]);
 
@@ -167,6 +187,85 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
         if (value.length < 10) return false;
         return /[A-Za-z]/.test(value) && /\d/.test(value);
     };
+
+    const finalizeClientLogin = async (
+        activeSession: Session,
+        loginPassword: string,
+        preferredLanguage?: string,
+    ): Promise<void> => {
+        const response = await hubClientLogin(email, loginPassword, undefined, clientSessionMetadata);
+        setMatrixCredentials(response.matrix);
+        const hubSession = response.supabase ?? {
+            access_token: activeSession.access_token,
+            refresh_token: activeSession.refresh_token ?? "",
+            expires_at: activeSession.expires_at ?? undefined,
+        };
+        const normalizedLanguage = preferredLanguage?.trim();
+        if (normalizedLanguage) {
+            await updateClientLanguage(hubSession, normalizedLanguage);
+            setLanguage(isSupportedDisplayLanguage(normalizedLanguage) ? normalizedLanguage : "en");
+            clearPendingClientRegistrationDraft();
+            setAuthSession({
+                userType: "client",
+                matrixCredentials: response.matrix,
+                hubSession,
+            });
+            navigate("/app");
+            return;
+        }
+
+        const language = await fetchClientLanguage(hubSession);
+        if (!language) {
+            setPendingLanguageSession(hubSession);
+            setShowLanguageModal(true);
+            return;
+        }
+        setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
+        clearPendingClientRegistrationDraft();
+        setAuthSession({
+            userType: "client",
+            matrixCredentials: response.matrix,
+            hubSession,
+        });
+        navigate("/app");
+    };
+
+    useEffect(() => {
+        if (!isEmailRegistrationFlow) return;
+        if (!session?.access_token || !email) return;
+        if (!profileChecked) return;
+        if (!pendingRegistrationDraft) return;
+        if (pendingRegistrationDraft.email.toLowerCase() !== email.toLowerCase()) return;
+        if (autoCompletionStartedRef.current) return;
+
+        autoCompletionStartedRef.current = true;
+        setAutoCompleting(true);
+        setError(null);
+        setResetSuccess(null);
+
+        void (async (): Promise<void> => {
+            try {
+                if (needsProvision) {
+                    await hubClientProvision(session.access_token, {
+                        user_local_id: pendingRegistrationDraft.userLocalId.trim().toLowerCase(),
+                        company_name: pendingRegistrationDraft.companyName.trim(),
+                        country: pendingRegistrationDraft.country.trim(),
+                        translation_locale: pendingRegistrationDraft.translationLocale.trim(),
+                        password: pendingRegistrationDraft.password,
+                        job_title: pendingRegistrationDraft.jobTitle.trim() || undefined,
+                        gender: pendingRegistrationDraft.gender.trim() || undefined,
+                    });
+                }
+
+                await hubClientSetPassword(session.access_token, pendingRegistrationDraft.password);
+                await finalizeClientLogin(session, pendingRegistrationDraft.password, pendingRegistrationDraft.language);
+            } catch (autoCompleteError) {
+                setError(autoCompleteError instanceof Error ? autoCompleteError.message : t("auth.errors.generic"));
+            } finally {
+                setAutoCompleting(false);
+            }
+        })();
+    }, [email, isEmailRegistrationFlow, needsProvision, pendingRegistrationDraft, profileChecked, session, t]);
 
     const onSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
@@ -225,28 +324,7 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
                 }
 
                 await hubClientSetPassword(session.access_token, password);
-
-                const response = await hubClientLogin(email, password, undefined, clientSessionMetadata);
-                setMatrixCredentials(response.matrix);
-                const hubSession = response.supabase ?? {
-                    access_token: session.access_token,
-                    refresh_token: session.refresh_token ?? "",
-                    expires_at: session.expires_at ?? undefined,
-                };
-                const language = await fetchClientLanguage(hubSession);
-                if (!language) {
-                    setPendingLanguageSession(hubSession);
-                    setShowLanguageModal(true);
-                    return;
-                }
-                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
-                clearPendingClientRegistrationDraft();
-                setAuthSession({
-                    userType: "client",
-                    matrixCredentials: response.matrix,
-                    hubSession,
-                });
-                navigate("/app");
+                await finalizeClientLogin(session, password, pendingRegistrationDraft?.language);
             } catch (submitError) {
                 setError(submitError instanceof Error ? submitError.message : t("auth.errors.generic"));
             } finally {
@@ -277,13 +355,13 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
         })();
     };
 
-    if (loading) {
+    if (loading || autoCompleting) {
         return (
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
                         <h2>{pageText.title}</h2>
-                        <p>{pageText.loading}</p>
+                        <p>{autoCompleting ? pageText.autoCompleting : pageText.loading}</p>
                     </div>
                 </main>
             </div>

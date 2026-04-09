@@ -7,10 +7,12 @@ export type PendingClientRegistrationDraft = {
     jobTitle: string;
     gender: string;
     language: string;
+    password: string;
     createdAt: number;
 };
 
-const STORAGE_KEY = "gtt_pending_client_registration_v1";
+const STORAGE_KEY = "gtt_pending_client_registration_v2";
+const MAX_DRAFT_AGE_MS = 2 * 60 * 60 * 1000;
 
 export function readPendingClientRegistrationDraft(): PendingClientRegistrationDraft | null {
     if (typeof window === "undefined") return null;
@@ -19,6 +21,14 @@ export function readPendingClientRegistrationDraft(): PendingClientRegistrationD
         if (!raw) return null;
         const parsed = JSON.parse(raw) as PendingClientRegistrationDraft;
         if (!parsed?.email || typeof parsed.email !== "string") return null;
+        if (!parsed.password || typeof parsed.password !== "string") {
+            window.localStorage.removeItem(STORAGE_KEY);
+            return null;
+        }
+        if (!parsed.createdAt || Date.now() - parsed.createdAt > MAX_DRAFT_AGE_MS) {
+            window.localStorage.removeItem(STORAGE_KEY);
+            return null;
+        }
         return parsed;
     } catch {
         return null;
