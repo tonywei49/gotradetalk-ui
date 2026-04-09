@@ -6,13 +6,12 @@ import { useNavigate } from "react-router-dom";
 import { hubClientLogin, hubClientProvision, hubClientSetPassword } from "../api/hub";
 import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
-import { getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
+import { getSupabaseClient, hasSupabaseConfig, resolveSupabaseSessionFromUrl } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
-import { clearPendingClientRegistrationDraft, readPendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
@@ -97,27 +96,30 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
             return;
         }
         const supabase = getSupabaseClient();
+        const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            setSession(nextSession);
+        });
         void (async (): Promise<void> => {
-            const { data } = await supabase.auth.getSession();
-            setSession(data.session ?? null);
-            if (data.session?.user?.email) {
-                const email = data.session.user.email;
-                const draft = readPendingClientRegistrationDraft();
-                if (draft && draft.email.toLowerCase() === email.toLowerCase()) {
-                    setUserLocalId(draft.userLocalId || email.split("@")[0]?.toLowerCase() || "");
-                    setCompanyName(draft.companyName || "");
-                    setCountry(draft.country || "");
-                    setJobTitle(draft.jobTitle || "");
-                    setGender(draft.gender || "");
-                    setTranslationLocale(draft.translationLocale || "");
-                } else {
+            try {
+                const resolvedSession = await resolveSupabaseSessionFromUrl();
+                setSession(resolvedSession);
+                if (resolvedSession?.user?.email) {
+                    const email = resolvedSession.user.email;
                     const localPart = email.split("@")[0] || "";
                     setUserLocalId(localPart.toLowerCase());
+                } else {
+                    setError(null);
                 }
+            } catch (resolveError) {
+                setError(resolveError instanceof Error ? resolveError.message : t("auth.errors.generic"));
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         })();
-    }, [supabaseAvailable]);
+        return () => {
+            data.subscription.unsubscribe();
+        };
+    }, [supabaseAvailable, t]);
 
     useEffect(() => {
         if (!supabaseAvailable) return;
@@ -153,6 +155,46 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
     const isValidPassword = (value: string): boolean => {
         if (value.length < 10) return false;
         return /[A-Za-z]/.test(value) && /\d/.test(value);
+    };
+
+    const finalizeClientLogin = async (
+        activeSession: Session,
+        loginPassword: string,
+        preferredLanguage?: string,
+    ): Promise<void> => {
+        const response = await hubClientLogin(email, loginPassword, undefined, clientSessionMetadata);
+        setMatrixCredentials(response.matrix);
+        const hubSession = response.supabase ?? {
+            access_token: activeSession.access_token,
+            refresh_token: activeSession.refresh_token ?? "",
+            expires_at: activeSession.expires_at ?? undefined,
+        };
+        const normalizedLanguage = preferredLanguage?.trim();
+        if (normalizedLanguage) {
+            await updateClientLanguage(hubSession, normalizedLanguage);
+            setLanguage(isSupportedDisplayLanguage(normalizedLanguage) ? normalizedLanguage : "en");
+            setAuthSession({
+                userType: "client",
+                matrixCredentials: response.matrix,
+                hubSession,
+            });
+            navigate("/app");
+            return;
+        }
+
+        const language = await fetchClientLanguage(hubSession);
+        if (!language) {
+            setPendingLanguageSession(hubSession);
+            setShowLanguageModal(true);
+            return;
+        }
+        setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
+        setAuthSession({
+            userType: "client",
+            matrixCredentials: response.matrix,
+            hubSession,
+        });
+        navigate("/app");
     };
 
     const onSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
@@ -198,8 +240,6 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
 
             setBusy(true);
             try {
-                await hubClientSetPassword(session.access_token, password);
-
                 if (needsProvision) {
                     const normalizedUserId = userLocalId.trim().toLowerCase();
                     await hubClientProvision(session.access_token, {
@@ -213,27 +253,8 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
                     });
                 }
 
-                const response = await hubClientLogin(email, password, session.access_token, clientSessionMetadata);
-                setMatrixCredentials(response.matrix);
-                const hubSession = response.supabase ?? {
-                    access_token: session.access_token,
-                    refresh_token: session.refresh_token ?? "",
-                    expires_at: session.expires_at ?? undefined,
-                };
-                const language = await fetchClientLanguage(hubSession);
-                if (!language) {
-                    setPendingLanguageSession(hubSession);
-                    setShowLanguageModal(true);
-                    return;
-                }
-                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
-                clearPendingClientRegistrationDraft();
-                setAuthSession({
-                    userType: "client",
-                    matrixCredentials: response.matrix,
-                    hubSession,
-                });
-                navigate("/app");
+                await hubClientSetPassword(session.access_token, password);
+                await finalizeClientLogin(session, password);
             } catch (submitError) {
                 setError(submitError instanceof Error ? submitError.message : t("auth.errors.generic"));
             } finally {
@@ -415,7 +436,6 @@ export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
                     }
                     await updateClientLanguage(pendingLanguageSession, language);
                     setLanguage(language);
-                    clearPendingClientRegistrationDraft();
                     setAuthSession({
                         userType: "client",
                         matrixCredentials,
