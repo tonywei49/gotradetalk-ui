@@ -838,6 +838,7 @@ export const MainLayout: React.FC = () => {
     const desktopUpdaterAvailable = useMemo(() => isTauriDesktop(), []);
     const desktopBootReadyRef = useRef(false);
     const notebookBootNoticeRef = useRef<string | null>(null);
+    const mobileChatSwipeRef = useRef<{ x: number; y: number; armed: boolean }>({ x: 0, y: 0, armed: false });
     const taskTokenExpired = hubSessionExpiresAt ? hubSessionExpiresAt * 1000 <= Date.now() : false;
     const taskAccessToken = !taskTokenExpired && hubAccessToken ? hubAccessToken : matrixAccessToken;
     const taskHsUrl = !taskTokenExpired && hubAccessToken ? null : matrixHsUrl;
@@ -3114,6 +3115,40 @@ export const MainLayout: React.FC = () => {
         userType,
     ]);
 
+    const onMobileChatSwipeStart = useCallback((event: React.TouchEvent<HTMLElement>): void => {
+        if (!isMobileApp || activeTab !== "chat" || mobileView !== "detail" || event.touches.length !== 1) {
+            mobileChatSwipeRef.current = { x: 0, y: 0, armed: false };
+            return;
+        }
+        const touch = event.touches[0];
+        const target = event.target as HTMLElement | null;
+        const interactiveTarget = target?.closest(
+            'input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-no-edge-swipe="true"]',
+        );
+        mobileChatSwipeRef.current = {
+            x: touch.clientX,
+            y: touch.clientY,
+            armed: !interactiveTarget && touch.clientX <= 28,
+        };
+    }, [activeTab, isMobileApp, mobileView]);
+
+    const onMobileChatSwipeEnd = useCallback((event: React.TouchEvent<HTMLElement>): void => {
+        const swipe = mobileChatSwipeRef.current;
+        mobileChatSwipeRef.current = { x: 0, y: 0, armed: false };
+        if (!swipe.armed || !isMobileApp || activeTab !== "chat" || mobileView !== "detail") return;
+        const touch = event.changedTouches[0];
+        if (!touch) return;
+        const deltaX = touch.clientX - swipe.x;
+        const deltaY = touch.clientY - swipe.y;
+        if (deltaX > 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) {
+            setMobileView("list");
+        }
+    }, [activeTab, isMobileApp, mobileView]);
+
+    const onMobileChatSwipeCancel = useCallback((): void => {
+        mobileChatSwipeRef.current = { x: 0, y: 0, armed: false };
+    }, []);
+
     const visibleSelectedRoomFiles = useMemo(
         () =>
             filterRoomFiles({
@@ -3824,6 +3859,7 @@ export const MainLayout: React.FC = () => {
                                             const next = event.target.value as NotificationSoundMode;
                                             setNotificationSoundMode(next);
                                             if (next !== "off") {
+                                                ensureNotificationSoundEnabled({ userInitiated: true });
                                                 playNotificationSound(next);
                                             }
                                         }}
@@ -3838,6 +3874,7 @@ export const MainLayout: React.FC = () => {
                                         type="button"
                                         onClick={() => {
                                             if (notificationSoundMode === "off") return;
+                                            ensureNotificationSoundEnabled({ userInitiated: true });
                                             playNotificationSound(notificationSoundMode);
                                         }}
                                         disabled={notificationSoundMode === "off"}
@@ -4076,7 +4113,7 @@ export const MainLayout: React.FC = () => {
                 ) : activeTab === "files" ? (
                     filesReady ? (
                     <>
-                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
+                        <div className="hidden h-16 px-4 items-center justify-between border-b border-gray-100 dark:border-slate-800 lg:flex">
                             <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                                 {t("layout.filesTitle")}
                             </div>
@@ -4160,7 +4197,7 @@ export const MainLayout: React.FC = () => {
                 ) : (
                     <>
                         {/* Header */}
-                        <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800">
+                        <div className="hidden h-16 px-4 items-center justify-between border-b border-gray-100 dark:border-slate-800 lg:flex">
                             <div className="flex items-center gap-3 min-w-0">
                                 {accountAvatarUrl ? (
                                     <img src={accountAvatarUrl} alt={accountId} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
@@ -4221,7 +4258,7 @@ export const MainLayout: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={() => setShowCreateRoomModal(true)}
-                                        className="ml-auto rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
+                                        className="ml-auto rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold leading-[1.05rem] text-slate-600 shadow-sm hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
                                     >
                                         {t("layout.createRoomLabel", t("layout.groupChat", "New room"))}
                                     </button>
@@ -4335,6 +4372,9 @@ export const MainLayout: React.FC = () => {
             <main
                 className={`flex-1 min-h-0 flex flex-col bg-[#F2F4F7] relative min-w-0 dark:bg-slate-950 ${mobileView === "list" ? "hidden lg:flex" : "flex"
                     }`}
+                onTouchStart={onMobileChatSwipeStart}
+                onTouchEnd={onMobileChatSwipeEnd}
+                onTouchCancel={onMobileChatSwipeCancel}
             >
                 {tasksReady && taskModule.hydrated ? (
                     <TaskReminderBanner
