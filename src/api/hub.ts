@@ -83,6 +83,28 @@ export async function hubClientProvision(
     );
 }
 
+export async function resolveCompanyAuthTarget(params: {
+    companySlug?: string;
+    companyDomain?: string;
+    tld?: string;
+}): Promise<{
+    company_id: string;
+    company_slug: string;
+    hs_domain: string;
+    hs_url: string;
+}> {
+    const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
+    const query = new URLSearchParams();
+    if (params.companySlug) query.set("company_slug", params.companySlug);
+    if (params.companyDomain) query.set("company_domain", params.companyDomain);
+    if (params.tld) query.set("tld", params.tld);
+    const response = await fetch(`${hubBaseUrl}/company/auth-target?${query.toString()}`);
+    if (!response.ok) {
+        throw await readHubError(response);
+    }
+    return await response.json();
+}
+
 export async function hubClientSetPassword(accessToken: string, password: string): Promise<void> {
     const hubBaseUrl = normalizeBaseUrl(hubApiBaseUrl);
     await postJson<Record<string, unknown>>(

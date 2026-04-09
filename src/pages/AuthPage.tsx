@@ -4,10 +4,10 @@ import { useNavigate } from "react-router-dom";
 
 import {
     hubClientLogin,
-    hubClientProvision,
     hubStaffExchangeSession,
     hubStaffActivatePasswordState,
     hubStaffPasswordState,
+    resolveCompanyAuthTarget,
 } from "../api/hub";
 import type { HubClientLoginResponse, HubSupabaseSession } from "../api/types";
 import {
@@ -18,7 +18,6 @@ import {
 } from "../api/profile";
 import { getOptionalSupabaseClient, getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
 import { displayLanguageOptions, isSupportedDisplayLanguage, type DisplayLanguage } from "../constants/displayLanguages";
-import { translationLanguageOptions } from "../constants/translationLanguages";
 import { LanguageModal } from "../components/LanguageModal";
 import { setLanguage } from "../i18n/language";
 import { loginWithPassword } from "../matrix/login";
@@ -26,7 +25,6 @@ import { useAuthStore } from "../stores/AuthStore";
 import { useToastStore } from "../stores/ToastStore";
 import { mapAuthErrorToMessage } from "../utils/errorMessages";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
-import { clearPendingClientRegistrationDraft, writePendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import "./AuthPage.css";
 
 type EntryMode = "client" | "company";
@@ -37,6 +35,23 @@ type DebugCompanyLogin = {
     username: string;
     password: string;
 };
+
+function generateSignupPlaceholderPassword(): string {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const bytes = new Uint8Array(18);
+    if (typeof window !== "undefined" && window.crypto?.getRandomValues) {
+        window.crypto.getRandomValues(bytes);
+    } else {
+        for (let index = 0; index < bytes.length; index += 1) {
+            bytes[index] = Math.floor(Math.random() * 256);
+        }
+    }
+    let value = "Tmp1";
+    for (const byte of bytes) {
+        value += alphabet[byte % alphabet.length];
+    }
+    return value;
+}
 
 function readDebugCompanyLogin(): DebugCompanyLogin | null {
     const encoded = import.meta.env.VITE_DEBUG_COMPANY_LOGIN_B64;
@@ -90,14 +105,6 @@ export function AuthPage() {
     const [resetError, setResetError] = useState<string | null>(null);
     const [resetSuccess, setResetSuccess] = useState<string | null>(null);
     const [registerEmail, setRegisterEmail] = useState("");
-    const [registerPassword, setRegisterPassword] = useState("");
-    const [registerUserLocalId, setRegisterUserLocalId] = useState("");
-    const [registerCompanyName, setRegisterCompanyName] = useState("");
-    const [registerCountry, setRegisterCountry] = useState("");
-    const [registerGender, setRegisterGender] = useState("");
-    const [registerJobTitle, setRegisterJobTitle] = useState("");
-    const [registerTranslationLocale, setRegisterTranslationLocale] = useState("");
-    const [registerLanguage, setRegisterLanguage] = useState("en");
     const [registerBusy, setRegisterBusy] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(null);
     const [companySlug, setCompanySlug] = useState("");
@@ -197,20 +204,6 @@ export function AuthPage() {
         setLanguage(language);
     };
 
-    const onGoogleLogin = (): void => {
-        if (!supabaseAvailable) {
-            pushToast("error", supabaseUnavailableMessage);
-            return;
-        }
-        const supabase = getSupabaseClient();
-        void supabase.auth.signInWithOAuth({
-            provider: "google",
-            options: {
-                redirectTo: `${window.location.origin}/oauth`,
-            },
-        });
-    };
-
     const onSubmitClient = (event: React.FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
         void (async (): Promise<void> => {
@@ -254,7 +247,7 @@ export function AuthPage() {
                                     "Email verified, but account setup is not finished yet. Please complete the remaining registration steps.",
                                 ),
                             );
-                            navigate("/oauth");
+                            navigate("/register/complete");
                             return;
                         }
                         throw error;
@@ -334,7 +327,12 @@ export function AuthPage() {
             if (!normalizedTld || !/^[a-z0-9.-]+$/.test(normalizedTld)) {
                 throw new Error(t("auth.errors.invalidCompanyTld"));
             }
-            const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
+            const companyAuthTarget = await resolveCompanyAuthTarget({
+                companySlug: normalizedSlug,
+                companyDomain: `${normalizedSlug}.${normalizedTld}`,
+                tld: normalizedTld,
+            });
+            const hsUrl = companyAuthTarget.hs_url;
             const trimmedUsername = usernameInput.trim();
             const credentials = await loginWithPassword(hsUrl, trimmedUsername, passwordInput);
             const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
@@ -425,24 +423,17 @@ export function AuthPage() {
                 if (!supabaseAvailable) {
                     throw new Error(supabaseUnavailableMessage);
                 }
-                if (!registerEmail.trim() || !registerPassword.trim()) {
+                const email = registerEmail.trim();
+                if (!email) {
                     throw new Error(t("auth.errors.missingRegisterFields"));
                 }
-                if (!registerCountry.trim()) {
-                    throw new Error(t("auth.errors.missingCountry"));
-                }
-                if (!registerTranslationLocale.trim()) {
-                    throw new Error(t("auth.errors.missingTranslationLocale"));
-                }
-                if (!registerLanguage) {
-                    throw new Error(t("auth.errors.missingRegisterLanguage"));
-                }
+                const placeholderPassword = generateSignupPlaceholderPassword();
                 const supabase = getSupabaseClient();
                 const { data, error } = await supabase.auth.signUp({
-                    email: registerEmail.trim(),
-                    password: registerPassword.trim(),
+                    email,
+                    password: placeholderPassword,
                     options: {
-                        emailRedirectTo: `${window.location.origin}/oauth`,
+                        emailRedirectTo: `${window.location.origin}/register/complete`,
                     },
                 });
                 if (error) {
@@ -450,27 +441,9 @@ export function AuthPage() {
                 }
                 const session = data.session;
                 if (!session?.access_token && data.user?.id) {
-                    writePendingClientRegistrationDraft({
-                        email: registerEmail.trim(),
-                        userLocalId: registerUserLocalId.trim(),
-                        companyName: registerCompanyName.trim(),
-                        country: registerCountry.trim(),
-                        translationLocale: registerTranslationLocale.trim(),
-                        jobTitle: registerJobTitle.trim(),
-                        gender: registerGender.trim(),
-                        language: registerLanguage,
-                    });
                     const successMessage = t("auth.client.registerEmailSent");
                     setShowClientRegister(false);
                     setRegisterEmail("");
-                    setRegisterPassword("");
-                    setRegisterUserLocalId("");
-                    setRegisterCompanyName("");
-                    setRegisterCountry("");
-                    setRegisterGender("");
-                    setRegisterJobTitle("");
-                    setRegisterTranslationLocale("");
-                    setRegisterLanguage("en");
                     setClientRegisterSuccess(successMessage);
                     pushToast("success", successMessage);
                     return;
@@ -478,34 +451,9 @@ export function AuthPage() {
                 if (!session?.access_token) {
                     throw new Error(t("auth.errors.missingSupabaseSession"));
                 }
-                await hubClientProvision(session.access_token, {
-                    user_local_id: registerUserLocalId.trim(),
-                    company_name: registerCompanyName.trim(),
-                    country: registerCountry.trim(),
-                    translation_locale: registerTranslationLocale.trim(),
-                    password: registerPassword.trim(),
-                    gender: registerGender.trim() || undefined,
-                    job_title: registerJobTitle.trim() || undefined,
-                });
-                await updateClientLanguage(
-                    {
-                        access_token: session.access_token,
-                        refresh_token: session.refresh_token,
-                        expires_at: session.expires_at ?? undefined,
-                    },
-                    registerLanguage,
-                );
-                clearPendingClientRegistrationDraft();
+                navigate("/register/complete");
                 setShowClientRegister(false);
                 setRegisterEmail("");
-                setRegisterPassword("");
-                setRegisterUserLocalId("");
-                setRegisterCompanyName("");
-                setRegisterCountry("");
-                setRegisterGender("");
-                setRegisterJobTitle("");
-                setRegisterTranslationLocale("");
-                setRegisterLanguage("en");
             } catch (error) {
                 const message = mapAuthErrorToMessage(t, error);
                 setRegisterError(message);
@@ -631,10 +579,6 @@ export function AuthPage() {
                                 {t("auth.client.registerAction")}
                             </button>
                         </div>
-                        <div className="gt_separator">{t("auth.client.or")}</div>
-                        <button type="button" className="gt_googleButton" onClick={onGoogleLogin} disabled={clientBusy}>
-                            {t("auth.client.googleLogin")}
-                        </button>
                         <button
                             type="button"
                             className="gt_link"
@@ -741,6 +685,9 @@ export function AuthPage() {
                                 ×
                             </button>
                         </div>
+                        <p className="gt_modalSubtitle">
+                            {t("auth.client.registerEmailOnlySubtitle")}
+                        </p>
                         <form className="gt_form" onSubmit={onSubmitClientRegister}>
                             <label className="gt_field">
                                 <span>{t("auth.fields.emailLabel")}</span>
@@ -751,87 +698,6 @@ export function AuthPage() {
                                     onChange={(event) => setRegisterEmail(event.target.value)}
                                     autoComplete="email"
                                 />
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.passwordLabel")}</span>
-                                <input
-                                    type="password"
-                                    placeholder={t("auth.fields.passwordPlaceholder")}
-                                    value={registerPassword}
-                                    onChange={(event) => setRegisterPassword(event.target.value)}
-                                    autoComplete="new-password"
-                                />
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.userLocalIdLabel")}</span>
-                                <input
-                                    type="text"
-                                    placeholder={t("auth.fields.userLocalIdPlaceholder")}
-                                    value={registerUserLocalId}
-                                    onChange={(event) => setRegisterUserLocalId(event.target.value)}
-                                />
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.companyNameLabel")}</span>
-                                <input
-                                    type="text"
-                                    placeholder={t("auth.fields.companyNamePlaceholder")}
-                                    value={registerCompanyName}
-                                    onChange={(event) => setRegisterCompanyName(event.target.value)}
-                                />
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.countryLabel")}</span>
-                                <input
-                                    type="text"
-                                    placeholder={t("auth.fields.countryPlaceholder")}
-                                    value={registerCountry}
-                                    onChange={(event) => setRegisterCountry(event.target.value)}
-                                />
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.jobTitleLabel")}</span>
-                                <input
-                                    type="text"
-                                    placeholder={t("auth.fields.jobTitlePlaceholder")}
-                                    value={registerJobTitle}
-                                    onChange={(event) => setRegisterJobTitle(event.target.value)}
-                                />
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.genderLabel")}</span>
-                                <select
-                                    value={registerGender}
-                                    onChange={(event) => setRegisterGender(event.target.value)}
-                                >
-                                    <option value="">{t("auth.fields.genderUnknown")}</option>
-                                    <option value="male">{t("auth.fields.genderMale")}</option>
-                                    <option value="female">{t("auth.fields.genderFemale")}</option>
-                                </select>
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.translationLocaleLabel")}</span>
-                                <select
-                                    value={registerTranslationLocale}
-                                    onChange={(event) => setRegisterTranslationLocale(event.target.value)}
-                                >
-                                    <option value="">{t("auth.fields.translationLocalePlaceholder")}</option>
-                                    {translationLanguageOptions.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <label className="gt_field">
-                                <span>{t("auth.fields.languageLabel")}</span>
-                                <select
-                                    value={registerLanguage}
-                                    onChange={(event) => setRegisterLanguage(event.target.value)}
-                                >
-                                    <option value="en">{t("language.english")}</option>
-                                    <option value="zh-CN">{t("language.chineseSimplified")}</option>
-                                </select>
                             </label>
                             {registerError && <div className="gt_error">{registerError}</div>}
                             <div className="gt_actions">

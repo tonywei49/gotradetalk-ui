@@ -6,19 +6,22 @@ import { useNavigate } from "react-router-dom";
 import { hubClientLogin, hubClientProvision, hubClientSetPassword } from "../api/hub";
 import type { HubSupabaseSession } from "../api/types";
 import { fetchClientLanguage, updateClientLanguage } from "../api/profile";
-import { getSupabaseClient, hasSupabaseConfig } from "../api/supabase";
+import { getSupabaseClient, hasSupabaseConfig, resolveSupabaseSessionFromUrl } from "../api/supabase";
 import { LanguageModal } from "../components/LanguageModal";
 import { isSupportedDisplayLanguage } from "../constants/displayLanguages";
 import { translationLanguageOptions } from "../constants/translationLanguages";
 import { setLanguage } from "../i18n/language";
 import { getClientLoginSessionMetadata } from "../utils/clientSession";
-import { clearPendingClientRegistrationDraft, readPendingClientRegistrationDraft } from "../utils/pendingClientRegistration";
 import { useAuthStore } from "../stores/AuthStore";
 import "./AuthPage.css";
 
 const USER_ID_PATTERN = /^[a-z0-9._=-]+$/;
 
-export function OauthSetupPage() {
+type OauthSetupPageProps = {
+    mode?: "oauth" | "email";
+};
+
+export function OauthSetupPage({ mode = "oauth" }: OauthSetupPageProps) {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const setAuthSession = useAuthStore((state) => state.setSession);
@@ -48,8 +51,43 @@ export function OauthSetupPage() {
     const clientSessionMetadata = getClientLoginSessionMetadata();
     const supabaseAvailable = useMemo(() => hasSupabaseConfig(), []);
     const supabaseUnavailableMessage = "Supabase is unavailable in this desktop build.";
+    const isEmailRegistrationFlow = mode === "email";
 
     const email = useMemo(() => session?.user?.email ?? "", [session]);
+    const pageText = useMemo(() => {
+        if (!isEmailRegistrationFlow) {
+            return {
+                title: t("oauth.title"),
+                loading: t("oauth.loading"),
+                invalid: t("oauth.invalid"),
+                subtitle: t("oauth.subtitle"),
+                loginSubtitle: t("oauth.loginSubtitle"),
+                confirm: t("oauth.confirm"),
+                cancel: t("oauth.cancel"),
+                back: t("oauth.back"),
+            };
+        }
+
+        return {
+            title: t("auth.client.completeRegistrationTitle", "Complete email registration"),
+            loading: t("auth.client.completeRegistrationLoading", "Preparing your verified email session..."),
+            invalid: t(
+                "auth.client.completeRegistrationInvalid",
+                "This registration link is invalid or expired. Please request a new verification email.",
+            ),
+            subtitle: t(
+                "auth.client.completeRegistrationSubtitle",
+                "Your email is verified. Finish the remaining registration steps below.",
+            ),
+            loginSubtitle: t(
+                "auth.client.completeRegistrationLoginSubtitle",
+                "Your account exists, but setup is not finished yet. Set your password to continue.",
+            ),
+            confirm: t("auth.client.completeRegistrationConfirm", "Finish registration"),
+            cancel: t("auth.client.completeRegistrationCancel", "Back to sign in"),
+            back: t("auth.client.completeRegistrationBack", "Back to sign in"),
+        };
+    }, [isEmailRegistrationFlow, t]);
 
     useEffect(() => {
         if (!supabaseAvailable) {
@@ -58,27 +96,30 @@ export function OauthSetupPage() {
             return;
         }
         const supabase = getSupabaseClient();
+        const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            setSession(nextSession);
+        });
         void (async (): Promise<void> => {
-            const { data } = await supabase.auth.getSession();
-            setSession(data.session ?? null);
-            if (data.session?.user?.email) {
-                const email = data.session.user.email;
-                const draft = readPendingClientRegistrationDraft();
-                if (draft && draft.email.toLowerCase() === email.toLowerCase()) {
-                    setUserLocalId(draft.userLocalId || email.split("@")[0]?.toLowerCase() || "");
-                    setCompanyName(draft.companyName || "");
-                    setCountry(draft.country || "");
-                    setJobTitle(draft.jobTitle || "");
-                    setGender(draft.gender || "");
-                    setTranslationLocale(draft.translationLocale || "");
-                } else {
+            try {
+                const resolvedSession = await resolveSupabaseSessionFromUrl();
+                setSession(resolvedSession);
+                if (resolvedSession?.user?.email) {
+                    const email = resolvedSession.user.email;
                     const localPart = email.split("@")[0] || "";
                     setUserLocalId(localPart.toLowerCase());
+                } else {
+                    setError(null);
                 }
+            } catch (resolveError) {
+                setError(resolveError instanceof Error ? resolveError.message : t("auth.errors.generic"));
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         })();
-    }, [supabaseAvailable]);
+        return () => {
+            data.subscription.unsubscribe();
+        };
+    }, [supabaseAvailable, t]);
 
     useEffect(() => {
         if (!supabaseAvailable) return;
@@ -114,6 +155,46 @@ export function OauthSetupPage() {
     const isValidPassword = (value: string): boolean => {
         if (value.length < 10) return false;
         return /[A-Za-z]/.test(value) && /\d/.test(value);
+    };
+
+    const finalizeClientLogin = async (
+        activeSession: Session,
+        loginPassword: string,
+        preferredLanguage?: string,
+    ): Promise<void> => {
+        const response = await hubClientLogin(email, loginPassword, undefined, clientSessionMetadata);
+        setMatrixCredentials(response.matrix);
+        const hubSession = response.supabase ?? {
+            access_token: activeSession.access_token,
+            refresh_token: activeSession.refresh_token ?? "",
+            expires_at: activeSession.expires_at ?? undefined,
+        };
+        const normalizedLanguage = preferredLanguage?.trim();
+        if (normalizedLanguage) {
+            await updateClientLanguage(hubSession, normalizedLanguage);
+            setLanguage(isSupportedDisplayLanguage(normalizedLanguage) ? normalizedLanguage : "en");
+            setAuthSession({
+                userType: "client",
+                matrixCredentials: response.matrix,
+                hubSession,
+            });
+            navigate("/app");
+            return;
+        }
+
+        const language = await fetchClientLanguage(hubSession);
+        if (!language) {
+            setPendingLanguageSession(hubSession);
+            setShowLanguageModal(true);
+            return;
+        }
+        setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
+        setAuthSession({
+            userType: "client",
+            matrixCredentials: response.matrix,
+            hubSession,
+        });
+        navigate("/app");
     };
 
     const onSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
@@ -159,8 +240,6 @@ export function OauthSetupPage() {
 
             setBusy(true);
             try {
-                await hubClientSetPassword(session.access_token, password);
-
                 if (needsProvision) {
                     const normalizedUserId = userLocalId.trim().toLowerCase();
                     await hubClientProvision(session.access_token, {
@@ -174,27 +253,8 @@ export function OauthSetupPage() {
                     });
                 }
 
-                const response = await hubClientLogin(email, password, session.access_token, clientSessionMetadata);
-                setMatrixCredentials(response.matrix);
-                const hubSession = response.supabase ?? {
-                    access_token: session.access_token,
-                    refresh_token: session.refresh_token ?? "",
-                    expires_at: session.expires_at ?? undefined,
-                };
-                const language = await fetchClientLanguage(hubSession);
-                if (!language) {
-                    setPendingLanguageSession(hubSession);
-                    setShowLanguageModal(true);
-                    return;
-                }
-                setLanguage(isSupportedDisplayLanguage(language) ? language : "en");
-                clearPendingClientRegistrationDraft();
-                setAuthSession({
-                    userType: "client",
-                    matrixCredentials: response.matrix,
-                    hubSession,
-                });
-                navigate("/app");
+                await hubClientSetPassword(session.access_token, password);
+                await finalizeClientLogin(session, password);
             } catch (submitError) {
                 setError(submitError instanceof Error ? submitError.message : t("auth.errors.generic"));
             } finally {
@@ -204,6 +264,7 @@ export function OauthSetupPage() {
     };
 
     const onSendReset = (): void => {
+        if (!isEmailRegistrationFlow) return;
         if (!email || resetBusy) return;
         void (async (): Promise<void> => {
             setResetBusy(true);
@@ -229,8 +290,8 @@ export function OauthSetupPage() {
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
-                        <h2>{t("oauth.title")}</h2>
-                        <p>{t("oauth.loading")}</p>
+                        <h2>{pageText.title}</h2>
+                        <p>{pageText.loading}</p>
                     </div>
                 </main>
             </div>
@@ -242,12 +303,12 @@ export function OauthSetupPage() {
             <div className="gt_app">
                 <main className="gt_auth">
                     <div className="gt_cardHeader">
-                        <h2>{t("oauth.title")}</h2>
-                        <p>{error ?? t("oauth.invalid")}</p>
+                        <h2>{pageText.title}</h2>
+                        <p>{error ?? pageText.invalid}</p>
                     </div>
                     <div className="gt_actions">
-                        <button type="button" className="gt_primary" onClick={() => navigate("/")}>
-                            {t("oauth.back")}
+                        <button type="button" className="gt_primary" onClick={() => navigate("/auth")}>
+                            {pageText.back}
                         </button>
                     </div>
                 </main>
@@ -259,8 +320,8 @@ export function OauthSetupPage() {
         <div className="gt_app">
             <main className="gt_auth">
                 <div className="gt_cardHeader">
-                    <h2>{t("oauth.title")}</h2>
-                    <p>{needsProvision ? t("oauth.subtitle") : t("oauth.loginSubtitle")}</p>
+                    <h2>{pageText.title}</h2>
+                    <p>{needsProvision ? pageText.subtitle : pageText.loginSubtitle}</p>
                 </div>
                 <form className="gt_form" onSubmit={onSubmit}>
                     <label className="gt_field">
@@ -353,15 +414,17 @@ export function OauthSetupPage() {
                     {resetSuccess && <div className="gt_success">{resetSuccess}</div>}
                     <div className="gt_actions">
                         <button type="submit" className="gt_primary" disabled={busy}>
-                            {busy ? t("oauth.busy") : t("oauth.confirm")}
+                            {busy ? t("oauth.busy") : pageText.confirm}
                         </button>
-                        <button type="button" className="gt_secondary" onClick={() => navigate("/")} disabled={busy}>
-                            {t("oauth.cancel")}
+                        <button type="button" className="gt_secondary" onClick={() => navigate("/auth")} disabled={busy}>
+                            {pageText.cancel}
                         </button>
                     </div>
-                    <button type="button" className="gt_link" onClick={onSendReset} disabled={resetBusy}>
-                        {resetBusy ? t("auth.client.resetBusy") : t("auth.client.forgotPassword")}
-                    </button>
+                    {isEmailRegistrationFlow && (
+                        <button type="button" className="gt_link" onClick={onSendReset} disabled={resetBusy}>
+                            {resetBusy ? t("auth.client.resetBusy") : t("auth.client.forgotPassword")}
+                        </button>
+                    )}
                 </form>
             </main>
             <LanguageModal
@@ -373,7 +436,6 @@ export function OauthSetupPage() {
                     }
                     await updateClientLanguage(pendingLanguageSession, language);
                     setLanguage(language);
-                    clearPendingClientRegistrationDraft();
                     setAuthSession({
                         userType: "client",
                         matrixCredentials,

@@ -290,8 +290,54 @@ export function App() {
             <BrowserRouter>
                 <Suspense fallback={<RouteTransitionScreen />}>
                     <Routes>
-                        <Route path="/auth" element={!isAuthenticated ? (isWindowsDesktop ? <DesktopAuthBootstrap><AuthPage /></DesktopAuthBootstrap> : <AuthPage />) : <Navigate to="/app" replace />} />
-                        <Route path="/oauth" element={!isAuthenticated ? (isWindowsDesktop ? <DesktopAuthBootstrap><OauthSetupPage /></DesktopAuthBootstrap> : <OauthSetupPage />) : <Navigate to="/app" replace />} />
+                        <Route
+                            path="/auth"
+                            element={
+                                !isAuthenticated ? (
+                                    isWindowsDesktop ? (
+                                        <DesktopAuthBootstrap>
+                                            <AuthPage />
+                                        </DesktopAuthBootstrap>
+                                    ) : (
+                                        <AuthPage />
+                                    )
+                                ) : (
+                                    <Navigate to="/app" replace />
+                                )
+                            }
+                        />
+                        <Route
+                            path="/oauth"
+                            element={
+                                !isAuthenticated ? (
+                                    isWindowsDesktop ? (
+                                        <DesktopAuthBootstrap>
+                                            <OauthSetupPage mode="oauth" />
+                                        </DesktopAuthBootstrap>
+                                    ) : (
+                                        <OauthSetupPage mode="oauth" />
+                                    )
+                                ) : (
+                                    <Navigate to="/app" replace />
+                                )
+                            }
+                        />
+                        <Route
+                            path="/register/complete"
+                            element={
+                                !isAuthenticated ? (
+                                    isWindowsDesktop ? (
+                                        <DesktopAuthBootstrap>
+                                            <OauthSetupPage mode="email" />
+                                        </DesktopAuthBootstrap>
+                                    ) : (
+                                        <OauthSetupPage mode="email" />
+                                    )
+                                ) : (
+                                    <Navigate to="/app" replace />
+                                )
+                            }
+                        />
                         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
                         <Route path="/app" element={isAuthenticated ? (isWindowsDesktop ? <DesktopWorkspaceBootstrap /> : <MainLayout />) : <Navigate to="/auth" replace />}>
