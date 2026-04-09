@@ -8,6 +8,7 @@ import {
     hubStaffExchangeSession,
     hubStaffActivatePasswordState,
     hubStaffPasswordState,
+    resolveCompanyAuthTarget,
 } from "../api/hub";
 import type { HubClientLoginResponse, HubSupabaseSession } from "../api/types";
 import {
@@ -254,7 +255,7 @@ export function AuthPage() {
                                     "Email verified, but account setup is not finished yet. Please complete the remaining registration steps.",
                                 ),
                             );
-                            navigate("/oauth");
+                            navigate("/register/complete");
                             return;
                         }
                         throw error;
@@ -334,7 +335,12 @@ export function AuthPage() {
             if (!normalizedTld || !/^[a-z0-9.-]+$/.test(normalizedTld)) {
                 throw new Error(t("auth.errors.invalidCompanyTld"));
             }
-            const hsUrl = `https://matrix.${normalizedSlug}.${normalizedTld}`;
+            const companyAuthTarget = await resolveCompanyAuthTarget({
+                companySlug: normalizedSlug,
+                companyDomain: `${normalizedSlug}.${normalizedTld}`,
+                tld: normalizedTld,
+            });
+            const hsUrl = companyAuthTarget.hs_url;
             const trimmedUsername = usernameInput.trim();
             const credentials = await loginWithPassword(hsUrl, trimmedUsername, passwordInput);
             const passwordState = await hubStaffPasswordState(credentials.accessToken, credentials.homeserverUrl);
@@ -442,7 +448,7 @@ export function AuthPage() {
                     email: registerEmail.trim(),
                     password: registerPassword.trim(),
                     options: {
-                        emailRedirectTo: `${window.location.origin}/oauth`,
+                        emailRedirectTo: `${window.location.origin}/register/complete`,
                     },
                 });
                 if (error) {

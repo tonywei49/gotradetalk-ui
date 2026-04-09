@@ -268,7 +268,7 @@ export function NotebookSidebar({
 
     return (
         <>
-            <div className="h-18 px-4 flex items-center border-b border-gray-100 dark:border-slate-800">
+            <div className="hidden h-18 px-4 items-center border-b border-gray-100 dark:border-slate-800 lg:flex">
                 <div className="text-[17px] font-semibold text-slate-800 dark:text-slate-100">
                     {t("layout.notebook.sidebarTitle", "Notebook")}
                 </div>

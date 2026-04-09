@@ -124,7 +124,8 @@ export function App() {
                 <Suspense fallback={<RouteTransitionScreen />}>
                     <Routes>
                         <Route path="/auth" element={!isAuthenticated ? <AuthPage /> : <Navigate to="/app" replace />} />
-                        <Route path="/oauth" element={!isAuthenticated ? <OauthSetupPage /> : <Navigate to="/app" replace />} />
+                        <Route path="/oauth" element={!isAuthenticated ? <OauthSetupPage mode="oauth" /> : <Navigate to="/app" replace />} />
+                        <Route path="/register/complete" element={!isAuthenticated ? <OauthSetupPage mode="email" /> : <Navigate to="/app" replace />} />
                         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
                         <Route path="/app" element={isAuthenticated ? <MainLayout /> : <Navigate to="/auth" replace />}>
