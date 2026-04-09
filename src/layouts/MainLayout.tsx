@@ -91,6 +91,7 @@ import { usePluginHost, usePluginSlot, type PluginIconKey } from "../plugins";
 import { checkDesktopUpdaterOnce, getDesktopUpdaterStatus, isTauriDesktop } from "../desktop/useDesktopUpdater";
 import { readWorkspaceStateFromSqlite, writeWorkspaceStateToSqlite } from "../desktop/desktopCacheDb";
 import { useToastStore } from "../stores/ToastStore";
+import { isTauriMobile } from "../runtime/appRuntime";
 
 // Placeholder for RoomList and ChatArea to be implemented later
 // For now, we just create the layout structure
@@ -101,6 +102,23 @@ type NavBarItemProps = {
     badgeCount?: number;
     className?: string;
     label?: string;
+};
+
+type MobileNavChipProps = {
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    active?: boolean;
+    onClick?: () => void;
+    badgeCount?: number;
+    label: string;
+};
+
+type AppShellNavItem = {
+    key: string;
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    active: boolean;
+    label: string;
+    badgeCount?: number;
+    onClick: () => void;
 };
 
 type SharedContactRoomEntry = {
@@ -134,6 +152,29 @@ const NavBarItem = ({ icon: Icon, active, onClick, badgeCount, className = "", l
             )}
         </div>
     </div>
+);
+
+const MobileNavChip = ({ icon: Icon, active, onClick, badgeCount, label }: MobileNavChipProps) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={`relative inline-flex min-w-max items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition ${
+            active
+                ? "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm dark:border-emerald-400/70 dark:bg-emerald-500/15 dark:text-emerald-100"
+                : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-emerald-500/50 dark:hover:text-slate-100"
+        }`}
+        aria-pressed={active}
+    >
+        <span className="relative inline-flex h-5 w-5 items-center justify-center">
+            <Icon className="h-5 w-5" />
+            {typeof badgeCount === "number" && badgeCount > 0 ? (
+                <span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9px] font-semibold leading-4 text-white">
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                </span>
+            ) : null}
+        </span>
+        <span>{label}</span>
+    </button>
 );
 
 function resolvePluginNavIcon(icon?: PluginIconKey): React.ComponentType<React.SVGProps<SVGSVGElement>> {
@@ -623,6 +664,7 @@ function DeferredModulePanel({ title, description }: { title: string; descriptio
 export const MainLayout: React.FC = () => {
     const { t } = useTranslation();
     const { runtimeContext, platformState, tools } = usePluginHost();
+    const isMobileApp = isTauriMobile();
     const pluginNavItems = usePluginSlot("appNav");
     const pluginSettingsSections = usePluginSlot("settingsSections");
     const [activeTab, setActiveTab] = useState<"chat" | "notebook" | "contacts" | "files" | "tasks" | "orders" | "settings" | "account">("chat");
@@ -1887,6 +1929,14 @@ export const MainLayout: React.FC = () => {
         setSettingsDetail("none");
     }, [activeTab]);
 
+    const openPrimaryTab = useCallback((tab: "chat" | "notebook" | "contacts" | "files" | "tasks" | "settings" | "account") => {
+        setMobileView("list");
+        setActiveTab(tab);
+        if (tab === "settings") {
+            setSettingsDetail("none");
+        }
+    }, []);
+
     useEffect(() => {
         setSummaryPreviewJob(null);
         setSummaryPreviewError(null);
@@ -2979,6 +3029,90 @@ export const MainLayout: React.FC = () => {
         () => roomSummaryList.find((item) => item.roomId === selectedFileRoomId) ?? null,
         [roomSummaryList, selectedFileRoomId],
     );
+    const mobileNavItems = useMemo<AppShellNavItem[]>(() => {
+        const items: AppShellNavItem[] = [
+            {
+                key: "contacts",
+                icon: UserGroupIcon,
+                active: activeTab === "contacts",
+                badgeCount: inviteBadgeCount,
+                label: t("roomList.sections.contacts"),
+                onClick: () => openPrimaryTab("contacts"),
+            },
+            {
+                key: "chat",
+                icon: ChatBubbleLeftRightIcon,
+                active: activeTab === "chat",
+                badgeCount: unreadBadgeCount,
+                label: t("main.sidebar.rooms"),
+                onClick: () => openPrimaryTab("chat"),
+            },
+        ];
+
+        if (notebookCapabilityState.canUseNotebookBasic) {
+            items.push({
+                key: "notebook",
+                icon: BookOpenIcon,
+                active: activeTab === "notebook",
+                label: t("chat.notebook.panelTitle"),
+                onClick: () => openPrimaryTab("notebook"),
+            });
+        }
+
+        items.push(
+            {
+                key: "files",
+                icon: FolderIcon,
+                active: activeTab === "files",
+                label: t("layout.filesTitle"),
+                onClick: () => openPrimaryTab("files"),
+            },
+            {
+                key: "tasks",
+                icon: ClockIcon,
+                active: activeTab === "tasks",
+                label: t("tasks.title"),
+                onClick: () => openPrimaryTab("tasks"),
+            },
+            ...pluginNavItems.map((item) => ({
+                key: `plugin:${item.pluginId}:${item.id}`,
+                icon: resolvePluginNavIcon(item.icon),
+                active: false,
+                badgeCount: item.badgeCount,
+                label: item.label,
+                onClick: () =>
+                    item.onSelect?.({
+                        userType,
+                        matrixUserId: matrixCredentials?.user_id ?? null,
+                        matrixUserLocalId: formatMatrixUserLocalId(matrixCredentials?.user_id),
+                        matrixHomeServer: matrixCredentials?.hs_url ?? null,
+                        hasHubSession: Boolean(hubSession?.access_token),
+                        platformManaged: true,
+                    }),
+            })),
+            {
+                key: "settings",
+                icon: Cog6ToothIcon,
+                active: activeTab === "settings",
+                label: t("layout.settings"),
+                onClick: () => openPrimaryTab("settings"),
+            },
+        );
+
+        return items;
+    }, [
+        activeTab,
+        hubSession?.access_token,
+        inviteBadgeCount,
+        matrixCredentials?.hs_url,
+        matrixCredentials?.user_id,
+        notebookCapabilityState.canUseNotebookBasic,
+        openPrimaryTab,
+        pluginNavItems,
+        t,
+        unreadBadgeCount,
+        userType,
+    ]);
 
     const visibleSelectedRoomFiles = useMemo(
         () =>
@@ -3371,9 +3505,47 @@ export const MainLayout: React.FC = () => {
     );
 
     return (
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row">
-            {/* 1. Leftmost Nav Bar (w-16, bg-gray-900) */}
-            <nav className="w-full bg-gray-900 flex items-center justify-between px-4 py-2 flex-shrink-0 z-20 dark:bg-slate-900 lg:w-16 lg:flex-col lg:justify-start lg:py-4">
+        <div
+            className={`flex min-h-0 w-full min-w-0 flex-col overflow-hidden bg-gray-100 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:flex-row ${
+                isMobileApp ? "h-[100svh]" : "h-[100dvh]"
+            }`}
+        >
+            {/* Mobile top nav owns the iPhone safe area. Do not merge this back into the desktop nav without re-testing notch devices. */}
+            <div className="border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
+                <div className="px-3 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1.95rem)]">
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => openPrimaryTab("account")}
+                            className="mt-[0.2rem] inline-flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#2F5C56] text-sm font-bold text-white shadow-sm"
+                            aria-label={t("layout.accountSettings")}
+                        >
+                            {accountAvatarUrl ? (
+                                <img src={accountAvatarUrl} alt={accountId} className="h-full w-full object-cover" />
+                            ) : (
+                                accountInitial
+                            )}
+                        </button>
+                        <div className="min-w-0 flex-1 overflow-x-auto pb-1.5 pt-[0.35rem]">
+                            <div className="flex min-w-max items-center gap-2 pr-1">
+                                {mobileNavItems.map((item) => (
+                                    <MobileNavChip
+                                        key={item.key}
+                                        icon={item.icon}
+                                        active={item.active}
+                                        badgeCount={item.badgeCount}
+                                        label={item.label}
+                                        onClick={item.onClick}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* 1. Leftmost Nav Bar (desktop only) */}
+            <nav className="hidden flex-shrink-0 items-center justify-between bg-gray-900 px-4 py-2 dark:bg-slate-900 lg:flex lg:w-16 lg:flex-col lg:justify-start lg:py-4">
                 {/* App Logo Placeholder */}
                 <div className="relative lg:mb-8">
                     <button
