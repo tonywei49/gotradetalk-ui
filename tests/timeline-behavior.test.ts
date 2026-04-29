@@ -4,6 +4,7 @@ import {
     haveSameTimelineEventSequence,
     mergeTimelineEventGroups,
     resolveTimelineBottomScrollTop,
+    resolveTimelineRenderWindowSize,
 } from "../src/features/chat/timelineBehavior.ts";
 
 type FakeEvent = {
@@ -72,4 +73,22 @@ test("resolveTimelineBottomScrollTop does not force scrolling when the viewer le
         shouldStickBottom: false,
         nextScrollHeight: 1280,
     }), null);
+});
+
+test("resolveTimelineRenderWindowSize expands the tail window while bottom lock is active", () => {
+    assert.equal(resolveTimelineRenderWindowSize({
+        renderedEventCount: 40,
+        initialWindow: 40,
+        shouldStickBottom: true,
+        stickBottomWindow: 200,
+    }), 200);
+});
+
+test("resolveTimelineRenderWindowSize preserves explicit history expansion outside bottom lock", () => {
+    assert.equal(resolveTimelineRenderWindowSize({
+        renderedEventCount: 160,
+        initialWindow: 40,
+        shouldStickBottom: false,
+        stickBottomWindow: 200,
+    }), 160);
 });

@@ -71,7 +71,11 @@ import { isNotebookTerminalAuthFailure } from "../notebook/utils/isNotebookTermi
 import { TaskQuickCreate } from "../tasks/components/TaskQuickCreate";
 import { TaskRoomBar } from "../tasks/components/TaskRoomBar";
 import type { TaskChatContext } from "../tasks/hooks/useTaskUI";
-import { getTimelineEventStableKey, resolveTimelineBottomScrollTop } from "./timelineBehavior";
+import {
+    getTimelineEventStableKey,
+    resolveTimelineBottomScrollTop,
+    resolveTimelineRenderWindowSize,
+} from "./timelineBehavior";
 import {
     chatSearchLocate,
     chatSearchRoom,
@@ -313,6 +317,7 @@ const IS_DESKTOP_APP = isTauriDesktop();
 
 const CHAT_INITIAL_RENDER_WINDOW = IS_WINDOWS_DESKTOP ? 20 : 40;
 const CHAT_RENDER_WINDOW_STEP = IS_WINDOWS_DESKTOP ? 20 : 40;
+const CHAT_STICKY_BOTTOM_RENDER_WINDOW = IS_DESKTOP_APP ? 200 : CHAT_INITIAL_RENDER_WINDOW;
 
 function getEventRenderStableKey(event: MatrixEvent): string {
     return event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender() ?? "unknown"}`;
@@ -1395,6 +1400,7 @@ export const ChatRoom: React.FC = () => {
     const [activeMentionIndex, setActiveMentionIndex] = useState(0);
     const [typingMemberLabels, setTypingMemberLabels] = useState<string[]>([]);
     const [renderedEventCount, setRenderedEventCount] = useState(CHAT_INITIAL_RENDER_WINDOW);
+    const [timelineStickBottom, setTimelineStickBottom] = useState(true);
     const [timelineSelectionActive, setTimelineSelectionActive] = useState(false);
     const [chatContextMenu, setChatContextMenu] = useState<ChatContextMenuState | null>(null);
     const [showTaskQuickCreate, setShowTaskQuickCreate] = useState(false);
@@ -1430,6 +1436,13 @@ export const ChatRoom: React.FC = () => {
     const [assistEditorRows, setAssistEditorRows] = useState(5);
     const [assistEditorFullscreen, setAssistEditorFullscreen] = useState(false);
     const [draftMediaRegistryReady, setDraftMediaRegistryReady] = useState(false);
+    const setRoomStickBottom = useCallback((roomId: string | null, shouldStickBottom: boolean): void => {
+        if (!roomId) return;
+        roomStickBottomRef.current[roomId] = shouldStickBottom;
+        if (roomId === activeRoomId) {
+            setTimelineStickBottom((previous) => (previous === shouldStickBottom ? previous : shouldStickBottom));
+        }
+    }, [activeRoomId]);
     const composerDraftStorageKey = useMemo(
         () => (activeRoomId ? `${CHAT_COMPOSER_DRAFT_KEY_PREFIX}:${activeRoomId}` : ""),
         [activeRoomId],
@@ -2108,19 +2121,40 @@ export const ChatRoom: React.FC = () => {
         });
         return filtered;
     }, [events, room]);
+    const renderWindowSize = useMemo(() => resolveTimelineRenderWindowSize({
+        renderedEventCount,
+        initialWindow: CHAT_INITIAL_RENDER_WINDOW,
+        shouldStickBottom: timelineStickBottom,
+        stickBottomWindow: CHAT_STICKY_BOTTOM_RENDER_WINDOW,
+    }), [renderedEventCount, timelineStickBottom]);
     const renderedEvents = useMemo(
-        () => mergedEvents.slice(-Math.max(CHAT_INITIAL_RENDER_WINDOW, renderedEventCount)),
-        [mergedEvents, renderedEventCount],
+        () => mergedEvents.slice(-renderWindowSize),
+        [mergedEvents, renderWindowSize],
     );
     const displayedRenderedEvents = useFrozenValueWhile(
         renderedEvents,
         timelineSelectionActive,
         haveSameRenderedEventSequence,
     );
+    const latestMergedEvent = mergedEvents[mergedEvents.length - 1];
 
     useEffect(() => {
         setRenderedEventCount(CHAT_INITIAL_RENDER_WINDOW);
     }, [activeRoomId]);
+
+    useEffect(() => {
+        if (!activeRoomId) {
+            setTimelineStickBottom(true);
+            return;
+        }
+        setTimelineStickBottom(roomStickBottomRef.current[activeRoomId] ?? true);
+    }, [activeRoomId]);
+
+    useEffect(() => {
+        if (!timelineStickBottom) return;
+        if (renderedEventCount >= CHAT_STICKY_BOTTOM_RENDER_WINDOW) return;
+        setRenderedEventCount((previous) => Math.max(previous, CHAT_STICKY_BOTTOM_RENDER_WINDOW));
+    }, [renderedEventCount, timelineStickBottom]);
 
     const targetLanguage = (chatReceiveLanguage || "").trim();
     const canTranslate = Boolean(translateAccessToken && targetLanguage);
@@ -2622,7 +2656,7 @@ export const ChatRoom: React.FC = () => {
         }
         if (!target) return false;
         if (activeRoomId) {
-            roomStickBottomRef.current[activeRoomId] = false;
+            setRoomStickBottom(activeRoomId, false);
         }
         target.scrollIntoView({ behavior: "smooth", block: "center" });
         setHighlightedEventId(eventId);
@@ -2690,21 +2724,23 @@ export const ChatRoom: React.FC = () => {
         const container = timelineRef.current;
         if (prevRoomId && container) {
             const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
-            roomStickBottomRef.current[prevRoomId] = distance < 120;
+            setRoomStickBottom(prevRoomId, distance < 120);
         }
         previousRoomIdRef.current = activeRoomId;
         if (!activeRoomId || jumpToEventId) return;
         if (suppressAutoStickBottomRef.current) return;
         const shouldStickBottom = roomStickBottomRef.current[activeRoomId] ?? true;
+        setTimelineStickBottom(shouldStickBottom);
         if (!shouldStickBottom) return;
         const timer = window.setTimeout(() => {
             const current = timelineRef.current;
             if (!current) return;
             current.scrollTop = current.scrollHeight;
+            setRoomStickBottom(activeRoomId, true);
             setShowScrollToBottom(false);
         }, 40);
         return () => window.clearTimeout(timer);
-    }, [activeRoomId, jumpToEventId]);
+    }, [activeRoomId, jumpToEventId, setRoomStickBottom]);
 
     useLayoutEffect(() => {
         const anchor = historyScrollAnchorRef.current;
@@ -2761,31 +2797,21 @@ export const ChatRoom: React.FC = () => {
             if (suppressAutoStickBottomRef.current || nextScrollTop == null) return;
 
             current.scrollTop = nextScrollTop;
+            setRoomStickBottom(activeRoomId, true);
             setShowScrollToBottom(false);
-            const latestEvent = mergedEvents[mergedEvents.length - 1];
-            sendReadReceiptIfNeeded(latestEvent);
+            sendReadReceiptIfNeeded(latestMergedEvent);
         });
 
         observer.observe(container);
         return () => observer.disconnect();
-    }, [activeRoomId, mergedEvents, sendReadReceiptIfNeeded]);
+    }, [activeRoomId, latestMergedEvent, sendReadReceiptIfNeeded, setRoomStickBottom]);
 
-    // 自動滾動到底部並發送已讀回執
+    // 在底部鎖定時維持已讀回執，不再額外搶寫 scrollTop
     useEffect(() => {
         if (!room || !matrixClient) return;
-        const container = timelineRef.current;
-        if (!container) return;
-        if (suppressAutoStickBottomRef.current) return;
-        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        const shouldStickBottom = activeRoomId ? (roomStickBottomRef.current[activeRoomId] ?? true) : false;
-        if (shouldStickBottom || distanceFromBottom < 120) {
-            if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
-            container.scrollTop = container.scrollHeight;
-            // 在底部時發送已讀回執
-            const latestEvent = mergedEvents[mergedEvents.length - 1];
-            sendReadReceiptIfNeeded(latestEvent);
-        }
-    }, [activeRoomId, mergedEvents.length, room, matrixClient, mergedEvents]);
+        if (!activeRoomId || !timelineStickBottom) return;
+        sendReadReceiptIfNeeded(latestMergedEvent);
+    }, [activeRoomId, latestMergedEvent, matrixClient, room, sendReadReceiptIfNeeded, timelineStickBottom]);
 
     // 進入房間時如果在底部也發送已讀回執
     useEffect(() => {
@@ -2796,12 +2822,11 @@ export const ChatRoom: React.FC = () => {
             if (!container) return;
             const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
             if (distanceFromBottom < 120) {
-                const latestEvent = mergedEvents[mergedEvents.length - 1];
-                sendReadReceiptIfNeeded(latestEvent);
+                sendReadReceiptIfNeeded(latestMergedEvent);
             }
         }, 100);
         return () => clearTimeout(timer);
-    }, [activeRoomId]); // 只在切換房間時觸發
+    }, [activeRoomId, latestMergedEvent, matrixClient, room, sendReadReceiptIfNeeded]); // 只在切換房間時觸發
 
     const onScroll = async (): Promise<void> => {
         if (!matrixClient || scrollLoading || !room) return;
@@ -2811,14 +2836,13 @@ export const ChatRoom: React.FC = () => {
         // 更新滾動到底部按鈕的顯示狀態
         const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
         if (activeRoomId) {
-            roomStickBottomRef.current[activeRoomId] = distanceFromBottom < 120;
+            setRoomStickBottom(activeRoomId, distanceFromBottom < 120);
         }
         setShowScrollToBottom(distanceFromBottom > 200);
 
         // 當滾動到底部時發送已讀回執
         if (distanceFromBottom < 50) {
-            const latestEvent = mergedEvents[mergedEvents.length - 1];
-            sendReadReceiptIfNeeded(latestEvent);
+            sendReadReceiptIfNeeded(latestMergedEvent);
         }
 
         // 滾動加載更多消息
@@ -2834,7 +2858,7 @@ export const ChatRoom: React.FC = () => {
             : null;
         setScrollLoading(true);
         if (activeRoom) {
-            roomStickBottomRef.current[activeRoom] = false;
+            setRoomStickBottom(activeRoom, false);
         }
         if (renderedEventCount < mergedEvents.length) {
             if (anchor) {
@@ -2871,7 +2895,7 @@ export const ChatRoom: React.FC = () => {
     const scrollToBottom = (): void => {
         const container = timelineRef.current;
         if (container) {
-            if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
+            setRoomStickBottom(activeRoomId, true);
             container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
         }
     };
@@ -2909,7 +2933,7 @@ export const ChatRoom: React.FC = () => {
                     },
                 }
                 : undefined;
-        if (activeRoomId) roomStickBottomRef.current[activeRoomId] = true;
+        setRoomStickBottom(activeRoomId, true);
         stopTypingNotice(activeRoomId);
         setComposerText("");
         setQuotedMessage(null);

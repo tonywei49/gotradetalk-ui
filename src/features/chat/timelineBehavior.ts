@@ -55,3 +55,20 @@ export function resolveTimelineBottomScrollTop({
     }
     return null;
 }
+
+export function resolveTimelineRenderWindowSize({
+    renderedEventCount,
+    initialWindow,
+    shouldStickBottom,
+    stickBottomWindow,
+}: {
+    renderedEventCount: number;
+    initialWindow: number;
+    shouldStickBottom: boolean;
+    stickBottomWindow: number;
+}): number {
+    const minimumWindow = shouldStickBottom
+        ? Math.max(initialWindow, stickBottomWindow)
+        : initialWindow;
+    return Math.max(minimumWindow, renderedEventCount);
+}
