@@ -3,6 +3,9 @@ import { useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+import { visit } from "unist-util-visit";
 import {
     MagnifyingGlassIcon,
     EllipsisVerticalIcon,
@@ -482,6 +485,18 @@ function EmojiInlineText({
 }
 
 function containsMarkdownTable(text: string): boolean {
+    try {
+        const processor = unified().use(remarkParse).use(remarkGfm);
+        const tree = processor.runSync(processor.parse(text));
+        let found = false;
+        visit(tree, "table", () => {
+            found = true;
+        });
+        if (found) return true;
+    } catch {
+        // fall back to the lightweight line-based check below
+    }
+
     const lines = text.split(/\r?\n/);
     for (let index = 0; index < lines.length - 1; index += 1) {
         const header = lines[index]?.trim() ?? "";
@@ -493,12 +508,19 @@ function containsMarkdownTable(text: string): boolean {
     return false;
 }
 
-function MarkdownTableScroller({ children }: { children: ReactNode }) {
+function MarkdownTableScroller({ children, debugLabel = "table-debug-v2" }: { children: ReactNode; debugLabel?: string }) {
     const viewportRef = useRef<HTMLDivElement | null>(null);
     const contentRef = useRef<HTMLDivElement | null>(null);
     const [offsetX, setOffsetX] = useState(0);
     const offsetRef = useRef(0);
     const minOffsetRef = useRef(0);
+
+    // IMPORTANT:
+    // iOS/Tauri mobile cannot reliably use the plain `overflow-x-auto` table wrapper
+    // that works on desktop/web. When this was simplified back to native horizontal
+    // scrolling, markdown tables inside chat bubbles regressed and stopped dragging
+    // correctly in the mobile app. Keep the custom drag-scroller for Tauri mobile.
+    // If this behavior changes again, compare against commit `5ca14b0`.
 
     useLayoutEffect(() => {
         const viewport = viewportRef.current;
@@ -588,7 +610,10 @@ function MarkdownTableScroller({ children }: { children: ReactNode }) {
     }
 
     return (
-        <div ref={viewportRef} className="my-2 w-full max-w-full overflow-hidden [touch-action:pan-x]">
+        <div ref={viewportRef} className="my-2 w-full max-w-full overflow-hidden [touch-action:none]">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-500">
+                {debugLabel}
+            </div>
             <div
                 ref={contentRef}
                 className="inline-block w-max min-w-max align-top will-change-transform"
@@ -606,7 +631,7 @@ type DraftMediaRegistryEntry = {
     ownerUserId: string;
 };
 
-const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
+const MessageMarkdown = ({ text, isMe, tableDebugLabel }: { text: string; isMe: boolean; tableDebugLabel?: string }) => {
     const normalizedText = normalizeMarkdownDisplayText(text);
     const textClass = isMe ? "text-white" : "text-slate-800 dark:text-slate-100";
     const mutedTextClass = isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-400";
@@ -631,15 +656,15 @@ const MessageMarkdown = ({ text, isMe }: { text: string; isMe: boolean }) => {
         code: ({ children }) => <code className={codeClass}>{renderNodesForActiveRuntime(children, "code")}</code>,
         pre: ({ children }) => <pre className={preClass}>{renderNodesForActiveRuntime(children, "pre")}</pre>,
         table: ({ children }) => (
-            <MarkdownTableScroller>
-                <table className={`w-max border-collapse text-left text-[12px] ${textClass}`}>{renderNodesForActiveRuntime(children, "table")}</table>
+            <MarkdownTableScroller debugLabel={tableDebugLabel}>
+                <table className={`w-max min-w-[48rem] border-collapse text-left text-[12px] ${textClass}`}>{renderNodesForActiveRuntime(children, "table")}</table>
             </MarkdownTableScroller>
         ),
         thead: ({ children }) => <thead className={tableHeaderClass}>{renderNodesForActiveRuntime(children, "thead")}</thead>,
         tbody: ({ children }) => <tbody>{renderNodesForActiveRuntime(children, "tbody")}</tbody>,
         tr: ({ children }) => <tr className={`border-b ${borderClass}`}>{renderNodesForActiveRuntime(children, "tr")}</tr>,
-        th: ({ children }) => <th className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 font-semibold ${borderClass}`}>{renderNodesForActiveRuntime(children, "th")}</th>,
-        td: ({ children }) => <td className={`min-w-[4rem] whitespace-nowrap border px-2 py-1 align-top ${borderClass}`}>{renderNodesForActiveRuntime(children, "td")}</td>,
+        th: ({ children }) => <th className={`min-w-[8rem] whitespace-nowrap border px-2 py-1 font-semibold ${borderClass}`}>{renderNodesForActiveRuntime(children, "th")}</th>,
+        td: ({ children }) => <td className={`min-w-[8rem] whitespace-nowrap border px-2 py-1 align-top ${borderClass}`}>{renderNodesForActiveRuntime(children, "td")}</td>,
         a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noreferrer" className="break-all underline [overflow-wrap:anywhere]">
                 {renderNodesForActiveRuntime(children, "a")}
@@ -839,9 +864,15 @@ const MessageBubble = ({
                 ? t("chat.translationPending")
                 : messageText
         : messageText;
-    const containsTable = isText && containsMarkdownTable(displayText);
-    const tableBubbleWidth = isTauriMobile() ? "min(88vw, 24rem)" : undefined;
-
+    const normalizedDisplayText = isText ? normalizeMarkdownDisplayText(displayText) : displayText;
+    const containsTable = isText && containsMarkdownTable(normalizedDisplayText);
+    const useMobileTableCardLayout = containsTable && isTauriMobile();
+    const tableBubbleWidth = isTauriMobile()
+        ? (isMe ? "min(84vw, 23rem)" : "min(76vw, 21rem)")
+        : undefined;
+    const tableDebugLabel = useMobileTableCardLayout
+        ? `table-debug-v3-${isMe ? "out" : "in"}-${tableBubbleWidth ?? "auto"}`
+        : "table-debug-v2";
     useEffect(() => {
         if (!showQuickActionMenu && !showFileMenu) return;
         const onPointerDown = (event: MouseEvent | TouchEvent): void => {
@@ -936,9 +967,15 @@ const MessageBubble = ({
                     </div>
                 )}
 
-                    <div className={`flex min-w-0 items-end gap-2 ${containsTable ? "w-full" : ""}`}>
+                    <div
+                        className={
+                            useMobileTableCardLayout
+                                ? `relative w-full ${isMe ? "pl-8" : "pr-8"}`
+                                : `flex min-w-0 items-end gap-2 ${containsTable ? "w-full" : ""}`
+                        }
+                    >
                     {isMe && hasQuickActions && (
-                        <div className="relative self-end mb-1">
+                        <div className={useMobileTableCardLayout ? "absolute bottom-2 left-0 z-10" : "relative mb-1 shrink-0 self-end"}>
                             <button
                                 ref={quickActionButtonRef}
                                 type="button"
@@ -998,7 +1035,7 @@ const MessageBubble = ({
                         </div>
                     )}
                     {isMe && isFileLike && canDeleteFile && onDeleteFile && (
-                        <div className="relative self-end mb-1">
+                        <div className={useMobileTableCardLayout ? "absolute bottom-2 left-0 z-10" : "relative mb-1 shrink-0 self-end"}>
                             <button
                                 ref={fileActionButtonRef}
                                 type="button"
@@ -1037,7 +1074,7 @@ const MessageBubble = ({
                     <div
                         className={`
               relative min-w-0 px-3 py-2 text-[13px] leading-relaxed shadow-sm
-              ${containsTable ? "w-full max-w-full min-w-0 overflow-hidden" : "overflow-visible"}
+              ${useMobileTableCardLayout ? "w-full max-w-full min-w-0 overflow-hidden" : containsTable ? "flex-1 min-w-0 max-w-full overflow-hidden" : "overflow-visible"}
               ${isMe
                                 ? "bg-[#2F5C56] text-white rounded-2xl rounded-tr-sm"
                                 : "bg-white text-slate-800 rounded-2xl rounded-tl-sm border border-gray-100 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
@@ -1116,12 +1153,12 @@ const MessageBubble = ({
                             )
                         ) : isText && showBilingual ? (
                             <div className="space-y-2">
-                                <MessageMarkdown text={messageText} isMe={isMe} />
+                            <MessageMarkdown text={messageText} isMe={isMe} tableDebugLabel={tableDebugLabel} />
                                 <div className={`rounded-md px-2 py-1 ${isMe ? "bg-white/10" : "bg-slate-100 dark:bg-slate-700"}`}>
                                     {translationLoading ? (
                                         <TranslationTypingIndicator isMe={isMe} />
                                     ) : hasTranslatedText ? (
-                                        <MessageMarkdown text={translatedText as string} isMe={isMe} />
+                                        <MessageMarkdown text={translatedText as string} isMe={isMe} tableDebugLabel={tableDebugLabel} />
                                     ) : translationError ? (
                                         <span className={`text-[11px] ${isMe ? "text-emerald-100/80" : "text-slate-500 dark:text-slate-300"}`}>
                                             {t("chat.translationUnavailable")}
@@ -1136,12 +1173,12 @@ const MessageBubble = ({
                         ) : isText && showTranslated && translationLoading ? (
                             <TranslationTypingIndicator isMe={isMe} />
                         ) : (
-                            <MessageMarkdown text={displayText} isMe={isMe} />
+                            <MessageMarkdown text={displayText} isMe={isMe} tableDebugLabel={tableDebugLabel} />
                         )}
                     </div>
 
                     {!isMe && hasQuickActions && (
-                        <div className="relative self-end mb-1">
+                        <div className={useMobileTableCardLayout ? "absolute bottom-2 right-0 z-10" : "relative mb-1 shrink-0 self-end"}>
                             <button
                                 ref={quickActionButtonRef}
                                 type="button"
