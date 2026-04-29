@@ -71,6 +71,7 @@ import { isNotebookTerminalAuthFailure } from "../notebook/utils/isNotebookTermi
 import { TaskQuickCreate } from "../tasks/components/TaskQuickCreate";
 import { TaskRoomBar } from "../tasks/components/TaskRoomBar";
 import type { TaskChatContext } from "../tasks/hooks/useTaskUI";
+import { getTimelineEventStableKey, resolveTimelineBottomScrollTop } from "./timelineBehavior";
 import {
     chatSearchLocate,
     chatSearchRoom,
@@ -1338,6 +1339,10 @@ export const ChatRoom: React.FC = () => {
     const { events, room, showingCachedEvents } = useRoomTimeline(matrixClient, activeRoomId, { limit: 20 });
     const taskLinkedRoomName = activeRoomName ?? room?.name ?? null;
     const timelineRef = useRef<HTMLDivElement | null>(null);
+    const timelineScrollHeightRef = useRef<{ roomId: string | null; scrollHeight: number }>({
+        roomId: null,
+        scrollHeight: 0,
+    });
     const roomStickBottomRef = useRef<Record<string, boolean>>({});
     const historyScrollAnchorRef = useRef<{
         roomId: string;
@@ -2096,12 +2101,11 @@ export const ChatRoom: React.FC = () => {
                     return false;
                 }
             }
-            const key = event.getId() ?? event.getTxnId() ?? String(event.getTs());
+            const key = getTimelineEventStableKey(event);
             if (seen.has(key)) return false;
             seen.add(key);
             return true;
         });
-        filtered.sort((a, b) => a.getTs() - b.getTs());
         return filtered;
     }, [events, room]);
     const renderedEvents = useMemo(
@@ -2712,6 +2716,59 @@ export const ChatRoom: React.FC = () => {
         historyScrollAnchorRef.current = null;
         suppressAutoStickBottomRef.current = false;
     }, [activeRoomId, renderedEvents.length]);
+
+    useEffect(() => {
+        const container = timelineRef.current;
+        if (!container) return;
+        timelineScrollHeightRef.current = {
+            roomId: activeRoomId,
+            scrollHeight: container.scrollHeight,
+        };
+    }, [activeRoomId]);
+
+    useEffect(() => {
+        const container = timelineRef.current;
+        if (!container || !activeRoomId || typeof ResizeObserver === "undefined") return;
+
+        timelineScrollHeightRef.current = {
+            roomId: activeRoomId,
+            scrollHeight: container.scrollHeight,
+        };
+
+        const observer = new ResizeObserver(() => {
+            const current = timelineRef.current;
+            if (!current) return;
+
+            const previousMetrics = timelineScrollHeightRef.current;
+            const previousScrollHeight =
+                previousMetrics.roomId === activeRoomId ? previousMetrics.scrollHeight : current.scrollHeight;
+
+            if (current.scrollHeight === previousScrollHeight) return;
+
+            const previousDistanceFromBottom = previousScrollHeight - current.scrollTop - current.clientHeight;
+            const shouldStickBottom = roomStickBottomRef.current[activeRoomId] ?? true;
+            const nextScrollTop = resolveTimelineBottomScrollTop({
+                previousDistanceFromBottom,
+                shouldStickBottom,
+                nextScrollHeight: current.scrollHeight,
+            });
+
+            timelineScrollHeightRef.current = {
+                roomId: activeRoomId,
+                scrollHeight: current.scrollHeight,
+            };
+
+            if (suppressAutoStickBottomRef.current || nextScrollTop == null) return;
+
+            current.scrollTop = nextScrollTop;
+            setShowScrollToBottom(false);
+            const latestEvent = mergedEvents[mergedEvents.length - 1];
+            sendReadReceiptIfNeeded(latestEvent);
+        });
+
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, [activeRoomId, mergedEvents, sendReadReceiptIfNeeded]);
 
     // 自動滾動到底部並發送已讀回執
     useEffect(() => {

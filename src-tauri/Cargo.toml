@@ -1,6 +1,6 @@
 [package]
 name = "gotradetalk-desktop"
-version = "0.1.40"
+version = "0.1.41"
 description = "Desktop wrapper for the GoTradeTalk client"
 authors = ["GoTradeTalk"]
 license = "Proprietary"

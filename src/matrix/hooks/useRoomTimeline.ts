@@ -6,6 +6,7 @@ import {
     writeRoomTimelineCacheToSqlite,
 } from "../../desktop/desktopCacheDb";
 import { isTauriDesktop, resolveRuntimePlatform } from "../../runtime/appRuntime";
+import { haveSameTimelineEventSequence, mergeTimelineEventGroups } from "../../features/chat/timelineBehavior";
 
 type UseRoomTimelineOptions = {
     limit?: number;
@@ -89,36 +90,7 @@ function filterEventsForRoom(events: MatrixEvent[], roomId: string, limit?: numb
 }
 
 function mergeRoomEvents(roomId: string, ...groups: MatrixEvent[][]): MatrixEvent[] {
-    const merged: MatrixEvent[] = [];
-    const seenEventIds = new Set<string>();
-    for (const group of groups) {
-        for (const event of group) {
-            const eventRoomId = event.getRoomId();
-            if (eventRoomId && eventRoomId !== roomId) continue;
-            const eventId = event.getId();
-            if (eventId) {
-                if (seenEventIds.has(eventId)) continue;
-                seenEventIds.add(eventId);
-            }
-            merged.push(event);
-        }
-    }
-    return merged;
-}
-
-function getEventStableKey(event: MatrixEvent): string {
-    return event.getId() ?? event.getTxnId() ?? `${event.getTs()}-${event.getSender() ?? "unknown"}`;
-}
-
-function haveSameEventSequence(a: MatrixEvent[], b: MatrixEvent[]): boolean {
-    if (a === b) return true;
-    if (a.length !== b.length) return false;
-    for (let index = 0; index < a.length; index += 1) {
-        if (getEventStableKey(a[index]) !== getEventStableKey(b[index])) {
-            return false;
-        }
-    }
-    return true;
+    return filterEventsForRoom(mergeTimelineEventGroups(...groups), roomId);
 }
 
 export function useRoomTimeline(
@@ -199,12 +171,9 @@ export function useRoomTimeline(
                 const snapshot = prev.length > 0
                     ? trimLiveWindow(mergeRoomEvents(roomId, prev, liveEvents))
                     : trimLiveWindow([...base]);
-                if (haveSameEventSequence(prev, snapshot)) {
-                    return prev;
-                }
                 writeCachedTimeline(cacheKey, roomId, snapshot, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, snapshot, limit));
-                return snapshot;
+                return haveSameTimelineEventSequence(prev, snapshot) ? [...snapshot] : snapshot;
             });
         };
 
@@ -228,17 +197,14 @@ export function useRoomTimeline(
             setEvents((prev) => {
                 const eventId = event.getId();
                 if (eventId && prev.some((item) => item.getId() === eventId)) {
-                    return prev;
+                    return [...prev];
                 }
                 const next = trimLiveWindow(
-                    filterEventsForRoom(toStartOfTimeline ? [event, ...prev] : [...prev, event], roomId),
+                    mergeRoomEvents(roomId, toStartOfTimeline ? [event] : [], prev, toStartOfTimeline ? [] : [event]),
                 );
-                if (haveSameEventSequence(prev, next)) {
-                    return prev;
-                }
                 writeCachedTimeline(cacheKey, roomId, next, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, next, limit));
-                return next;
+                return haveSameTimelineEventSequence(prev, next) ? [...next] : next;
             });
         };
 
@@ -252,12 +218,9 @@ export function useRoomTimeline(
                 const snapshot = prev.length > 0
                     ? trimLiveWindow(mergeRoomEvents(roomId, prev, liveEvents))
                     : trimLiveWindow(limit ? liveEvents.slice(-limit) : liveEvents);
-                if (haveSameEventSequence(prev, snapshot)) {
-                    return prev;
-                }
                 writeCachedTimeline(cacheKey, roomId, snapshot, limit);
                 void writeRoomTimelineCacheToSqlite(cacheUserId, roomId, serializeTimeline(roomId, snapshot, limit));
-                return snapshot;
+                return haveSameTimelineEventSequence(prev, snapshot) ? [...snapshot] : snapshot;
             });
         };
 
