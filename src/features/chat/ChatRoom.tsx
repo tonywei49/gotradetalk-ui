@@ -494,9 +494,108 @@ function containsMarkdownTable(text: string): boolean {
 }
 
 function MarkdownTableScroller({ children }: { children: ReactNode }) {
+    const viewportRef = useRef<HTMLDivElement | null>(null);
+    const contentRef = useRef<HTMLDivElement | null>(null);
+    const [offsetX, setOffsetX] = useState(0);
+    const offsetRef = useRef(0);
+    const minOffsetRef = useRef(0);
+
+    useLayoutEffect(() => {
+        const viewport = viewportRef.current;
+        const content = contentRef.current;
+        if (!viewport || !content || !isTauriMobile()) return undefined;
+
+        const recalc = (): void => {
+            const viewportWidth = viewport.clientWidth;
+            const contentWidth = content.scrollWidth;
+            const minOffset = Math.min(0, viewportWidth - contentWidth);
+            minOffsetRef.current = minOffset;
+            const clamped = Math.max(minOffset, Math.min(0, offsetRef.current));
+            offsetRef.current = clamped;
+            setOffsetX(clamped);
+        };
+
+        recalc();
+        const observer = new ResizeObserver(recalc);
+        observer.observe(viewport);
+        observer.observe(content);
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (!isTauriMobile()) return undefined;
+        const viewport = viewportRef.current;
+        if (!viewport) return undefined;
+
+        let active = false;
+        let horizontal = false;
+        let startX = 0;
+        let startY = 0;
+        let startOffset = 0;
+
+        const handleTouchStart = (event: TouchEvent): void => {
+            if (event.touches.length !== 1 || minOffsetRef.current === 0) return;
+            const touch = event.touches[0];
+            active = true;
+            horizontal = false;
+            startX = touch.clientX;
+            startY = touch.clientY;
+            startOffset = offsetRef.current;
+        };
+
+        const handleTouchMove = (event: TouchEvent): void => {
+            if (!active || event.touches.length !== 1) return;
+            const touch = event.touches[0];
+            const deltaX = touch.clientX - startX;
+            const deltaY = touch.clientY - startY;
+
+            if (!horizontal) {
+                if (Math.abs(deltaX) < 6) return;
+                if (Math.abs(deltaX) <= Math.abs(deltaY)) {
+                    active = false;
+                    return;
+                }
+                horizontal = true;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            const next = Math.max(minOffsetRef.current, Math.min(0, startOffset + deltaX));
+            offsetRef.current = next;
+            setOffsetX(next);
+        };
+
+        const handleTouchEnd = (): void => {
+            active = false;
+            horizontal = false;
+        };
+
+        viewport.addEventListener("touchstart", handleTouchStart, { passive: true });
+        viewport.addEventListener("touchmove", handleTouchMove, { passive: false });
+        viewport.addEventListener("touchend", handleTouchEnd, { passive: true });
+        viewport.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+        return () => {
+            viewport.removeEventListener("touchstart", handleTouchStart);
+            viewport.removeEventListener("touchmove", handleTouchMove);
+            viewport.removeEventListener("touchend", handleTouchEnd);
+            viewport.removeEventListener("touchcancel", handleTouchEnd);
+        };
+    }, []);
+
+    if (!isTauriMobile()) {
+        return <div className="my-2 max-w-full overflow-x-auto">{children}</div>;
+    }
+
     return (
-        <div className="my-2 max-w-full overflow-x-auto overflow-y-hidden [overscroll-behavior-x:contain] [-webkit-overflow-scrolling:touch] scrollbar-thin">
-            {children}
+        <div ref={viewportRef} className="my-2 w-full max-w-full overflow-hidden [touch-action:pan-x]">
+            <div
+                ref={contentRef}
+                className="inline-block w-max min-w-max align-top will-change-transform"
+                style={{ transform: `translate3d(${offsetX}px, 0, 0)` }}
+            >
+                {children}
+            </div>
         </div>
     );
 }
